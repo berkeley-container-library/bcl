@@ -1,0 +1,84 @@
+
+Note that FastQueue is a similar data structure that offers less atomicity in
+return for faster performance.  If you do not require concurrent pushes and
+pops, FastQueue is more appropriate.
+
+The CircularQueue is a globally visible queue data structure.  To create a
+CircularQueue, one declares one by calling the constructor collectively,
+for example:
+
+size_t rank = 0;
+size_t capacity = 1000;
+BCL::CircularQueue<int> queue(rank, capacity);
+
+All nodes are able to push and pop to the queue.
+
+To push:
+
+int val = 12;
+bool success = queue.push(val);
+
+std::vector<int> vals = ...;
+bool success = queue.push(vals);
+
+To pop:
+
+int val;
+bool success = queue.pop(val);
+
+if (success) {
+  std::cout << "Popped the value " << val << std::endl;
+}
+
+std::vector<int> vals;
+bool success = queue.pop(vals);
+
+if (success) {
+  std::cout << "Popped a bunch of values." << std::endl;
+  print_vec(vals);
+}
+
+CircularQueue supports multiple levels of atomicity for both pushes and pops.
+By default, push() and pop() will use the highest levels of atomicity.
+Oftentimes, applications may require a lower level of atomicity.  In these
+cases, you may prompt push() or pop() function to select a faster implementation
+which will still be correct.
+
+You do this using an atomicity level object that can be optionally passed to the
+push() and pop() functions.
+
+The available options are:
+
+// Other ranks may perform pushes concurrent with this operation.
+BCL::CircularQueueAL::push
+// Other ranks may perform pops concurrent with this operation.
+BCL::CircularQueueAL::pop
+// No other ranks will perform queue operations concurrent with this operation.
+BCL::CircularQueueAL::none
+
+Here are some use cases.
+
+// An insert phase
+
+BCL::barrier();
+for (auto& val : vals) {
+  // The programmer guarantees that only pushes
+  // may happen concurrently.
+  queue.push(val, BCL::CircularQueueAL::push);
+}
+BCL::barrier();
+
+// A pop phase
+
+while (!queue.empty()) {
+  bool success;
+  int val;
+  // The programmer guarantees that only pops
+  // may happen concurrently.
+  success = queue.pop(val, BCL::CircularQueueAL::pop);
+  if (success) {
+    ..
+  }
+}
+
+BCL::barrier();

@@ -1,0 +1,45 @@
+# BCL Architecture Design Document
+
+## "Minimal Compilation Unit" Design
+
+BCL is designed to maximize the use of inlining.  One way it tries to accomplish
+this is by minimizing the number of compilation units.  All BCL functions are
+declared `inline` (1) so that the compiler might more readily choose to inline
+them, since it isn't forced to create external linkage, and (2) to avoid
+creating external linkage.  (2) will allow each compilation unit to define its
+own inlined functions.
+
+BCL is currently implemented only in header files (we will soon move variables
+to a single compilation unit).
+
+## Header Include Order
+
+1) GlobalPtr.hpp, GlobalRef.hpp
+   * Defines pointers, references.
+   * References forward declare `rget`, and `rput`.
+2) {backend}/backend.hpp
+   * Uses global pointers, defines `read`, `write`, etc.
+     See docs/backends/backend.txt for details.
+3) comm.hpp
+   * Defines `rget`, `rput`, etc.  Uses backend functions.
+4) teams.hpp
+   * If it has not already been included.
+   * Does not including anythign else; forward declares backend `rank`, `nprocs`
+5) util.hpp
+   * Utilities, may use anything in core, etc.
+
+## Global Variables
+
+Global variables include:
+
+uint64_t shared_segment_size;
+void *smem_base_ptr;
+
+(owned by BCL Core)
+
+bool bcl_finalized;
+
+uint64_t my_rank;
+uint64_t my_nprocs;
+
+(owned by backend -- backends may also allocate other global variables)

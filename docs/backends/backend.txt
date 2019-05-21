@@ -1,0 +1,42 @@
+# BCL Backends
+
+BCL backends need to implement a set number of communication primitives.  These
+functions should all be included with the `backend.hpp` header file included by
+`bcl.hpp`.  For reference, we list the header files that define these functions
+in the standard BCL backends.
+
+## Communication - backend/comm.hpp
+
+template <typename T>
+inline void read(const GlobalPtr <T> &src, T *dst, const size_t size);
+
+template <typename T>
+inline void write(const T *src, const GlobalPtr <T> &dst, const size_t size);
+
+template <typename T>
+inline BCL::request async_read(const GlobalPtr <T> &src, T *dst, const size_t size);
+
+template <typename T>
+inline BCL::request async_write(const T *src, const GlobalPtr <T> &dst, const size_t size);
+
+## Atomics - backend/atomics.hpp
+
+template <typename T>
+inline T compare_and_swap(BCL::GlobalPtr<T> ptr, T old_val, T new_val);
+
+## Backend initialization - backend/backend.hpp
+
+inline void init(uint64_t shared_segment_size = 256);
+
+inline void finalize();
+
+inline void barrier();
+
+inline void flush();
+
+inline bool finalized();
+
+
+inline size_t rank();
+
+inline size_t nprocs();

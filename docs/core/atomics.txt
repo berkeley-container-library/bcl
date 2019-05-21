@@ -1,0 +1,23 @@
+
+template <typename T>
+T compare_and_swap(BCL::GlobalPtr<T> ptr, T old_val, T new_val);
+
+Atomic compare-and-swap operation on the value stored at ptr.
+
+The user issues a "guess" (`old_val`) at the current value stored in ptr.  If
+the guess is correct (*ptr == old_val), then the value will be atomically
+swapped new_val.
+
+T must be a signed or unsigned 32 or 64-bit integer.
+
+template <typename T>
+T fetch_and_op(BCL::GlobalPtr<T> ptr, T val, BCL::atomic_op op);
+
+Atomic fetch-and-op operation on the value stored at ptr, using operand `val`
+and operation `op`.
+
+This function performs the operation
+
+  *ptr = op(*ptr, val);
+
+and returns the old value stored at ptr.  op must be a BCL::atomic_op.

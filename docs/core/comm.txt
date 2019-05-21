@@ -1,0 +1,9 @@
+# Communication
+
+This file covers communication operations in BCL, as defined in core/comm.hpp.
+
+template <typename T>
+inline T rget(const GlobalPtr <T> &src);
+
+template <typename T>
+inline void rput(const T &src, const GlobalPtr <T> &dst);
