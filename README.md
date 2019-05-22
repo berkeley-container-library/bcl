@@ -7,15 +7,13 @@ with interfaces similar to those in STL containers.
 ```cpp
   BCL::HashMap<std::string, int> map(1000);
 
-  map.insert(std::to_string(BCL::rank()), BCL::rank());
+  map[std::to_string(BCL::rank())] = BCL::rank();
 
   BCL::barrier();
 
   if (BCL::rank() == 0) {
     for (size_t i = 0; i < BCL::nprocs(); i++) {
-      int value;
-      bool success = map.find(std::to_string(i), value);
-      assert(success);
+      int value = *map.find(std::string(i), value);
       printf("Got key, val %s, %lu\n",
              std::to_string(i).c_str(), value);
     }
