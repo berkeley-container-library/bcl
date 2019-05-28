@@ -222,6 +222,13 @@ namespace BCL {
       container_ptr_rget(data + idx, vals.data(), size);
     }
 
+    void get(size_t idx, T *vals, const size_t size) {
+      if (idx + size > this->size()) {
+        throw std::runtime_error("Array: out of bounds access");
+      }
+      container_ptr_rget(data + idx, vals, size);
+    }
+
     void put(size_t idx, const T &val) {
       if (idx >= size()) {
         throw std::runtime_error("Array: out of bounds access");
