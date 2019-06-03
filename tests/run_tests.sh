@@ -20,12 +20,26 @@ fi
 
 echo "Testing backends $backends"
 
+rv=0
+
 for backend in $backends
 do
   for i in $(find . -iname "Makefile")
   do
     cd $(dirname $i)
-    BCL_BACKEND=$backend $make_cmd clean test
+    BCL_BACKEND=$backend $make_cmd clean test | tee log.dat
+    grep "FAIL" log.dat
+
+    return_value=$?
+
+    if [ $return_value -ne 1 ]
+    then
+      echo "Just FAIL'D test."
+      rv=1
+    fi
+    rm log.dat
     cd $base_dir
   done
 done
+
+exit $rv

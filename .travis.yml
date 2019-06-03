@@ -1,0 +1,24 @@
+install:
+
+language: c++
+
+script: mkdir pkg && cd pkg && wget "https://gasnet.lbl.gov/EX/GASNet-2019.3.0.tar.gz" && tar -xf GASNet-2019.3.0.tar.gz && mv GASNet-2019.3.0 GASNet-2019.3.0-source && mkdir GASNet-2019.3.0 && mkdir GASNet-2019.3.0-build && cd GASNet-2019.3.0-build && ../GASNet-2019.3.0-source/configure --prefix=$(readlink -f $PWD/../GASNet-2019.3.0) --disable-ibv --disable-udp --disable-smp && make -j2 && make install && cd .. && rm -rf GASNet-2019.3.0-source GASNet-2019.3.0-build GASNet-2019.3.0.tar.gz && cd .. && cd tests && OMPI_CXX=g++-8 gasnet_prefix=$PWD/../pkg/GASNet-2019.3.0 ./run_tests.sh mpi gasnet_ex
+
+compiler:
+  - gcc
+
+matrix:
+  include:
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-8
+            - libopenmpi-dev
+            - openmpi-bin
+            - wget
+
+before_install:
+  - eval "${MATRIX_EVAL}"
