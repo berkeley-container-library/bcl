@@ -24,7 +24,7 @@ inline void barrier() {
   BCL::barrier();
 }
 
-inline void init(size_t shared_segment_size = 16) {
+inline void init(size_t shared_segment_size = 256) {
   BCL::cuda::shared_segment_size = 1024*1024*shared_segment_size;
 
   nvshmemx_init_attr_t attr;
