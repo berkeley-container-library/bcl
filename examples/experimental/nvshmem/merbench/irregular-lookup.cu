@@ -35,11 +35,11 @@ void run_kernel() {
   // 1) Global data size, in bytes.
   size_t global_data_size = size_t(2)*1024*1024*size_t(1024);
   // 2) Transfer Size `S` of each "insert", in bytes.
-  constexpr size_t transfer_data_size = 1000;
+  constexpr size_t transfer_data_size = 65536;
   // 3a) Number of threads to launch, per processor
   size_t num_threads = 10000;
   // 3b) Number of lookups to perform, per thread
-  size_t num_lookups = 100;
+  size_t num_lookups = 10;
 
   BCL::print("Creating random device vector...\n");
   auto rand_nums = random_device_vector<size_t>(num_threads*2*num_lookups);
@@ -94,6 +94,8 @@ void run_kernel() {
                 BCL::cuda::flush();
               }
             }, transfer_size, num_lookups, rand_nums, buffer, array);
+
+  cudaDeviceSynchronize();
 
   BCL::cuda::barrier();
   auto end = std::chrono::high_resolution_clock::now();
