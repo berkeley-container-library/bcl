@@ -2,7 +2,7 @@ SHELL='bash'
 
 # XXX: Modify BCLROOT if you move this Makefile
 #      out of an examples/* directory.
-BCLROOT=$(PWD)/../../../
+BCLROOT=$(PWD)/../../../../
 
 BACKEND = $(shell echo $(BCL_BACKEND) | tr '[:lower:]' '[:upper:]')
 
@@ -28,7 +28,7 @@ else
   BCLFLAGS = -lpthread -I$(BCLROOT)
   CXX=mpic++
 
-  BCL_RUN=mpirun --oversubscribe -n 2
+  BCL_RUN=mpirun --oversubscribe -n 4
 endif
 
 CXXFLAGS = -std=gnu++17 $(BCLFLAGS)

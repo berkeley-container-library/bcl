@@ -1,3 +1,4 @@
+#include <string>
 #include <cassert>
 #include <cstdio>
 
@@ -32,6 +33,5 @@ int main(int argc, char** argv) {
 
   BCL::finalize_rpc();
   BCL::finalize();
-
   return 0;
 }
