@@ -1,6 +1,5 @@
 #include <cassert>
-
-#include<stdio.h>
+#include <cstdio>
 
 #include <bcl/bcl.hpp>
 #include <bcl/containers/experimental/rpc.hpp>
@@ -17,26 +16,22 @@ int main(int argc, char** argv) {
   int b = 7;
 
 
-  // basic buffered RPC test
-  // if (BCL::rank() == 0) {
-  for (int i = 0 ; i < 400; i++) {
-    BCL::buffered_rpc(i % 2, fn, a, b);
+  using rv = decltype(BCL::buffered_rpc(0, fn, a, b));
+  std::vector<rv> futures;
+  if (BCL::rank() == 1) {
+    for (int i = 0 ; i < 10000; i++) {
+      auto f = BCL::buffered_rpc(0, fn, a, b);
+      futures.push_back(std::move(f));
+    }
   }
-    // BCL::buffered_rpc(1, fn, a, b);
-    // BCL::buffered_rpc(1, fn, a, b);
-    // BCL::buffered_rpc(1, fn, a, b);
-  // }
 
-  // BCL::flush_signal();
-  // basic RPC test
-  // rpc_t test_rpc(0);
-  // test_rpc.load(fn, a, b);
-  // run_rpc(test_rpc);
-
-
-  BCL::barrier();
+  for (auto& f : futures) {
+    int val = f.get();
+    assert(val == a*b);
+  }
 
   BCL::finalize_rpc();
   BCL::finalize();
+
   return 0;
 }
