@@ -19,9 +19,14 @@ int main(int argc, char** argv) {
 
   // basic buffered RPC test
   // if (BCL::rank() == 0) {
-  for (int i = 0 ; i < 200; i++) {
-    BCL::buffered_rpc(1, fn, a, b);
+  for (int i = 0 ; i < 100; i++) {
+    BCL::buffered_rpc(i % 2, fn, a, b);
   }
+
+  BCL::barrier();
+
+  BCL::flush_signal();
+  BCL::barrier();
     // BCL::buffered_rpc(1, fn, a, b);
     // BCL::buffered_rpc(1, fn, a, b);
     // BCL::buffered_rpc(1, fn, a, b);

@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
   // basic buffered RPC test
   // if (BCL::rank() == 0) {
   for (int i = 0 ; i < 400; i++) {
-    BCL::buffered_rpc(1, fn, a, b);
+    BCL::buffered_rpc(i % 2, fn, a, b);
   }
     // BCL::buffered_rpc(1, fn, a, b);
     // BCL::buffered_rpc(1, fn, a, b);
@@ -34,6 +34,7 @@ int main(int argc, char** argv) {
   // run_rpc(test_rpc);
 
 
+  BCL::barrier();
 
   BCL::finalize_rpc();
   BCL::finalize();
