@@ -5,6 +5,27 @@
 #include <bcl/bcl.hpp>
 #include <bcl/containers/experimental/rpc.hpp>
 
+template <typename Future>
+bool ready(std::vector<Future>& futures) {
+  for (auto& future : futures) {
+    if (future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <typename Future>
+void future_barrier(std::vector<Future>& futures) {
+  bool success = false;
+  do {
+    BCL::flush_rpc();
+    size_t success_count = ready(futures);
+    success_count = BCL::allreduce<size_t>(success_count, std::plus<size_t>{});
+    success = success_count == BCL::nprocs();
+  } while (!success);
+}
+
 int main(int argc, char** argv) {
   BCL::init();
   BCL::init_rpc();
@@ -25,6 +46,10 @@ int main(int argc, char** argv) {
       futures.push_back(std::move(f));
     }
   }
+
+  BCL::flush_signal();
+
+  future_barrier(futures);
 
   for (auto& f : futures) {
     int val = f.get();
