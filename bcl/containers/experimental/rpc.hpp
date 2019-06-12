@@ -213,7 +213,7 @@ auto rpc(size_t rank, Fn&& fn, Args&&... args) {
 
   do {
     rpc_mutex_.lock();
-    success = rpc_results_.find(rpc_nonce_) == rpc_results_.end();
+    success = rpc_results_.find(rpc_nonce_) != rpc_results_.end();
     if (!success) {
       rpc_mutex_.unlock();
     }
@@ -244,7 +244,7 @@ public:
     bool success = false;
     do {
       rpc_mutex_.lock();
-      success = rpc_results_.find(rpc_id_) == rpc_results_.end();
+      success = rpc_results_.find(rpc_id_) != rpc_results_.end();
       if (!success) {
         rpc_mutex_.unlock();
       }
