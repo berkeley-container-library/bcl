@@ -34,7 +34,8 @@ class device_vector_reference;
 template <typename D>
 class const_device_vector_reference;
 
-template <typename T>
+template <typename T,
+          typename Allocator = BCL::cuda::cuda_allocator<T>>
 class device_vector {
 public:
 
@@ -43,6 +44,7 @@ public:
   using difference_type = std::ptrdiff_t;
   using reference_type = device_vector_reference<device_vector<value_type>>;
   using const_reference_type = const_device_vector_reference<device_vector<value_type>>;
+  using allocator_type = Allocator;
 
   __host__ __device__ device_vector(const device_vector& other) {
     shallow_copy(other);
@@ -70,7 +72,7 @@ public:
                          const T& value = T()) {
     capacity_ = count;
     size_ = count;
-    cudaMalloc(&d_ptr_, sizeof(value_type)*count);
+    d_ptr_ = allocator_type{}.allocate(count);
     std::vector<value_type> v(count, value);
 
     cudaMemcpy(d_ptr_, v.data(), sizeof(value_type)*v.size(), cudaMemcpyHostToDevice);
@@ -78,14 +80,13 @@ public:
 
   void resize(size_type count) {
     if (count != capacity()) {
-      value_type* new_device_ptr;
-      cudaMalloc(&new_device_ptr, sizeof(value_type)*count);
+      value_type* new_device_ptr = allocator_type{}.allocate(count);
       cudaMemcpy(new_device_ptr, d_ptr_, sizeof(value_type)*std::min(count, capacity()),
                  cudaMemcpyDeviceToDevice);
 
       value_type* old_ptr = d_ptr_;
       d_ptr_ = new_device_ptr;
-      cudaFree(old_ptr);
+      allocator_type{}.deallocate(old_ptr, capacity());
       capacity_ = count;
       size_ = count;
     }
@@ -133,7 +134,7 @@ public:
   }
 
   void destroy() {
-    cudaFree(d_ptr_);
+    allocator_type{}.deallocate(d_ptr_, capacity());
   }
 
 private:

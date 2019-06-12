@@ -6,6 +6,7 @@
 #include <bcl/bcl.hpp>
 #include "malloc.hpp"
 #include "comm.hpp"
+#include "allocator.hpp"
 
 namespace BCL {
 
