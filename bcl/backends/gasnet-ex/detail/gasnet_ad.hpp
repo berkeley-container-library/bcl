@@ -60,7 +60,7 @@ gex_Event_t shim_gex_AD_OpNB<uint64_t>(
 }
 
 void init_atomics() {
-  gex_OP_t ops = GEX_OP_FADD | GEX_OP_FCAS | GEX_OP_GET | GEX_OP_FXOR | GEX_OP_FOR;
+  gex_OP_t ops = GEX_OP_FADD | GEX_OP_FCAS | GEX_OP_GET | GEX_OP_FXOR | GEX_OP_FOR | GEX_OP_FAND;
   gex_Flags_t flags = 0;
   gex_AD_Create(&ad_i32, tm, get_gex_dt<int32_t>(), ops, flags);
 }
