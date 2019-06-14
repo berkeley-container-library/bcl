@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
   using rv = decltype(BCL::buffered_rpc(0, fn, a, b));
   std::vector<rv> futures;
   if (BCL::rank() == 1) {
-    for (int i = 0 ; i < 10000; i++) {
+    for (int i = 0 ; i < 1000; i++) {
       auto f = BCL::buffered_rpc(0, fn, a, b);
       futures.push_back(std::move(f));
     }

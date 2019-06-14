@@ -1,19 +1,3 @@
-
-/**
- * 
- * Notes
- * 
- * push_atomic_impl_ not in ChecksumQueue, replaced with push
- * 
- * unable to change CircularQueues in service_rpc since they require push_future
- * 
- * unable to change
- * 
- * 
- * 
- * 
- **/
-
 #pragma once
 
 #include <bcl/containers/CircularQueue.hpp>
