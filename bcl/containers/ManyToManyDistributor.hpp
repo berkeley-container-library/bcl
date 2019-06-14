@@ -7,10 +7,10 @@
 
 namespace BCL {
 
-template <typename T>
+template <typename T, typename Serialize = BCL::serialize<T>>
 class ManyToManyDistributor {
   std::vector<std::vector<T>> buffers;
-  std::vector<BCL::FastQueue<T>> queues;
+  std::vector<BCL::FastQueue<T, Serialize>> queues;
 
   std::list<BCL::future<std::vector<T>>> futures;
 
@@ -44,7 +44,7 @@ public:
     }
 
     for (size_t rank = 0; rank < BCL::nprocs(this->team()); rank++) {
-      queues.push_back(BCL::FastQueue<T>(this->team().to_world(rank), queue_size));
+      queues.push_back(BCL::FastQueue<T, Serialize>(this->team().to_world(rank), queue_size));
     }
   }
 
@@ -60,7 +60,7 @@ public:
     }
 
     for (size_t rank = 0; rank < BCL::nprocs(team()); rank++) {
-      queues.push_back(BCL::FastQueue<T>(team().to_world(rank), queue_size));
+      queues.push_back(BCL::FastQueue<T, Serialize>(team().to_world(rank), queue_size));
     }
   }
 
