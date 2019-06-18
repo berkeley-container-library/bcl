@@ -38,7 +38,7 @@ struct ChecksumQueue {
   uint64_t my_host;
   size_t my_capacity;
 
-  size_t reserve_end;
+  size_t reserve_end = 0;
   int head_buf = 0;
   int tail_buf = 0;
 
@@ -244,6 +244,74 @@ struct ChecksumQueue {
     }
     BCL::flush();
     return true;
+  }
+
+  using queue_type = ChecksumQueue;
+  class push_future {
+  public:
+    push_future(std::vector<T>&& value, size_t old_tail, size_t new_tail, queue_type& queue)
+      : value_(new std::vector<T>(std::move(value))), old_tail_(old_tail),
+        new_tail_(new_tail), queue_(&queue)
+    {
+    }
+
+    push_future() = delete;
+    push_future(const push_future&) = delete;
+    push_future& operator=(const push_future&) = delete;
+    push_future(push_future&&) = default;
+    push_future& operator=(push_future&&) = default;
+
+    bool is_ready() {
+      if (finished_) {
+        return true;
+      }
+
+      if (new_tail_ > queue_->capacity() + queue_->head_buf - queue_->reserve_end) {
+        queue_->head_buf = BCL::fetch_and_op<int>(queue_->head, 0, BCL::plus<int>{});
+        if (new_tail_ > queue_->capacity() + queue_->head_buf - queue_->reserve_end) {
+          return finished_;
+        }
+      }
+
+      finished_ = true;
+
+      std::vector<hashedData<T>> hvals;
+      hvals.resize((*value_).size());
+      for (int ii = 0; ii < (*value_).size(); ++ii) {
+        hvals[ii] = {
+          (*value_)[ii], queue_->get_hash((*value_)[ii], old_tail_ + ii)
+        };
+        //printf("Pushing @%d v%d h%d\n", old_tail + ii, hvals[ii].data, hvals[ii].hash);
+      }
+      if ((old_tail_ % queue_->capacity()) + (*value_).size() <= queue_->capacity()) {
+        // Contiguous write
+        queue_->data.put(old_tail_ % queue_->capacity(), hvals);
+        //printf("Contig write: (%d->%d), %d %d\n", old_tail, old_tail + hvals.size(),
+        //	hvals[0].data, hvals[0].hash);
+      } else {
+        // Split write
+        size_t first_put_nelem = queue_->capacity() - old_tail_ % queue_->capacity();
+        //printf("Splitting write: (%d->%d), (0->%d), %d %d\n", old_tail, capacity(),
+        //	first_put_nelem, hvals[0].data, hvals[0].hash);
+        queue_->data.put(old_tail_ % queue_->capacity(), hvals.data(), first_put_nelem);
+        queue_->data.put(0, hvals.data() + first_put_nelem, hvals.size() - first_put_nelem);
+      }
+      BCL::flush();
+
+      return finished_;
+    }
+
+  private:
+    std::unique_ptr<std::vector<T>> value_;
+    queue_type* queue_;
+    int old_tail_, new_tail_;
+    bool finished_ = false;
+  };
+
+  auto async_push(std::vector<T>&& vals) {
+    int old_tail = BCL::fetch_and_op<int>(tail, vals.size(), BCL::plus<int>{});
+    int new_tail = old_tail + vals.size();
+    return push_future(std::move(vals), old_tail, new_tail, *this);
   }
 
   bool pop(T& val, bool wait_on_underrun = false) {
