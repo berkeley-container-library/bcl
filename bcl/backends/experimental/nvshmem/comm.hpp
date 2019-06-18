@@ -74,6 +74,16 @@ inline __device__ void write_block(const T* src, const BCL::cuda::ptr<T>& dst, s
 }
 
 template <typename T>
+inline __device__ void read_warp(const BCL::cuda::ptr<T>& src, T* dst, size_t count) {
+  nvshmemx_getmem_warp(dst, src.rptr(), sizeof(T)*count, src.rank_);
+}
+
+template <typename T>
+inline __device__ void write_warp(const T* src, const BCL::cuda::ptr<T>& dst, size_t count) {
+  nvshmemx_putmem_warp(dst.rptr(), src, sizeof(T)*count, dst.rank_);
+}
+
+template <typename T>
 inline T rget(const BCL::cuda::ptr<T>& dst) {
   T rv;
   read(dst, &rv, 1);
@@ -113,6 +123,18 @@ inline __device__ void memcpy_block(void* dst, const BCL::cuda::ptr<void>& src, 
   read_block(reinterpret_pointer_cast<char>(src),
              (char*) dst,
              n);
+}
+
+inline __device__ void memcpy_warp(const BCL::cuda::ptr<void>& dst, const void* src, size_t n) {
+  write_warp((char*) src,
+             reinterpret_pointer_cast<char>(dst),
+             n);
+}
+
+inline __device__ void memcpy_warp(void* dst, const BCL::cuda::ptr<void>& src, size_t n) {
+  read_warp(reinterpret_pointer_cast<char>(src),
+            (char*) dst,
+            n);
 }
 
 } // end cuda

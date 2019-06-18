@@ -1,4 +1,5 @@
 #include <cuda.h>
+#include <bcl/backends/experimental/nvshmem/backend.hpp>
 #include <bcl/containers/experimental/cuda/sequential/device_vector.cuh>
 #include <bcl/containers/experimental/cuda/launch_kernel.cuh>
 

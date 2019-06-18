@@ -105,5 +105,6 @@ public:
   }
 };
 
-}
-}
+} // end cuda
+
+} // end BCL
