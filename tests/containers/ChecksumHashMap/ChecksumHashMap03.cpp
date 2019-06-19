@@ -3,7 +3,7 @@
 #include <array>
 
 #include <bcl/bcl.hpp>
-#include <bcl/containers/HashMap.hpp>
+#include <bcl/containers/experimental/ChecksumHashMap.hpp>
 
 int main(int argc, char** argv) {
   BCL::init();
@@ -12,14 +12,13 @@ int main(int argc, char** argv) {
 
   using array_t = std::array<int, 100>;
 
-  BCL::HashMap<int, array_t> map(1000);
+  BCL::ChecksumHashMap<int, array_t> map(1000);
 
   array_t my_array;
 
   my_array.fill(BCL::rank());
 
-  auto result = map.insert_or_assign(BCL::rank(), my_array);
-  bool success = result.second;
+  bool success = map.insert(BCL::rank(), my_array);
   assert(success);
 
   BCL::barrier();

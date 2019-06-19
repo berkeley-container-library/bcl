@@ -9,8 +9,7 @@ int main(int argc, char** argv) {
 
   BCL::ChecksumHashMap<std::string, int> map(1000);
 
-  auto result = map.insert(std::to_string(BCL::rank()), BCL::rank());
-  bool success = result.second;
+  bool success = map.insert(std::to_string(BCL::rank()), BCL::rank());
   assert(success);
 
   BCL::barrier();
@@ -18,9 +17,10 @@ int main(int argc, char** argv) {
   if (BCL::rank() == 0) {
     for (size_t i = 0; i < BCL::nprocs(); i++) {
       int value;
-      auto val = map.find(std::to_string(i));
-      assert(success);
+      success = map.find_value(std::to_string(i), value);
+      assert(success && value == i);
     }
+    std::cout << "test pass!" << std::endl;
   }
 
   BCL::finalize();

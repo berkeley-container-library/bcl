@@ -14,6 +14,7 @@
 #include <bcl/containers/HashMap/HashMapEntry.hpp>
 #include <bcl/containers/HashMap/HashMapFuture.hpp>
 #include <bcl/containers/HashMap/HashMapIterators.hpp>
+#include <bcl/core/util/Backoff.hpp>
 
 namespace BCL {
 
@@ -27,6 +28,7 @@ template <
   typename Key,
   typename T,
   typename Hash = std::hash<Key>,
+  typename Checksum = std::hash<T>,
   typename KeySerialize = BCL::serialize <Key>,
   typename HashedValSerialize = BCL::serialize <HashedData<T>>
   >
@@ -46,14 +48,16 @@ public:
   using KPTR = typename BCL::GlobalPtr <BCL::Container <key_type, KeySerialize>>;
   using VPTR = typename BCL::GlobalPtr <BCL::Container <mapped_type, HashedValSerialize>>;
 
+  constexpr static int free_flag = 0;
   constexpr static int reserved_flag = 1;
-  constexpr static int available_flag = 2;
+  constexpr static int ready_flag = 2;
 
 private:
     size_type capacity_;
     size_type local_capacity_;
     std::unique_ptr<BCL::Team> team_ptr_;
     Hash hash_fn_;
+    Checksum checksum_fn_;
     std::vector <BCL::GlobalPtr <HME>> hash_table_;
 
 public:
@@ -64,7 +68,7 @@ public:
   ChecksumHashMap &operator=(ChecksumHashMap&&) = delete;
 
   // Initialize a HashMap of at least size size.
-  ChecksumHashMap(size_type capacity, const BCL::Team& team_ = BCL::WorldTeam()) : capacity_(capacity), team_ptr_(team_.clone()) {
+  explicit ChecksumHashMap(size_type capacity, const BCL::Team& team_ = BCL::WorldTeam()) : capacity_(capacity), team_ptr_(team_.clone()) {
     local_capacity_ = (capacity_ + BCL::nprocs(team()) - 1) / BCL::nprocs(team());
     hash_table_.resize(BCL::nprocs(team()), nullptr);
 
@@ -95,33 +99,31 @@ public:
         }
       }
     }
-    delete team_ptr_;
   }
 
   // TODO: return iterator
-  bool insert(const key_type& k, const mapped_type& obj,
+  bool insert(const key_type& k, const T& obj,
                         HashMapAL atomicity_level =
                         HashMapAL::insert | HashMapAL::find) {
-    bool success;
-    if (atomicity_level & HashMapAL::insert_find) {
+    bool success = false;
+    if (atomicity_level & HashMapAL::insert) {
       success = insert_atomic_impl_(k, obj);
-    } else /* atomicity_level == HashMapAL::none */{
-      success = local_nonatomic_insert(HME{k, obj});
+    } else {
+      success = insert_nonatomic_impl_(k, obj);
     }
     return success;
   }
 
   // find value
-  T find_value(const key_type& k, HashMapAL atomicity_level =
+  bool find_value(const key_type& k, T &obj, HashMapAL atomicity_level =
               HashMapAL::insert | HashMapAL::find) {
-    T obj;
-    bool success;
-    if (atomicity_level & HashMapAL::insert_find) {
+    bool success = false;
+    if (atomicity_level & HashMapAL::insert) {
       success = find_atomic_impl_(k, obj);
-    } else /* atomicity_level == HashMapAL::none */{
-      success = local_nonatomic_find(HME{k, obj});
+    } else {
+      success = find_nonatomic_impl_(k, obj);
     }
-    return std::make_pair(false, success);
+    return success;
   }
 
   BlindHashMapIterator<ChecksumHashMap> find(const Key& key,
@@ -174,9 +176,17 @@ public:
     return local_capacity_;
   }
 
+  auto arfind(const Key& key) {
+    return std::move(BCL::HMF<decltype(*this)>(key, *this));
+  }
+
+  future<HME> arget_entry(size_type slot) {
+    return std::move(BCL::arget(slot_ptr(slot)));
+  }
+
 private:
   size_t get_hash(const T& val, int loc) {
-    size_t hashed = hash_fn(val);
+    size_t hashed = checksum_fn_(val);
     bool sense = (loc / capacity()) % 2;
     // This occurs if you add an int=0. This is problematic since the
     // default data is zero, so processors can pop unwritten data if zero hashes to zero.
@@ -202,8 +212,7 @@ private:
       size_type slot = (hash + get_probe(probe++)) % capacity();
       success = request_slot(slot, key);
       if (success) {
-        const HashedData<T> hashedVal(val, get_hash(val, slot));
-        HME entry(key, hashedVal);
+        HME entry(key, HashedData<T>{val, get_hash(val, slot)});
         set_entry(slot, entry);
         ready_slot(slot);
       }
@@ -212,8 +221,8 @@ private:
   }
 
     // Nonatomic with respect to remote inserts!
-  bool local_nonatomic_insert(const HME &entry) {
-    size_t hash = hash_fn_(entry.get_key());
+  bool insert_nonatomic_impl_(const Key &key, const T &val) {
+    size_t hash = hash_fn_(key);
     size_type probe = 0;
     bool success = false;
     auto* my_segment_ptr = hash_table_[BCL::rank(team())].local();
@@ -222,13 +231,13 @@ private:
       size_type node_slot = slot - (local_capacity_*BCL::rank(team()));
       if (node_slot >= local_capacity_ || node_slot < 0) {
         break;
-      } else if (my_segment_ptr[node_slot].used == available_flag) {
-        my_segment_ptr[node_slot].set_key(entry.get_key());
-        my_segment_ptr[node_slot].set_val(entry.get_val());
+      } else if (my_segment_ptr[node_slot].used == free_flag) {
+        my_segment_ptr[node_slot].set_key(key);
+        my_segment_ptr[node_slot].set_val(HashedData<T>{val, get_hash(val, slot)});
         success = true;
-      } else if (my_segment_ptr[node_slot].used == available_flag &&
-                 my_segment_ptr[node_slot].get_key() == entry.get_key()) {
-        my_segment_ptr[node_slot].set_val(entry.get_val());
+      } else if (my_segment_ptr[node_slot].used == ready_flag &&
+                 my_segment_ptr[node_slot].get_key() == key) {
+        my_segment_ptr[node_slot].set_val(HashedData<T>{val, get_hash(val, slot)});
         success = true;
       }
     } while (!success);
@@ -246,8 +255,7 @@ private:
       if (success) {
         HME entry = get_entry(slot);
         T new_val = fn(entry.get_val().val);
-        HashedData<T> new_hashedVal(new_val, get_hash((new_val, slot)));
-        entry.set_val(new_hashedVal);
+        entry.set_val(HashedData<T>(new_val, get_hash(new_val, slot)));
         set_entry(slot, entry);
         ready_slot(slot);
       }
@@ -259,26 +267,33 @@ private:
     size_t hash = hash_fn_(key);
     size_type probe = 0;
     bool success = false;
+    size_type slot;
     HME entry;
     int status;
     do {
-      size_type slot = (hash + get_probe(probe++)) % capacity();
-      entry = atomic_get_entry(slot);
+      slot = (hash + get_probe(probe++)) % capacity();
+      entry = get_entry(slot);
       status = entry.used;
-      if (status & ready_flag) {
+      if (status == ready_flag) {
         success = (entry.get_key() == key);
       }
-    } while (!success && !(status & free_flag) && probe < capacity());
+    } while (!success && status != free_flag && probe < capacity());
     if (success) {
-      val = entry.get_val();
-      return true;
+      Backoff backoff;
+      while(true) {
+        HashedData<T> hashedVal = entry.get_val();
+        if (hashedVal.hash == get_hash(hashedVal.data, slot)) {
+          val = hashedVal.data;
+          return true;
+        } else {
+          backoff.backoff();
+          backoff.increase_backoff_impl_();
+          entry = get_entry(slot);
+        }
+      }
     } else {
       return false;
     }
-  }
-
-  auto arfind(const Key& key) {
-    return std::move(BCL::HMF<decltype(*this)>(key, *this));
   }
 
   bool find_nonatomic_impl_(const Key &key, T &val) {
@@ -296,10 +311,50 @@ private:
       }
     } while (!success && status != free_flag && probe < capacity());
     if (success) {
-      val = entry.get_val();
+      val = entry.get_val().data;
       return true;
     } else {
       return false;
+    }
+  }
+
+  /*
+   Request slot for key.
+   free_flag -> reserved_flag
+   ready_flag -> reserved_flag
+  */
+  bool request_slot(size_type slot, const Key& key) {
+    bool success = false;
+    int current_value = free_flag;
+    int return_value;
+
+    do {
+      return_value = BCL::int_compare_and_swap(slot_used_ptr(slot),
+                                               current_value, reserved_flag);
+      if (current_value == return_value) {
+        success = true;
+      }
+
+      if (return_value & ready_flag || return_value & reserved_flag) {
+        current_value = ready_flag;
+      }
+    } while (!success);
+
+    // At this point, you have slot -> reserved_flag
+
+    if (return_value & ready_flag) {
+      HME entry = get_entry(slot);
+      if (entry.get_key() == key) {
+        return true;
+      } else {
+        // get wrong slot
+        int xor_value = 0x3;
+        BCL::fetch_and_op<int>(slot_used_ptr(slot), xor_value, BCL::xor_<int>{});
+        return false;
+      }
+    } else {
+      // empty
+      return true;
     }
   }
 
@@ -310,41 +365,6 @@ private:
     return BCL::rget(slot_ptr(slot));
   }
 
-  future<HME> arget_entry(size_type slot) {
-    return std::move(BCL::arget(slot_ptr(slot)));
-  }
-
-  // Upon return, read bit in slot is set.
-  HME atomic_get_entry(size_type slot) {
-    int old_value = ready_flag;
-
-    // Bits 2 -> 32 are for readers to mark reserved
-    int read_bit = 2 + (lrand48() % 30);
-
-    auto ptr = slot_used_ptr(slot);
-
-    int return_value = BCL::fetch_and_op<int>(ptr, (0x1 << read_bit), BCL::or_<int>{});
-
-    if (return_value & ready_flag && !(return_value & (0x1 << read_bit))) {
-      auto entry = get_entry(slot);
-      int rv = BCL::fetch_and_op<int>(ptr, ~(0x1 << read_bit), BCL::and_<int>{});
-      return entry;
-    } else if ((return_value & (0x3)) == 0) {
-      if (!(return_value & (0x1 << read_bit))) {
-        int rv = BCL::fetch_and_op<int>(ptr, ~(0x1 << read_bit), BCL::and_<int>{});
-      }
-      return HME{};
-    } else {
-      // OPTIMIZE: use return value to pick a reader bit "hint"
-      //           unclear if this will help, since reader bits
-      //           will only ever be flipped for around 4-6us.
-      if (!(return_value & (0x1 << read_bit))) {
-        int rv = BCL::fetch_and_op<int>(ptr, ~(0x1 << read_bit), BCL::and_<int>{});
-      }
-      return atomic_get_entry(slot);
-    }
-  }
-
   void set_entry(size_type slot, const HME &entry) {
     if (slot >= capacity()) {
       throw std::runtime_error("slot too large!!!");
@@ -352,33 +372,14 @@ private:
     BCL::memcpy(slot_ptr(slot), &entry, offsetof(HME, used));
   }
 
-  /*
-     Request slot for key.
-     free_flag -> reserved_flag
-     ready_flag -> reserved_flag
-  */
-  bool request_slot(size_type slot, const Key& key) {
-    bool success = false;
-    int return_value;
+  BCL::GlobalPtr<HME> slot_ptr(size_t slot) {
+    size_t node = slot / local_capacity_;
+    size_t node_slot = slot - node*local_capacity_;
+    return hash_table_[node] + node_slot;
+  }
 
-    do {
-      return_value = BCL::int_compare_and_swap(slot_used_ptr(slot),
-                                               available_flag, reserved_flag);
-      if (return_value == available_flag) {
-        success = true;
-      }
-    } while (!success);
-
-    // At this point, you have slot -> reserved_flag
-    HME entry = get_entry(slot);
-    if (entry.get_key() == key) {
-      return true;
-    } else {
-      // get collisions
-      BCL::int_compare_and_swap(slot_used_ptr(slot),
-                                reserved_flag, available_flag);
-      return false;
-    }
+  BCL::GlobalPtr<int> slot_used_ptr(size_t slot) {
+    return pointerto(used, slot_ptr(slot));
   }
 
   int slot_status(size_type slot) {
@@ -391,16 +392,6 @@ private:
 
   bool local_slot_ready(size_type slot) {
     return hash_table_[BCL::rank()].local()[slot].used == ready_flag;
-  }
-
-  BCL::GlobalPtr<HME> slot_ptr(size_t slot) {
-    size_t node = slot / local_capacity_;
-    size_t node_slot = slot - node*local_capacity_;
-    return hash_table_[node] + node_slot;
-  }
-
-  BCL::GlobalPtr<int> slot_used_ptr(size_t slot) {
-    return pointerto(used, slot_ptr(slot));
   }
 
   void ready_slot(size_type slot) {
