@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include "atomics.hpp"
 
 namespace BCL {
 

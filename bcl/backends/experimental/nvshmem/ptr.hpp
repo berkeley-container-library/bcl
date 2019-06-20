@@ -137,9 +137,14 @@ struct ptr {
 };
 
 template <typename T, typename U>
-__host__ __device__ ptr<T> reinterpret_pointer_cast(const ptr<U> ptr) noexcept {
+__host__ __device__ ptr<T> reinterpret_pointer_cast(const BCL::cuda::ptr<U> ptr) noexcept {
   return BCL::cuda::ptr<T>(ptr.rank_, ptr.ptr_);
 }
 
+}
+
+template <typename T, typename U>
+__host__ __device__ BCL::cuda::ptr<T> reinterpret_pointer_cast(const BCL::cuda::ptr<U> ptr) noexcept {
+  return BCL::cuda::ptr<T>(ptr.rank_, ptr.ptr_);
 }
 }
