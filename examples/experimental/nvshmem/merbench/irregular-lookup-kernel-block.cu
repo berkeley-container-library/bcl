@@ -7,7 +7,7 @@
 // #include <curand_kernel.h>
 
 template <typename T>
-__global__ void kernel(size_t num_warps, size_t transfer_size, size_t num_lookups,
+__global__ void kernel(size_t num_blocks, size_t transfer_size, size_t num_lookups,
             BCL::cuda::device_vector<size_t>& rand_nums,
             BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>& buffer,
             BCL::cuda::DArray<T>& array) {
@@ -17,17 +17,18 @@ __global__ void kernel(size_t num_warps, size_t transfer_size, size_t num_lookup
   size_t warp_id = tid / 32;
   size_t block_id = blockIdx.x;
 
-  if (warp_id >= num_warps) {
+  if (block_id >= num_blocks) {
     return;
   }
 
   for (size_t i = 0; i < num_lookups; i++) {
-    size_t dest_rank = rand_nums[warp_id + i*num_warps*2] % array.d_ptrs_.size();
-    size_t rand_loc = rand_nums[warp_id+num_warps + i*num_warps*2] % (array.local_size() - transfer_size);
+    size_t dest_rank = rand_nums[block_id + i*num_blocks*2] % array.d_ptrs_.size();
+
+    size_t rand_loc = rand_nums[block_id+num_blocks + i*num_blocks*2] % (array.local_size() - transfer_size);
 
     auto ptr = array.d_ptrs_[dest_rank].get() + rand_loc;
 
-    T* buf = buffer.data() + warp_id * transfer_size;
+    T* buf = buffer.data() + block_id * transfer_size;
     BCL::cuda::memcpy_warp(buf, ptr, transfer_size*sizeof(T));
     BCL::cuda::flush();
   }
@@ -51,7 +52,7 @@ BCL::cuda::device_vector<T> random_device_vector(size_t n,
     2) Transfer size
     3) Number of lookups
        a) Number of threads
-       b) Lookups per warp
+       b) Lookups per thread
 */
 
 template <typename T = int>
@@ -64,12 +65,13 @@ void run_kernel(size_t transfer_data_size) {
   size_t global_data_size = size_t(2)*1024*1024*size_t(1024);
   // 3a) Number of threads to launch, per processor
   size_t num_threads = 1000;
-  size_t num_warps = num_threads / 32;
-  // 3b) Number of lookups to perform, per warp
+  size_t threads_per_block = 32;
+  size_t num_blocks = (num_threads + threads_per_block - 1) / threads_per_block;
+  // 3b) Number of lookups to perform, per block
   size_t num_lookups = 20;
 
   BCL::print("Creating random device vector...\n");
-  auto rand_nums = random_device_vector<size_t>(num_warps*2*num_lookups);
+  auto rand_nums = random_device_vector<size_t>(num_blocks*2*num_lookups);
 
   size_t global_size = global_data_size / sizeof(T);
   size_t transfer_size = transfer_data_size / sizeof(T);
@@ -80,27 +82,23 @@ void run_kernel(size_t transfer_data_size) {
   BCL::cuda::DArray<T> array(global_size);
   BCL::print("Created DArray...\n");
 
-  BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> buffer(transfer_size * num_warps);
+  BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> buffer(transfer_size * num_blocks);
 
-  BCL::print("Creating buffer of size %lu\n", transfer_size * num_warps);
+  BCL::print("Creating buffer of size %lu\n", transfer_size * num_blocks);
 
   BCL::cuda::barrier();
   auto begin = std::chrono::high_resolution_clock::now();
   BCL::print("Beginning operation...\n");
 
-  size_t threads_per_block = 1024;
-
-  size_t num_blocks = (num_threads + threads_per_block - 1) / threads_per_block;
-
   kernel<<<num_blocks, threads_per_block>>>
-           (num_warps, transfer_size, num_lookups, rand_nums, buffer, array);
+           (num_blocks, transfer_size, num_lookups, rand_nums, buffer, array);
 
   cudaDeviceSynchronize();
 
   BCL::cuda::barrier();
   auto end = std::chrono::high_resolution_clock::now();
   double duration = std::chrono::duration<double>(end - begin).count();
-  size_t transferred_data = transfer_data_size * num_warps * num_lookups * BCL::nprocs();
+  size_t transferred_data = transfer_data_size * num_blocks * num_lookups * BCL::nprocs();
   double bw = 1.0e-9*(transferred_data / duration);
   double bwpn = bw / BCL::nprocs();
   BCL::print("Ended in %lf seconds.\n", duration);
