@@ -200,6 +200,67 @@ struct ChecksumQueue {
     return true;
   }
 
+  bool push_atomic_impl_(const std::vector <T>& vals, bool synchronized = false) {
+    if (vals.size() == 0) {
+      return true;
+    }
+
+    int old_tail = BCL::fetch_and_op<int>(tail, vals.size(), BCL::plus<int>{});
+    int new_tail = old_tail + vals.size();
+
+    if (new_tail - head_buf > capacity() - reserve_end) {
+      // head_buf = BCL::rget(reserved_head);
+      if (synchronized) {
+        Backoff backoff;
+        while (new_tail - head_buf > capacity() - reserve_end) {
+          head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
+          if (new_tail - head_buf > capacity()) {
+            backoff.backoff();
+          }
+        }
+      } else {
+        head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
+      }
+      if (new_tail - head_buf > capacity() - reserve_end) {
+        BCL::fetch_and_op<int>(tail, -vals.size(), BCL::plus<int>{});
+        return false;
+      }
+    }
+    std::vector<hashedData<T>> hvals;
+    hvals.resize(vals.size());
+    for (int ii = 0; ii < vals.size(); ++ii) {
+      hvals[ii] = {
+        vals[ii], get_hash(vals[ii], old_tail + ii)
+      };
+      //printf("Pushing @%d v%d h%d\n", old_tail + ii, hvals[ii].data, hvals[ii].hash);
+    }
+    if ((old_tail % capacity()) + vals.size() <= capacity()) {
+      // One contiguous write to 1's
+      // 00000000000001111
+      data.put(old_tail % capacity(), hvals);
+    } else {
+      // "Split write:" to 1's
+      // 11111000000001111
+      size_t first_put_nelem = capacity() - old_tail % capacity();
+      data.put(old_tail % capacity(), hvals.data(), first_put_nelem);
+      data.put(0, hvals.data() + first_put_nelem, hvals.size() - first_put_nelem);
+    }
+    BCL::flush();
+    // int rv;
+    // Backoff backoff;
+    // do {
+    //   /*
+    //   fprintf(stderr, "(%lu) in CAS loop. reserved_tail %lu -> %lu\n", BCL::rank(),
+    //           old_tail, new_tail);
+    //           */
+    //   rv = BCL::compare_and_swap<int>(reserved_tail, old_tail, new_tail);
+    //   if (rv != old_tail) {
+    //     backoff.backoff();
+    //   }
+    // } while (rv != old_tail);
+    return true;
+  }
+
   bool push(const std::vector<T> &vals, bool wait_on_overrun = false) {
     if (vals.size() == 0) { return true;  }
     int old_tail = BCL::fetch_and_op<int>(tail, vals.size(), BCL::plus<int>{});

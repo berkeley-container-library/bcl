@@ -144,8 +144,8 @@ struct complete_rpc {
 std::vector<BCL::ChecksumQueue<rpc_t, BCL::djb2_hash<rpc_t>>> rpc_requests_queue_;
 std::vector<std::vector<rpc_t>> rpc_requests_buffer_;
 
-// std::vector<BCL::ChecksumQueue<return_value_t, BCL::djb2_hash<return_value_t>>> rpc_results_queue_;
-std::vector<BCL::CircularQueue<return_value_t>> rpc_results_queue_;
+std::vector<BCL::ChecksumQueue<return_value_t, BCL::djb2_hash<return_value_t>>> rpc_results_queue_;
+// std::vector<BCL::CircularQueue<return_value_t>> rpc_results_queue_;
 std::vector<std::vector<return_value_t>> rpc_results_buffer_;
 
 std::unordered_map<size_t, return_value_t> rpc_results_;
@@ -336,8 +336,10 @@ void finalize_rpc() {
 }
 
 void service_rpc() {
-  using results_future_type = typename BCL::CircularQueue<return_value_t>::push_future;
-  using requests_future_type = typename BCL::CircularQueue<rpc_t>::push_future;
+  // using results_future_type = typename BCL::CircularQueue<return_value_t>::push_future;
+  // using requests_future_type = typename BCL::CircularQueue<rpc_t>::push_future;
+  using results_future_type = typename BCL::ChecksumQueue<return_value_t, BCL::djb2_hash<return_value_t>>::push_future;
+  using requests_future_type = typename BCL::ChecksumQueue<rpc_t, BCL::djb2_hash<rpc_t>>::push_future;
 
   std::list<results_future_type> results_futures;
   std::list<requests_future_type> requests_futures;
