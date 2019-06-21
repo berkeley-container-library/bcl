@@ -485,7 +485,7 @@ struct ChecksumQueue {
       h_err = s_err;
       s_err = n_pop_part;
       n_pop_part = s_err - h_err;
-      printf("Read up to %d incorrect values (%d->%d) (%d->%d)\n", n_pop_part, h_err, s_err,
+      printf("Read up to %lu incorrect values (%lu->%lu) (%d->%d)\n", n_pop_part, h_err, s_err,
         old_head, tail_buf);
       backoff.backoff();
     };
