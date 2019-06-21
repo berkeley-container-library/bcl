@@ -8,7 +8,7 @@
 
 // XXX: Designed to test simultaneous multiple pushes and single pops of vectors.
 // TODO: seems interminably slow without usleep().
-// XXX: I think it is not slow.
+// XXX: I don't think it is slow.
 
 int main(int argc, char** argv) {
   BCL::init();
