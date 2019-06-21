@@ -10,7 +10,7 @@ TIMER_CMD=time
 
 ifeq ($(BACKEND),SHMEM)
   BACKEND=SHMEM
-  BCLFLAGS = -DSHMEM -I$(BCLROOT)
+  BCLFLAGS = -lpthread -DSHMEM -I$(BCLROOT)
   CXX=oshc++
 
   BCL_RUN=oshrun -n 4
@@ -19,13 +19,13 @@ else ifeq ($(BACKEND),GASNET_EX)
   # XXX: Allow selection of conduit.
   include $(gasnet_prefix)/include/mpi-conduit/mpi-par.mak
 
-  BCLFLAGS = $(GASNET_CXXCPPFLAGS) $(GASNET_CXXFLAGS) $(GASNET_LDFLAGS) $(GASNET_LIBS) -DGASNET_EX -I$(BCLROOT)
+  BCLFLAGS = -lpthread $(GASNET_CXXCPPFLAGS) $(GASNET_CXXFLAGS) $(GASNET_LDFLAGS) $(GASNET_LIBS) -DGASNET_EX -I$(BCLROOT)
   CXX = mpic++
 
   BCL_RUN=mpirun -n 4
 else
   BACKEND=MPI
-  BCLFLAGS = -I$(BCLROOT)
+  BCLFLAGS = -lpthread -I$(BCLROOT)
   CXX=mpic++
 
   BCL_RUN=mpirun -n 4
