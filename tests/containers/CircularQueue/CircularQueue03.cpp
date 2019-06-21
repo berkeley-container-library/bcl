@@ -6,8 +6,9 @@
 
 #include <bcl/core/util/Backoff.hpp>
 
-// XXX: Designed to test simultaneous queue pushes and pops of vectors.
+// XXX: Designed to test simultaneous multiple pushes and single pops of vectors.
 // TODO: seems interminably slow without usleep().
+// XXX: I think it is not slow.
 
 int main(int argc, char** argv) {
   BCL::init();
