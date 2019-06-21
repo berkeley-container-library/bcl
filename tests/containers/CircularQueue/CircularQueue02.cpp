@@ -4,7 +4,7 @@
 #include <bcl/bcl.hpp>
 #include <bcl/containers/CircularQueue.hpp>
 
-// XXX: Designed to test simultaneous queue pushes and pops.
+// XXX: Designed to test simultaneous multiple pushes and single pops of value.
 
 int main(int argc, char** argv) {
   BCL::init();
