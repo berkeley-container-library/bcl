@@ -1,6 +1,7 @@
 #include <cassert>
 #include <unordered_map>
 #include <stdlib.h>     /* srand, rand */
+#include <sstream>
 
 #include <bcl/bcl.hpp>
 #include <bcl/containers/CircularQueue.hpp>
@@ -10,16 +11,31 @@
 
 // XXX: Designed to test simultaneous multiple pushes and multiple pops.
 // wait_on_overrun = false
+/*
+ * FOUND&ISSUE:
+ * 1. queue::size() cannot be used simultaneously with push&pop
+ * 1.1 not atomic; need an atomic version.
+ * 1.2 Even if with an atomic version, it might overflow. (queue::pop when queue is empty)
+ * 2. (TEST_OP = 2, nproc >= 3, docker:mpich-debug, MPI)
+ *   The program might be stuck.
+ * 3. (TEST_OP = 3, nproc >= 2, docker:mpich-debug, MPI)
+ *   The program might be stuck.
+ * 4. (TEST_OP = 4, nproc >= 2, docker:mpich-debug, MPI) pop_vector might have some problems
+ *   terminate called after throwing an instance of 'std::length_error'
+ *   what():  vector::_M_default_append
+ *   Reference: vector exceeds the maximum potential size the container can reach due to known system or library implementation limitations
+*/
+const int TEST_OP = 4;
 const int PUSH_VAL = 0;
 const int POP_VAL = 1;
 const int PUSH_VEC = 2;
 const int POP_VEC = 3;
 const int PUSH_ASYNC = 4;
 
-const size_t QUEUE_SIZE = 10;
-const size_t N_STEPS = 20;
-const int MAX_VAL = 5;
-const size_t MAX_VEC_SIZE = 5; // must less than QUEUE_SIZE
+const size_t QUEUE_SIZE = 1000;
+const size_t N_STEPS = 100;
+const int MAX_VAL = 100;
+const size_t MAX_VEC_SIZE = 2; // must less than QUEUE_SIZE
 
 std::vector<int> generate_rand_vec(size_t size) {
   std::vector<int> vec;
@@ -34,7 +50,7 @@ int main(int argc, char** argv) {
 
   assert(QUEUE_SIZE >= MAX_VEC_SIZE);
   srand(time(NULL));
-  constexpr bool print_verbose = true;
+  constexpr bool print_verbose = false;
 
   for (size_t rank = 0; rank < BCL::nprocs(); rank++) {
     if (print_verbose) {
@@ -44,7 +60,7 @@ int main(int argc, char** argv) {
     std::unordered_map<int, int> counts;
 
     for (size_t i = 0; i < N_STEPS; i++) {
-      int method = rand() % 2;
+      int method = rand() % TEST_OP;
 
       switch (method) {
         case PUSH_VAL : {
@@ -53,7 +69,7 @@ int main(int argc, char** argv) {
           if (success) {
             counts[val]++;
             if (print_verbose) {
-              printf("Rank %lu push %d, count %d, queue_size = %lu\n",
+              printf("Rank %lu push val: (%d, %d), queue_size = %lu\n",
                       BCL::rank(), val, counts[val], queue.size());
             }
           }
@@ -65,35 +81,57 @@ int main(int argc, char** argv) {
           if (success) {
             counts[val]--;
             if (print_verbose) {
-              printf("Rank %lu pop %d, count %d, queue_size = %lu\n",
+              printf("Rank %lu pop val: (%d, %d), queue_size = %lu\n",
                       BCL::rank(), val, counts[val], queue.size());
             }
           }
           break;
         }
-//        case PUSH_VEC: {
-//          int size = rand() % MAX_VEC_SIZE;
-//          std::vector<int> vec = generate_rand_vec(size);
-//          bool success = queue.push(vec);
-//          if (success) {
-//            for (auto val: vec) {
-//              counts[val]++;
-//            }
-//          }
-//          break;
-//        }
-//        case POP_VEC: {
-//          std::vector<int> vec;
-//          bool success = queue.pop(vec, MAX_VEC_SIZE, true);
-//          if (success) {
-//            for (auto val: vec) {
-//              counts[val]--;
-//            }
-//          }
-//          break;
-//        }
-//        case PUSH_ASYNC:
-//          break;
+        case PUSH_VEC: {
+          int size = rand() % MAX_VEC_SIZE;
+          std::vector<int> vec = generate_rand_vec(size);
+          bool success = queue.push(vec);
+          if (success) {
+            if (!print_verbose)
+              for (auto val: vec) {
+                counts[val]++;
+              }
+            else {
+              std::ostringstream ostr;
+              ostr << "Rank " << BCL::rank() << " push vec: ";
+              for (auto val: vec) {
+                counts[val]++;
+                ostr << "(" << val << ", " << counts[val] << "), ";
+              }
+              ostr << "queue_size = " << queue.size();
+              std::cout << ostr.str() << std::endl;
+            }
+          }
+          break;
+        }
+        case POP_VEC: {
+          std::vector<int> vec;
+          bool success = queue.pop(vec, MAX_VEC_SIZE, true);
+          if (success) {
+            if (!print_verbose)
+              for (auto val: vec) {
+                counts[val]--;
+              }
+            else {
+              std::ostringstream ostr;
+              ostr << "Rank " << BCL::rank() << " pop vec: ";
+              for (auto val: vec) {
+                counts[val]--;
+                ostr << "(" << val << ", " << counts[val] << "), ";
+              }
+              ostr << "queue_size = " << queue.size();
+              std::cout << ostr.str() << std::endl;
+            }
+          }
+          break;
+        }
+        case PUSH_ASYNC:
+          break;
         default:
           break;
       }
@@ -101,15 +139,17 @@ int main(int argc, char** argv) {
     BCL::barrier();
     printf("Rank %lu barrier\n", BCL::rank());
 
-    while (!queue.empty()) {
+    while (true) {
       int val;
       bool success = queue.pop(val);
       if (success) {
         counts[val]--;
         if (print_verbose) {
-          printf("Rank %lu pop %d, count %d, queue_size = %lu\n",
-                     BCL::rank(), val, counts[val], queue.size());
+          printf("Rank %lu pop val: (%d, %d), queue_size = %lu\n",
+                 BCL::rank(), val, counts[val], queue.size());
         }
+      } else {
+        break;
       }
     }
 
