@@ -28,4 +28,4 @@ before_install:
 script:
   - docker run --name container -d benbrock/bcl:mpich-debug tail -f /dev/null # keep container alive
   - docker cp `pwd` container:/home/ubuntu/src # copy new changes
-  - docker exec --user root container bash -c "./src/bcl/tests/run_tests.sh mpi gasnet_ex" # run the test script
+  - docker exec --user root container bash -c "./src/bcl/tests/run_tests.sh mpi shmem gasnet_ex" # run the test script
