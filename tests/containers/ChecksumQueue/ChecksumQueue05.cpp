@@ -5,7 +5,7 @@
 
 #include <bcl/bcl.hpp>
 #include <bcl/containers/CircularQueue.hpp>
-#include <bcl/containers/experimental/ChecksumQueue.hpp>
+#include <bcl/containers/experimental/FixChecksumQueue.hpp>
 
 #include <bcl/core/util/Backoff.hpp>
 
@@ -33,10 +33,10 @@ const int POP_VEC = 3;
 const int PUSH_ASYNC = 4;
 
 const size_t QUEUE_SIZE = 100;
-const size_t N_STEPS = 10;
-const int MAX_VAL = 10;
-const size_t MAX_VEC_SIZE = 2; // must less than QUEUE_SIZE
-const bool print_verbose = true;
+const size_t N_STEPS = 1000;
+const int MAX_VAL = 100;
+const size_t MAX_VEC_SIZE = 20; // must less than QUEUE_SIZE
+const bool print_verbose = false;
 
 std::vector<int> generate_rand_vec(size_t size) {
   std::vector<int> vec;
@@ -47,7 +47,6 @@ std::vector<int> generate_rand_vec(size_t size) {
 }
 
 int main(int argc, char** argv) {
-  /*
   BCL::init();
 
   assert(QUEUE_SIZE >= MAX_VEC_SIZE);
@@ -144,9 +143,7 @@ int main(int argc, char** argv) {
 
     while (true) {
       int val;
-//      printf("Rank %lu enter pop\n", BCL::rank());
       bool success = queue.pop(val);
-//      printf("Rank %lu leave pop\n", BCL::rank());
       if (success) {
         counts[val]--;
         if (print_verbose) {
@@ -155,16 +152,11 @@ int main(int argc, char** argv) {
         }
       }
       else {
-//        printf("Rank %lu pop fail, queue_size = %lu\n",
-//             BCL::rank(), queue.size());
         break;
       }
     }
     BCL::barrier();
 
-    if (print_verbose) {
-      BCL::print("Enter count section\n");
-    }
     for (int i = 0; i < MAX_VAL; ++i) {
       int count = counts[i];
       int tmp = 0;
@@ -173,9 +165,7 @@ int main(int argc, char** argv) {
         if (BCL::rank() == j) {
           tmp = count;
         }
-        printf("Rank %lu enter broadcast (%d, %d)\n", BCL::rank(), i, j);
         BCL::broadcast(tmp, j);
-        printf("Rank %lu leave broadcast (%d, %d)\n", BCL::rank(), i, j);
         sum += tmp;
       }
       if (BCL::rank() == 0) {
@@ -186,7 +176,6 @@ int main(int argc, char** argv) {
         }
       }
     }
-    fprintf(stderr, "(%lu) DONE\n", BCL::rank());
 
     if (print_verbose) {
       fprintf(stderr, "(%lu) DONE\n", BCL::rank());
@@ -195,6 +184,5 @@ int main(int argc, char** argv) {
   }
 
   BCL::finalize();
-   */
   return 0;
 }
