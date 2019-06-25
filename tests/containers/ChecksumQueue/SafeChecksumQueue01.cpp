@@ -5,26 +5,12 @@
 
 #include <bcl/bcl.hpp>
 #include <bcl/containers/CircularQueue.hpp>
-#include <bcl/containers/experimental/FixChecksumQueue.hpp>
+#include <bcl/containers/experimental/SafeChecksumQueue.hpp>
 
 #include <bcl/core/util/Backoff.hpp>
 
 // XXX: Designed to test simultaneous multiple pushes and multiple pops.
-// wait_on_overrun = false
-/*
- * FOUND&ISSUE:
- * 1. queue::size() cannot be used simultaneously with push&pop
- * 1.1 not atomic; need an atomic version.
- * 1.2 Even if with an atomic version, it might overflow. (queue::pop when queue is empty)
- * 2. (TEST_OP = 2, nproc >= 3, docker:mpich-debug, MPI)
- *   The program might be stuck.
- * 3. (TEST_OP = 3, nproc >= 2, docker:mpich-debug, MPI)
- *   The program might be stuck.
- * 4. (TEST_OP = 4, nproc >= 2, docker:mpich-debug, MPI) pop_vector might have some problems
- *   terminate called after throwing an instance of 'std::length_error'
- *   what():  vector::_M_default_append
- *   Reference: vector exceeds the maximum potential size the container can reach due to known system or library implementation limitations.
-*/
+
 const int TEST_OP = 2;
 const int PUSH_VAL = 0;
 const int POP_VAL = 1;
