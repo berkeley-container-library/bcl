@@ -382,10 +382,7 @@ void service_rpc() {
 
     for (auto it = results_futures.begin(); it != results_futures.end(); ) {
       if ((*it).is_ready()) {
-        auto new_val = it;
-        new_val++;
-        results_futures.erase(it);
-        it = new_val;
+        it = results_futures.erase(it);
       } else {
         it++;
       }
@@ -393,10 +390,7 @@ void service_rpc() {
 
     for (auto it = requests_futures.begin(); it != requests_futures.end(); ) {
       if ((*it).is_ready()) {
-        auto new_val = it;
-        new_val++;
-        requests_futures.erase(it);
-        it = new_val;
+        it = requests_futures.erase(it);
       } else {
         it++;
       }
