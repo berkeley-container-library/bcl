@@ -4,7 +4,6 @@
 #include <sstream>
 
 #include <bcl/bcl.hpp>
-#include <bcl/containers/CircularQueue.hpp>
 #include <bcl/containers/experimental/SafeChecksumQueue.hpp>
 
 #include <bcl/core/util/Backoff.hpp>
@@ -33,6 +32,7 @@ std::vector<int> generate_rand_vec(size_t size) {
 }
 
 int main(int argc, char** argv) {
+  /*
   BCL::init();
 
   assert(QUEUE_SIZE >= MAX_VEC_SIZE);
@@ -171,4 +171,5 @@ int main(int argc, char** argv) {
 
   BCL::finalize();
   return 0;
+   */
 }
