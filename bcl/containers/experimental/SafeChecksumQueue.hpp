@@ -344,9 +344,11 @@ struct ChecksumQueue {
     while (true) {
       old_head = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
 
-      if (old_head < tail_buf) {
+      int new_head = old_head + 1;
+
+      if (new_head <= tail_buf) {
         // queue is not empty
-        int result = BCL::compare_and_swap(head, old_head, old_head + 1);
+        int result = BCL::compare_and_swap(head, old_head, new_head);
         if (result  == old_head) {
           break;
         }
@@ -354,10 +356,10 @@ struct ChecksumQueue {
       else {
         // queue might be empty
         tail_buf = BCL::fetch_and_op<int>(tail, 0, BCL::plus<int>{});
-        if (old_head < tail_buf) {
+        if (new_head <= tail_buf) {
           // queue is not empty
-          int result = BCL::compare_and_swap(head, old_head, old_head + 1);
-          if (result  == old_head) {
+          int result = BCL::compare_and_swap(head, old_head, new_head);
+          if (result == old_head) {
             break;
           }
         }

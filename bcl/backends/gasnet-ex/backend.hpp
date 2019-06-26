@@ -12,7 +12,7 @@ extern void* smem_base_ptr;
 gex_Client_t client;
 gex_EP_t ep;
 gex_TM_t tm;
-char* clientName = "BCL";
+const char* clientName = "BCL";
 
 gasnet_seginfo_t* gasnet_seginfo;
 

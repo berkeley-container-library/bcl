@@ -18,8 +18,8 @@ const int POP_VEC = 3;
 const int PUSH_ASYNC = 4;
 
 const size_t QUEUE_SIZE = 100;
-const size_t N_STEPS = 1000;
-const int MAX_VAL = 100;
+const size_t N_STEPS = 5;
+const int MAX_VAL = 10;
 const size_t MAX_VEC_SIZE = 20; // must less than QUEUE_SIZE
 const bool print_verbose = false;
 
@@ -32,11 +32,10 @@ std::vector<int> generate_rand_vec(size_t size) {
 }
 
 int main(int argc, char** argv) {
-  /*
   BCL::init();
 
   assert(QUEUE_SIZE >= MAX_VEC_SIZE);
-  srand(time(NULL));
+  srand(time(NULL) + BCL::rank());
 
   for (size_t rank = 0; rank < BCL::nprocs(); rank++) {
     if (print_verbose) {
@@ -142,6 +141,9 @@ int main(int argc, char** argv) {
       }
     }
     BCL::barrier();
+    if (print_verbose) {
+      printf("Rank %lu enter counting\n", BCL::rank());
+    }
 
     for (int i = 0; i < MAX_VAL; ++i) {
       int count = counts[i];
@@ -151,12 +153,12 @@ int main(int argc, char** argv) {
         if (BCL::rank() == j) {
           tmp = count;
         }
-        BCL::broadcast(tmp, j);
+        tmp = BCL::broadcast(tmp, j);
         sum += tmp;
       }
       if (BCL::rank() == 0) {
         if (print_verbose && sum != 0) {
-          BCL::print("Error! Rank %lu, val = %d, sum = %d\n", rank, i, sum);
+          printf("Error! Rank %lu, val = %d, sum = %d\n", rank, i, sum);
         } else {
           assert(sum == 0);
         }
@@ -166,10 +168,9 @@ int main(int argc, char** argv) {
     if (print_verbose) {
       fprintf(stderr, "(%lu) DONE\n", BCL::rank());
     }
-    BCL::barrier();
+//    BCL::barrier();
   }
 
   BCL::finalize();
   return 0;
-   */
 }
