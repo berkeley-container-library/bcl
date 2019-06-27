@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-for i in 1 .. 30
+for i in {1..10}
 do
-    mpirun -n 4 ./CircularQueue02
+    echo run ${i}
+    mpirun -n 4 ./simplify_mpi_issue
+    echo
 done
