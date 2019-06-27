@@ -51,28 +51,28 @@ bool mpi_initialized() {
 }
 
 void barrier() {
-  BCL_DEBUG( int error_code; )
-  BCL_DEBUG( error_code = )
-  MPI_Win_unlock_all(win);
+  fprintf(stderr, "(%lu) enters barrier...\n", BCL::rank());
+  int error_code = MPI_Win_unlock_all(win);
   BCL_DEBUG(
           if (error_code != MPI_SUCCESS) {
-            throw debug_error("BCL barrier(): MPI_Win_lock_all return error code " + std::to_string(error_code));
+            throw debug_error("BCL barrier(): MPI_Win_lock_all returned error code " + std::to_string(error_code));
           }
   )
-  BCL_DEBUG( error_code = )
-  MPI_Barrier(BCL::comm);
+  fprintf(stderr, "(%lu) calling barrier...\n", BCL::rank());
+  error_code = MPI_Barrier(BCL::comm);
   BCL_DEBUG(
           if (error_code != MPI_SUCCESS) {
-            throw debug_error("BCL barrier(): MPI_Barrier return error code " + std::to_string(error_code));
+            throw debug_error("BCL barrier(): MPI_Barrier returned error code " + std::to_string(error_code));
           }
   )
-  BCL_DEBUG( error_code = )
-  MPI_Win_lock_all(0, win);
+  fprintf(stderr, "(%lu) unlocking...\n", BCL::rank());
+  error_code = MPI_Win_lock_all(0, win);
   BCL_DEBUG(
           if (error_code != MPI_SUCCESS) {
-            throw debug_error("BCL barrier(): MPI_Win_lock_all return error code " + std::to_string(error_code));
+            throw debug_error("BCL barrier(): MPI_Win_lock_all returned error code " + std::to_string(error_code));
           }
   )
+  fprintf(stderr, "(%lu) exiting...\n", BCL::rank());
 }
 
 void flush() {
