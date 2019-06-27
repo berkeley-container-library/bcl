@@ -43,10 +43,14 @@ all: $(TARGETS)
 	@time $(CXX) -o $@ $^ $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
 
 test: all
-	@for target in $(TARGETS) ; do \
-		echo "R $$target $(BACKEND)" ;\
-	  time $(BCL_RUN) ./$$target || (echo "$$target $(BACKEND) FAIL $$?"; exit 1) ;\
-	done
+	ifeq ($(BACKEND),MPI)
+		@echo "Not running RPC tests with MPI"
+	else
+		@for target in $(TARGETS) ; do \
+			echo "R $$target $(BACKEND)" ;\
+	  	time $(BCL_RUN) ./$$target || (echo "$$target $(BACKEND) FAIL $$?"; exit 1) ;\
+		done
+	endif
 
 clean:
 	@rm -f $(TARGETS)
