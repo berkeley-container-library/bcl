@@ -2,6 +2,6 @@
 for i in {1..10}
 do
     echo run ${i}
-    mpirun -n 4 ./simplify_mpi_issue
+    mpirun -n 4 ./CircularQueue03
     echo
 done
