@@ -26,6 +26,6 @@ before_install:
   - eval "${MATRIX_EVAL}"
 
 script:
-  - docker run --name container -d benbrock/bcl:debug tail -f /dev/null # keep container alive
+  - docker run --name container --user ubuntu -d benbrock/bcl:debug tail -f /dev/null # keep container alive
   - docker cp `pwd` container:/home/ubuntu/src # copy new changes
   - docker exec --user ubuntu container bash -c "cd ./src/bcl/tests/ && ./run_tests.sh mpi gasnet_ex" # run the test script
