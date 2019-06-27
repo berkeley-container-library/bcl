@@ -11,14 +11,16 @@
  */
 int main(int argc, char** argv) {
   BCL::init();
-  printf("I am rank %lu out of %lu procs; tag1\n", BCL::rank(), BCL::nprocs());
+  fprintf(stderr, "I am rank %lu out of %lu procs; tag1\n", BCL::rank(), BCL::nprocs());
 
   size_t n_pushes = 10;
 
   size_t rank = 0;
-  printf("I am rank %lu out of %lu procs; tag2\n", BCL::rank(), BCL::nprocs());
+  fprintf(stderr, "I am rank %lu out of %lu procs; tag2\n", BCL::rank(), BCL::nprocs());
   BCL::ChecksumQueue<int> queue(0, 100);
-  printf("I am rank %lu out of %lu procs; tag3\n", BCL::rank(), BCL::nprocs());
+  fprintf(stderr, "I am rank %lu out of %lu procs; tag3\n", BCL::rank(), BCL::nprocs());
+
+  fprintf(stderr, "I am rank %lu out of %lu procs; tag4\n", BCL::rank(), BCL::nprocs());
 
   if (BCL::rank() != rank) {
     for (size_t i = 0; i < n_pushes; i++) {
@@ -42,7 +44,8 @@ int main(int argc, char** argv) {
       assert(val == 1);
     }
   }
-  printf("rank %lu done\n", BCL::rank());
+
+  fprintf(stderr, "rank %lu done\n", BCL::rank());
   BCL::finalize();
   return 0;
 }
