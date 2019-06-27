@@ -42,15 +42,16 @@ all: $(TARGETS)
 	@echo "C $@ $(BACKEND)"
 	@time $(CXX) -o $@ $^ $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
 
+ifeq ($(BACKEND),MPI)
 test: all
-	ifeq ($(BACKEND),MPI)
-		@echo "Not running RPC tests with MPI"
-	else
-		@for target in $(TARGETS) ; do \
-			echo "R $$target $(BACKEND)" ;\
-	  	time $(BCL_RUN) ./$$target || (echo "$$target $(BACKEND) FAIL $$?"; exit 1) ;\
-		done
-	endif
+	@echo "Not running RPC tests with MPI"
+else
+test: all
+	@for target in $(TARGETS) ; do \
+		echo "R $$target $(BACKEND)" ;\
+  	time $(BCL_RUN) ./$$target || (echo "$$target $(BACKEND) FAIL $$?"; exit 1) ;\
+	done
+endif
 
 clean:
 	@rm -f $(TARGETS)
