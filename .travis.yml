@@ -28,4 +28,5 @@ before_install:
 script:
   - docker run --name container --user ubuntu -d benbrock/bcl:debug tail -f /dev/null # keep container alive
   - docker cp `pwd` container:/home/ubuntu/src # copy new changes
+  - docker exec --user root container bash -c "chown -R ubuntu:ubuntu /home/ubuntu/src"
   - docker exec --user ubuntu container bash -c "cd ./src/bcl/tests/ && ./run_tests.sh mpi gasnet_ex" # run the test script
