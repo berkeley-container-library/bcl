@@ -27,7 +27,7 @@ void future_barrier(const std::vector<Future>& futures) {
 }
 
 /*
- * test rpc(not buffered)
+ * test sync_rpc
  */
 int main(int argc, char** argv) {
   BCL::init();
@@ -35,25 +35,15 @@ int main(int argc, char** argv) {
 
   srand(time(NULL) + BCL::rank());
   auto fn = [](int a, int b) -> int {
-               return a * b;
-            };
+      return a * b;
+  };
 
   int my_rank = BCL::rank();
 
-  using rv = decltype(BCL::buffered_rpc(0, fn, my_rank, my_rank));
-  std::vector<rv> futures;
-
   for (int i = 0 ; i < 1000; i++) {
     size_t target_rank = rand() % BCL::nprocs();
-    auto f = BCL::rpc(target_rank, fn, my_rank, my_rank);
-    futures.push_back(std::move(f));
-  }
-
-  future_barrier(futures);
-
-  for (auto& f : futures) {
-    int val = f.get();
-    assert(val == my_rank*my_rank);
+    auto result = BCL::sync_rpc(target_rank, fn, my_rank, my_rank);
+    assert(result == my_rank*my_rank);
   }
 
   BCL::finalize_rpc();
