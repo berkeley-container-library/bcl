@@ -208,12 +208,13 @@ struct CircularQueue {
         }
       } else {
         head_buf = BCL::fetch_and_op<int>(reserved_head, 0, BCL::plus<int>{});
-      }
-      if (new_tail - head_buf > capacity()) {
-        BCL::fetch_and_op<int>(tail, -1, BCL::plus<int>{});
-        return false;
+        if (new_tail - head_buf > capacity()) {
+          BCL::fetch_and_op<int>(tail, -1, BCL::plus<int>{});
+          return false;
+        }
       }
     }
+
     data[old_tail % capacity()] = val;
     BCL::flush();
     int rv;
