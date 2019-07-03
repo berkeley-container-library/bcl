@@ -8,9 +8,6 @@
 #include <cassert>
 #include <list>
 
-#define return_type(Fn, Args) decltype(std::declval<Fn>()(std::declval<Args>()...))
-#define return_void(Fn, Args) std::is_void<decltype(std::declval<Fn>()(std::declval<Args>()...))>::value
-
 /*
  * One-way RPC
  * drawback:
@@ -95,18 +92,13 @@ namespace BCL {
         using tuple_t = std::tuple<std::remove_reference_t<Args>...>;
         tuple_t& args_ptr = *reinterpret_cast<tuple_t*>(rpc_requests.data_.data());
 
-        if constexpr(return_void(Fn, Args)) {
-          std::invoke(std::forward<fn_t>(fn),
-                      std::forward<Args>(std::get<I>(args_ptr))...);
-        } else {
-          return std::invoke(std::forward<fn_t>(fn),
-                             std::forward<Args>(std::get<I>(args_ptr))...);
-        }
+        return std::invoke(std::forward<fn_t>(fn),
+                           std::forward<Args>(std::get<I>(args_ptr))...);
       }
 
       static rpc_t invoke(rpc_t& rpc_requests) {
         rpc_t rpc_result(rpc_requests.rpc_id_, rpc_requests.buffered_, rpc_result_source_rank);
-        if constexpr(return_void(Fn, Args)) {
+        if constexpr(std::is_void<std::invoke_result_t<Fn, Args...>>::value) {
           invoke_impl_(rpc_requests, std::index_sequence_for<Args...>{});
         } else {
           rpc_result.load_result(invoke_impl_(rpc_requests, std::index_sequence_for<Args...>{}));
@@ -207,7 +199,7 @@ namespace BCL {
     rpc_.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
     rpc_requests_queue_[rank].push_atomic_impl_(rpc_, true);
 
-    return rpc_future<return_type(Fn, Args)>(rpc_.rpc_id_);
+    return rpc_future<std::invoke_result_t<Fn, Args...>>(rpc_.rpc_id_);
   }
 
   template <typename Fn, typename... Args>
@@ -216,11 +208,7 @@ namespace BCL {
 
     auto fu = rpc(rank, fn, args...);
 
-    if constexpr(return_void(Fn, Args)) {
-      fu.get();
-    } else {
-      return fu.get();
-    }
+    return fu.get();
   }
 
   template <typename Fn, typename... Args>
