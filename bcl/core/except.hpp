@@ -34,7 +34,7 @@ private:
 class debug_error final : public error
 {
 public:
-  debug_error(const std::string& what_arg) {}
+  debug_error(const std::string& what_arg) : what_arg_(what_arg) {}
 
   const char* what() const throw() {
     return what_arg_.c_str();
