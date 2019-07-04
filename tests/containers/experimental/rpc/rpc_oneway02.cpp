@@ -3,7 +3,7 @@
 #include <cstdio>
 
 #include <bcl/bcl.hpp>
-#include <bcl/containers/experimental/rpc_oneway.hpp>
+#include <bcl/containers/experimental/rpc_oneway/rpc.hpp>
 
 template <typename Future>
 bool ready(const std::vector<Future>& futures) {
