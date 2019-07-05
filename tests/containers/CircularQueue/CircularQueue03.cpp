@@ -6,8 +6,9 @@
 
 #include <bcl/core/util/Backoff.hpp>
 
-// XXX: Designed to test simultaneous queue pushes and pops of vectors.
+// XXX: Designed to test simultaneous multiple pushes and single pops of vectors.
 // TODO: seems interminably slow without usleep().
+// XXX: I don't think it is slow.
 
 int main(int argc, char** argv) {
   BCL::init();
@@ -18,7 +19,9 @@ int main(int argc, char** argv) {
   constexpr bool print_verbose = false;
 
   for (size_t rank = 0; rank < BCL::nprocs(); rank++) {
-    BCL::print("Rank %lu\n", rank);
+    if (print_verbose) {
+      BCL::print("Rank %lu\n", rank);
+    }
     BCL::CircularQueue<int> queue(rank, 100);
 
     if (BCL::rank() != rank) {
@@ -67,7 +70,7 @@ int main(int argc, char** argv) {
         assert(val < BCL::nprocs() && val >= 0);
         counts[val]++;
         if (counts[val] > n_pushes*push_size) {
-          throw std::runtime_error("BCL::CircularQueue02: " + std::to_string(rank)
+          throw std::runtime_error("BCL::CircularQueue03: " + std::to_string(rank)
                                    + " saw too many " +
                                    std::to_string(val) + "s");
         }
@@ -75,7 +78,7 @@ int main(int argc, char** argv) {
 
       for (auto& c : counts) {
         if (c.second != n_pushes*push_size) {
-          throw std::runtime_error("BCL::CircularQueue02: found " +
+          throw std::runtime_error("BCL::CircularQueue03: found " +
                                    std::to_string(c.second) + " != " +
                                    std::to_string(n_pushes) + " pushes for " +
                                    std::to_string(c.first));
@@ -83,7 +86,9 @@ int main(int argc, char** argv) {
       }
     }
 
-    fprintf(stderr, "(%lu) DONE\n", BCL::rank());
+    if (print_verbose) {
+      fprintf(stderr, "(%lu) DONE\n", BCL::rank());
+    }
     BCL::barrier();
   }
 

@@ -16,6 +16,7 @@ public:
 
   void backoff() {
     usleep(sleep_time_);
+    increase_backoff_impl_();
   }
 
   void increase_backoff_impl_() {
