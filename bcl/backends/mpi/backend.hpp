@@ -51,9 +51,18 @@ bool mpi_initialized() {
 }
 
 void barrier() {
-  MPI_Win_unlock_all(win);
-  MPI_Barrier(BCL::comm);
-  MPI_Win_lock_all(0, win);
+  int error_code = MPI_Win_flush_all(win);
+  BCL_DEBUG(
+          if (error_code != MPI_SUCCESS) {
+            throw debug_error("BCL barrier(): MPI_Win_lock_all returned error code " + std::to_string(error_code));
+          }
+  )
+  error_code = MPI_Barrier(BCL::comm);
+  BCL_DEBUG(
+          if (error_code != MPI_SUCCESS) {
+            throw debug_error("BCL barrier(): MPI_Barrier returned error code " + std::to_string(error_code));
+          }
+  )
 }
 
 void flush() {

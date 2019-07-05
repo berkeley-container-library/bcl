@@ -2,7 +2,7 @@ SHELL='bash'
 
 # XXX: Modify BCLROOT if you move this Makefile
 #      out of an examples/* directory.
-BCLROOT=$(PWD)/../../
+BCLROOT=$(PWD)/../../../../
 
 BACKEND = $(shell echo $(BCL_BACKEND) | tr '[:lower:]' '[:upper:]')
 
@@ -42,11 +42,16 @@ all: $(TARGETS)
 	@echo "C $@ $(BACKEND)"
 	@time $(CXX) -o $@ $^ $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
 
+ifeq ($(BACKEND),MPI)
+test: all
+	@echo "Not running RPC tests with MPI"
+else
 test: all
 	@for target in $(TARGETS) ; do \
 		echo "R $$target $(BACKEND)" ;\
-	  time $(BCL_RUN) ./$$target || (echo "$$target $(BACKEND) FAIL $$?"; exit 1) ;\
+  	time $(BCL_RUN) ./$$target || (echo "$$target $(BACKEND) FAIL $$?"; exit 1) ;\
 	done
+endif
 
 clean:
 	@rm -f $(TARGETS)

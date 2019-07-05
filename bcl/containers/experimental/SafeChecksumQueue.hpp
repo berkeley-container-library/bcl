@@ -17,9 +17,6 @@ struct hashedData {
   size_t hash;
 };
 
-/*
- * This ChecksumQueue can only be used when there is only one poper.
-*/
 template <
   typename T,
   typename Hash = std::hash<T>,
@@ -178,18 +175,38 @@ struct ChecksumQueue {
     return true;
   }
 
-  bool push(const T& val, bool wait_on_overrun = true) {
-    if (wait_on_overrun == false)
-      std::cout << "Wait on overrun cannot be false. Please use SafeChecksumQueue" << std::endl;
-    int old_tail = BCL::fetch_and_op<int>(tail, 1, BCL::plus<int>{});
-    if (old_tail >= capacity() + head_buf - reserve_end) {
-      head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
-      Backoff backoff;
-      while (old_tail >= capacity() + head_buf - reserve_end) {
-        backoff.backoff();
-        head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
+  bool push(const T& val, bool wait_on_overrun = false) {
+    int old_tail;
+    Backoff backoff;
+    while (true) {
+      old_tail = BCL::fetch_and_op<int>(tail, 0, BCL::plus<int>{});
+      int new_tail = old_tail + 1;
+      if (new_tail <= capacity() + head_buf - reserve_end) {
+        // queue is not full
+        int result = BCL::compare_and_swap(tail, old_tail, new_tail);
+        if (result == old_tail) {
+          break;
+        }
       }
+      else {
+        // queue might be full
+        head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
+        if (new_tail <= capacity() + head_buf - reserve_end) {
+          // queue is not full
+          int result = BCL::compare_and_swap(tail, old_tail, new_tail);
+          if (result == old_tail) {
+            break;
+          }
+        }
+        else {
+          // queue is full
+          if (!wait_on_overrun)
+            return false;
+        }
+      }
+      backoff.backoff();
     }
+
     data[old_tail % capacity()] = {
       val, get_hash(val, old_tail)
     };
@@ -197,26 +214,36 @@ struct ChecksumQueue {
     return true;
   }
 
-  bool push_atomic_impl_(const std::vector <T>& vals, bool synchronized = true) {
-    if (synchronized == false)
-      std::cout << "Please use SafeChecksumQueue" << std::endl;
-    return push(vals);
-  }
-
-  bool push(const std::vector<T> &vals, bool wait_on_overrun = true) {
-    if (wait_on_overrun == false)
-      std::cout << "Wait on overrun cannot be false. Please use SafeChecksumQueue" << std::endl;
+  bool push(const std::vector<T> &vals, bool wait_on_overrun = false) {
     if (vals.size() == 0) { return true;  }
-    int old_tail = BCL::fetch_and_op<int>(tail, vals.size(), BCL::plus<int>{});
-    int new_tail = old_tail + vals.size();
-    //printf("Pushing %d elements; tail at %d/%d.\n", vals.size(), old_tail, head_buf);
-    if (new_tail > capacity() + head_buf - reserve_end) {
-      head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
-      Backoff backoff;
-      while (new_tail > capacity() + head_buf - reserve_end) {
-        backoff.backoff();
-        head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
+    int old_tail;
+    Backoff backoff;
+    while (true) {
+      old_tail = BCL::fetch_and_op<int>(tail, 0, BCL::plus<int>{});
+      int new_tail = old_tail + vals.size();
+      if (new_tail <= capacity() + head_buf - reserve_end) {
+        // queue is not full
+        int result = BCL::compare_and_swap(tail, old_tail, new_tail);
+        if (result == old_tail) {
+          break;
+        }
       }
+      else {
+        // queue might be full
+        head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
+        if (new_tail <= capacity() + head_buf - reserve_end) {
+          // queue is not full
+          int result = BCL::compare_and_swap(tail, old_tail, new_tail);
+          if (result == old_tail) {
+            break;
+          }
+        } else {
+          // queue is full
+          if (!wait_on_overrun)
+            return false;
+        }
+      }
+      backoff.backoff();
     }
     std::vector<hashedData<T>> hvals;
     hvals.resize(vals.size());
@@ -312,33 +339,46 @@ struct ChecksumQueue {
   }
 
   bool pop(T& val, bool wait_on_underrun = false) {
-    int old_head = BCL::fetch_and_op<int>(head, 1, BCL::plus<int>{});
+    int old_head;
+    Backoff backoff;
+    while (true) {
+      old_head = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
 
-    if (old_head >= tail_buf) {
-      tail_buf = BCL::fetch_and_op<int>(tail, 0, BCL::plus<int>{});
-      if (wait_on_underrun) {
-        Backoff backoff;
-        while (old_head >= tail_buf) {
-          //printf("Couldn't pop; not enough space; waiting (h: %d, t: %d)\n", old_head, tail_buf);
-          backoff.backoff();
-          tail_buf = BCL::fetch_and_op<int>(tail, 0, BCL::plus<int>{});
-        }
-      } else {
-        if (old_head >= tail_buf) {
-          BCL::fetch_and_op<int>(head, -1, BCL::plus<int>{});
-          //printf("Couldn't pop; not enough space (h: %d, t: %d)\n", old_head, tail_buf);
-          return false;
+      int new_head = old_head + 1;
+
+      if (new_head <= tail_buf) {
+        // queue is not empty
+        int result = BCL::compare_and_swap(head, old_head, new_head);
+        if (result  == old_head) {
+          break;
         }
       }
+      else {
+        // queue might be empty
+        tail_buf = BCL::fetch_and_op<int>(tail, 0, BCL::plus<int>{});
+        if (new_head <= tail_buf) {
+          // queue is not empty
+          int result = BCL::compare_and_swap(head, old_head, new_head);
+          if (result == old_head) {
+            break;
+          }
+        }
+        else {
+          // queue is empty
+          if (!wait_on_underrun) {
+            return false;
+          }
+        }
+        backoff.backoff();
+      }
     }
-
-    Backoff backoff;
+    backoff.reset();
     //It is necessary to retry pops until they work. Consider the case:
     //push push pop pop (in this order, almost simultaneous, by different machines)
     //where the first push executes slowly, so the first pop reads bad data,
     //but the second pop works. In this case the first pop cannot abort
     //without putting the queue in a questionable state.
-    while (1) {
+    while (true) {
       hashedData<T> hd = *data[old_head % capacity()];
       if (hd.hash == get_hash(hd.data, old_head)) {
         val = std::move(hd.data);
@@ -368,31 +408,49 @@ struct ChecksumQueue {
 
   //take_fewer is probably unsafe on multi-pops
   bool pop(std::vector<T> &vals, size_t n_pop, bool take_fewer = true) {
-    int old_head = BCL::fetch_and_op<int>(head, n_pop, BCL::plus<int>{});
-    int new_head = old_head + n_pop;
+    int old_head;
+    Backoff backoff;
+    while (true) {
+      old_head = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
+      int new_head = old_head + n_pop;
 
-    if (new_head > tail_buf) {
-      tail_buf = BCL::fetch_and_op<int>(tail, 0, BCL::plus<int>{});
-      if (new_head > tail_buf) {
-        if (take_fewer) {
-          BCL::fetch_and_op<int>(head, tail_buf - new_head, BCL::plus<int>{});
-          n_pop = tail_buf - old_head;
-          if (n_pop == 0) {
-            //printf("Nothing to pop (h: %d, t: %d)\n", old_head, tail_buf);
+      if (new_head <= tail_buf) {
+        // queue has enough elements
+        int result = BCL::compare_and_swap(head, old_head, new_head);
+        if (result == old_head) {
+          break;
+        }
+      }
+      else {
+        // queue might not have enough elements
+        tail_buf = BCL::fetch_and_op<int>(tail, 0, BCL::plus<int>{});
+        if (new_head <= tail_buf) {
+          // queue has enough elements
+          int result = BCL::compare_and_swap(head, old_head, new_head);
+          if (result == old_head) {
+            break;
+          }
+        }
+        else {
+          // queue does not have enough elements
+          if (take_fewer && tail_buf > old_head) {
+            new_head = tail_buf;
+            int result = BCL::compare_and_swap(head, old_head, new_head);
+            if (result == old_head) {
+              break;
+            }
+          }
+          else {
             return false;
           }
-          //printf("Popping fewer elements: %d->%d\n", new_head - old_head, n_pop);
-        } else {
-          BCL::fetch_and_op<int>(head, -n_pop, BCL::plus<int>{});
-          //printf("Couldn't batch-pop; not enough space (h: %d, t: %d)\n", old_head, tail_buf);
-          return false;
         }
       }
     }
+    backoff.reset();
+
     std::vector<hashedData<T>> hvals;
     vals.resize(n_pop);
     hvals.resize(n_pop);
-    Backoff backoff;
     //Retry pops until they work, but only re-request the bad data.
     size_t s_err = n_pop;
     size_t h_err = 0;

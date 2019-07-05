@@ -1,12 +1,15 @@
 #pragma once
 
 #include <bcl/containers/CircularQueue.hpp>
+#include <bcl/containers/experimental/ChecksumQueue.hpp>
+#include <bcl/core/detail/hash_functions.hpp>
 #include <type_traits>
 #include <array>
 #include <iostream>
 #include <functional>
 #include <cassert>
 #include <list>
+#include <stdio.h>
 
 namespace BCL {
 
@@ -138,10 +141,11 @@ struct complete_rpc {
 // TODO: Add buffering.
 //       Buffering will require careful thought about progress guarantees.
 
-std::vector<BCL::CircularQueue<rpc_t>> rpc_requests_queue_;
+std::vector<BCL::ChecksumQueue<rpc_t, BCL::djb2_hash<rpc_t>>> rpc_requests_queue_;
 std::vector<std::vector<rpc_t>> rpc_requests_buffer_;
 
-std::vector<BCL::CircularQueue<return_value_t>> rpc_results_queue_;
+std::vector<BCL::ChecksumQueue<return_value_t, BCL::djb2_hash<return_value_t>>> rpc_results_queue_;
+// std::vector<BCL::CircularQueue<return_value_t>> rpc_results_queue_;
 std::vector<std::vector<return_value_t>> rpc_results_buffer_;
 
 std::unordered_map<size_t, return_value_t> rpc_results_;
@@ -203,7 +207,7 @@ auto rpc(size_t rank, Fn&& fn, Args&&... args) {
   rpc_.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
 
   Backoff backoff;
-  while (!rpc_requests_queue_[rank].push_atomic_impl_(rpc_, true)) {
+  while (!rpc_requests_queue_[rank].push(rpc_, true)) {
     backoff.backoff();
   }
 
@@ -285,7 +289,7 @@ auto async_rpc(size_t rank, Fn&& fn, Args&&... args) {
   // assert(success);
 
   Backoff backoff;
-  while (!rpc_requests_queue_[rank].push_atomic_impl_(rpc_, true)) {
+  while (!rpc_requests_queue_[rank].push(rpc_, true)) {
     backoff.backoff();
   }
 
@@ -308,7 +312,7 @@ auto buffered_rpc(size_t rank, Fn&& fn, Args&&... args) {
     std::vector<rpc_t> send_buf = std::move(rpc_requests_buffer_[rank]);
     rpc_mutex_.unlock();
     Backoff backoff;
-    while (!rpc_requests_queue_[rank].push_atomic_impl_(send_buf, true)) {
+    while (!rpc_requests_queue_[rank].push(send_buf, true)) {
       backoff.backoff();
     }
   } else {
@@ -324,7 +328,7 @@ void finalize_rpc() {
   BCL::barrier();
   rpc_t rpc_(rpc_kill_nonce);
 
-  rpc_requests_queue_[BCL::rank()].push_atomic_impl_(rpc_, true);
+  rpc_requests_queue_[BCL::rank()].push(rpc_, true);
 
   rpc_thread_.join();
 
@@ -332,8 +336,10 @@ void finalize_rpc() {
 }
 
 void service_rpc() {
-  using results_future_type = typename BCL::CircularQueue<return_value_t>::push_future;
-  using requests_future_type = typename BCL::CircularQueue<rpc_t>::push_future;
+  // using results_future_type = typename BCL::CircularQueue<return_value_t>::push_future;
+  // using requests_future_type = typename BCL::CircularQueue<rpc_t>::push_future;
+  using results_future_type = typename BCL::ChecksumQueue<return_value_t, BCL::djb2_hash<return_value_t>>::push_future;
+  using requests_future_type = typename BCL::ChecksumQueue<rpc_t, BCL::djb2_hash<rpc_t>>::push_future;
 
   std::list<results_future_type> results_futures;
   std::list<requests_future_type> requests_futures;
@@ -376,10 +382,7 @@ void service_rpc() {
 
     for (auto it = results_futures.begin(); it != results_futures.end(); ) {
       if ((*it).is_ready()) {
-        auto new_val = it;
-        new_val++;
-        results_futures.erase(it);
-        it = new_val;
+        it = results_futures.erase(it);
       } else {
         it++;
       }
@@ -387,10 +390,7 @@ void service_rpc() {
 
     for (auto it = requests_futures.begin(); it != requests_futures.end(); ) {
       if ((*it).is_ready()) {
-        auto new_val = it;
-        new_val++;
-        requests_futures.erase(it);
-        it = new_val;
+        it = requests_futures.erase(it);
       } else {
         it++;
       }
@@ -419,7 +419,7 @@ void flush_signal() {
     rpc_mutex_.lock();
     std::vector<rpc_t> send_buf = std::move(rpc_requests_buffer_[i]);
     rpc_mutex_.unlock();
-    while (!rpc_requests_queue_[i].push_atomic_impl_(send_buf, true)) {
+    while (!rpc_requests_queue_[i].push(send_buf, true)) {
       backoff.backoff();
     }
   }
