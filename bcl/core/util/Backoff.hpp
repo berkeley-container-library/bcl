@@ -9,7 +9,7 @@ size_t double_backoff(size_t sleep) {
 template <typename BackoffFn>
 class Backoff {
 public:
-  Backoff(size_t init_sleep = 1, size_t max_sleep = 100,
+  Backoff(size_t init_sleep = 1, size_t max_sleep = 1,
           BackoffFn&& backoff_fn = double_backoff)
           : sleep_time_(init_sleep), max_sleep_(max_sleep),
             init_sleep_(init_sleep), backoff_fn_(backoff_fn) {}
