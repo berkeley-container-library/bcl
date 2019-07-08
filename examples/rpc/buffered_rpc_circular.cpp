@@ -41,22 +41,22 @@ int main(int argc, char** argv) {
   using rv = decltype(BCL::buffered_rpc(0, fn, a, b));
   std::vector<rv> futures;
 
+  srand48(BCL::rank());
   auto begin = std::chrono::high_resolution_clock::now();
   size_t rpcs = 1000;
-  for (int i = 0 ; i < rpcs; i++) {
-      auto f = BCL::buffered_rpc(i % BCL::nprocs(), fn, a, b);
-      futures.push_back(std::move(f));
+  for (size_t i = 0 ; i < rpcs; i++) {
+    size_t rand_proc = lrand48() % BCL::nprocs();
+    auto f = BCL::buffered_rpc(rand_proc, fn, a, b);
+    futures.push_back(std::move(f));
   }
 
-  BCL::flush_signal(); 
+  BCL::flush_signal();
 
   future_barrier(futures);
+  auto end = std::chrono::high_resolution_clock::now();
+  double duration = std::chrono::duration<double>(end - begin).count();
 
-  if (BCL::rank() == 1) {
-    auto end = std::chrono::high_resolution_clock::now();
-    double duration = std::chrono::duration<double>(end - begin).count();
-    printf("%zu buffered RPCs serviced in %f s\n", rpcs * BCL::nprocs(), duration);
-  }
+  BCL::print("%lu buffered RPCs serviced in %lf s\n", rpcs*BCL::nprocs(), duration);
 
   for (auto& f : futures) {
     int val = f.get();
