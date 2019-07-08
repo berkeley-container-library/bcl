@@ -21,7 +21,7 @@ public:
 
   void increase_backoff_impl_() {
     sleep_time_ = backoff_fn_(sleep_time_);
-    sleep_time_ = std::max(sleep_time_, max_sleep_);
+    sleep_time_ = std::min(sleep_time_, max_sleep_);
   }
 
   void reset() {
