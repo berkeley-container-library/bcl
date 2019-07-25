@@ -131,7 +131,7 @@ struct launch_am {
     int rv = gasnetc_AMRequestShortM(BCL::tm, remote_proc, am_id_, 0 GASNETI_THREAD_GET, sizeof...(I), pack.buf[I]...);
   }
 
-  void launch(size_t remote_proc, Args&&... args) {
+  void launch(size_t remote_proc, Args... args) {
     args_type args_{fn_, std::tuple<Args...>(args...)};
     gasnet_pack<args_size> pack(args_);
 
