@@ -1,6 +1,13 @@
 #pragma once
 
 #include <bcl/bcl.hpp>
+#include <cstring>
+
+namespace BCL {
+
+extern gex_EP_t ep;
+
+namespace gas {
 
 template <typename T, std::size_t N>
 struct mtuple {
@@ -158,3 +165,6 @@ auto register_am(Fn fn, Args... args) {
   BCL::barrier();
   return launch_am<Fn, Args...>(entry.gex_index, fn);
 }
+
+} // end gas
+} // end BCL

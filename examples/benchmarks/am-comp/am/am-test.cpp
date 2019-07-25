@@ -1,7 +1,6 @@
+#include <bcl/bcl.hpp>
 #include <unordered_map>
 #include <cstring>
-
-#include "am_utils.hpp"
 
 std::unordered_map<int, int> map;
 size_t responses = 0;
@@ -33,7 +32,7 @@ int main(int argc, char** argv) {
   entry[1].gex_nargs = 0;
 
   int rv = gex_EP_RegisterHandlers(BCL::ep, entry, 2);
-  size_t num_ams = 1000000;
+  size_t num_ams = 100000;
   srand48(BCL::rank());
   BCL::barrier();
   auto begin = std::chrono::high_resolution_clock::now();

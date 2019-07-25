@@ -3,23 +3,23 @@
 #include <unordered_map>
 #include <cstring>
 
-#include "am_utils.hpp"
+// NOTE: this will only compile with the GASNet-EX BCL backend.
 
 std::unordered_map<int, double> map;
 
 int main(int argc, char** argv) {
   BCL::init();
 
-  init_am();
+  BCL::gas::init_am();
 
-  auto caller = register_am([](size_t key, double val) -> void {
+  auto caller = BCL::gas::register_am([](size_t key, double val) -> void {
     printf("Received %lu, %lf\n", key, val);
     map[key] += val;
   }, size_t(), double());
 
   caller.launch(0, 12, 0.5);
 
-  flush_am();
+  BCL::gas::flush_am();
   BCL::barrier();
   fflush(stdout);
   BCL::barrier();
