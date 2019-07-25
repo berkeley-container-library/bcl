@@ -1,28 +1,42 @@
 #include <bcl/bcl.hpp>
 
 #include <unordered_map>
-#include <cstring>
+#include <chrono>
 
 // NOTE: this will only compile with the GASNet-EX BCL backend.
 
-std::unordered_map<int, double> map;
+std::unordered_map<int, int> map;
 
 int main(int argc, char** argv) {
   BCL::init();
 
   BCL::gas::init_am();
 
-  auto caller = BCL::gas::register_am([](size_t key, double val) -> void {
-    printf("Received %lu, %lf\n", key, val);
+  // Register active message handler.
+
+  auto caller = BCL::gas::register_am([](int key, int val) -> void {
     map[key] += val;
-  }, size_t(), double());
+  }, int(), int());
 
-  caller.launch(0, 12, 0.5);
+  size_t num_ams = 100000;
+  srand48(BCL::rank());
+  BCL::barrier();
+  auto begin = std::chrono::high_resolution_clock::now();
 
-  BCL::gas::flush_am();
+  for (size_t i = 0; i < num_ams; i++) {
+    size_t remote_proc = lrand48() % BCL::nprocs();
+
+    caller.launch(remote_proc, 1, 1);
+    BCL::gas::flush_am();
+  }
+  
   BCL::barrier();
-  fflush(stdout);
-  BCL::barrier();
+  auto end = std::chrono::high_resolution_clock::now();
+  double duration = std::chrono::duration<double>(end - begin).count();
+
+  double duration_us = 1e6*duration;
+
+  double latency_us = duration_us / num_ams;
 
   if (BCL::rank() == 0) {
     printf("Printing:\n");
@@ -30,6 +44,8 @@ int main(int argc, char** argv) {
       std::cout << val.first << " " << val.second << std::endl;
     }
   }
+
+  BCL::print("Latency is %lf us per AM. (Finished in %lf s)\n", latency_us, duration);
 
   BCL::finalize();
   return 0;

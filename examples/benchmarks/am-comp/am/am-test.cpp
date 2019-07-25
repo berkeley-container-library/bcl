@@ -2,6 +2,9 @@
 #include <unordered_map>
 #include <cstring>
 
+// NOTE: this will only compile with the GASNet-EX BCL backend.
+//       This is a benchmark written using *raw* active messages.
+
 std::unordered_map<int, int> map;
 size_t responses = 0;
 
@@ -60,6 +63,13 @@ int main(int argc, char** argv) {
   double latency_us = duration_us / num_ams;
 
   BCL::print("Latency is %lf us per AM. (Finished in %lf s)\n", latency_us, duration);
+
+  if (BCL::rank() == 0) {
+    printf("Printing:\n");
+    for (auto val : map) {
+      std::cout << val.first << " " << val.second << std::endl;
+    }
+  }
 
   BCL::finalize();
   return 0;

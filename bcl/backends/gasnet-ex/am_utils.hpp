@@ -138,8 +138,6 @@ struct launch_am {
 
     auto args_tuple = std::make_tuple(args...);
 
-    std::cout << "Launching with " << std::get<0>(args_tuple) << ", " << std::get<1>(args_tuple) << std::endl;
-
     launch_impl_(remote_proc, pack, std::make_index_sequence<gasnet_pack<args_size>::nargs>());
   }
 
