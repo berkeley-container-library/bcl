@@ -128,7 +128,6 @@ struct launch_am {
   template<std::size_t... I>
   void launch_impl_(size_t remote_proc, gasnet_pack<args_size>& pack, std::index_sequence<I...>) {
     auto& args = pack.as_gex_tuple();
-    // int rv = gasnetc_AMRequestShortM(BCL::tm, remote_proc, am_id_, 0 GASNETI_THREAD_GET, sizeof...(I), std::get<I>(args)...);
     int rv = gasnetc_AMRequestShortM(BCL::tm, remote_proc, am_id_, 0 GASNETI_THREAD_GET, sizeof...(I), pack.buf[I]...);
   }
 
@@ -137,6 +136,8 @@ struct launch_am {
     gasnet_pack<args_size> pack(args_);
 
     auto args_tuple = std::make_tuple(args...);
+
+    requested++;
 
     launch_impl_(remote_proc, pack, std::make_index_sequence<gasnet_pack<args_size>::nargs>());
   }
