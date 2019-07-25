@@ -4,7 +4,7 @@ SHELL='bash'
 #      out of an examples/* directory.
 BCLROOT=$(PWD)/../../../../
 
-BCL_BACKEND="gasnet_ex"
+BCL_BACKEND?="gasnet_ex"
 BACKEND = $(shell echo $(BCL_BACKEND) | tr '[:lower:]' '[:upper:]')
 
 TIMER_CMD=time
@@ -18,7 +18,7 @@ ifeq ($(BACKEND),SHMEM)
 else ifeq ($(BACKEND),GASNET_EX)
   BACKEND=GASNET_EX
   # XXX: Allow selection of conduit.
-  include $(gasnet_prefix)/include/mpi-conduit/mpi-par.mak
+  include $(gasnet_prefix)/include/ibv-conduit/ibv-par.mak
 
   BCLFLAGS = -lpthread $(GASNET_CXXCPPFLAGS) $(GASNET_CXXFLAGS) $(GASNET_LDFLAGS) $(GASNET_LIBS) -DGASNET_EX -I$(BCLROOT)
   CXX = mpic++

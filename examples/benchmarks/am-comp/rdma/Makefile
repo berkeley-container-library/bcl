@@ -4,6 +4,8 @@ SHELL='bash'
 #      out of an examples/* directory.
 BCLROOT=$(PWD)/../../../../
 
+BCL_BACKEND ?= gasnet_ex
+
 BACKEND = $(shell echo $(BCL_BACKEND) | tr '[:lower:]' '[:upper:]')
 
 TIMER_CMD=time

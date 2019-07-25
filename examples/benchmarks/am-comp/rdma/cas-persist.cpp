@@ -31,7 +31,14 @@ int main(int argc, char** argv) {
 
     auto ptr_ = ptr[remote_rank] + remote_offset;
 
-    int rv = BCL::fetch_and_op(ptr_, 1, BCL::plus<int>{});
+    int new_val = BCL::rank();
+    int old_val = 0;
+    // Attempt to change from old_val -> new_val
+    int return_val = old_val;
+    do {
+      old_val = return_val;
+      return_val = BCL::compare_and_swap<int>(ptr_, old_val, new_val);
+    } while (return_val != old_val);
   }
 
   BCL::barrier();
