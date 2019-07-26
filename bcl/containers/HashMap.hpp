@@ -14,6 +14,7 @@
 #include <bcl/containers/HashMap/HashMapEntry.hpp>
 #include <bcl/containers/HashMap/HashMapFuture.hpp>
 #include <bcl/containers/HashMap/HashMapIterators.hpp>
+#include <bcl/core/detail/hash_functions.hpp>
 
 namespace BCL {
 
@@ -163,6 +164,8 @@ public:
       success = insert_atomic_impl_(k, obj);
     } else if (atomicity_level == HashMapAL::none){
       success = local_nonatomic_insert(HME{k, obj});
+    } else {
+      throw std::runtime_error("AGH!\n");
     }
     return std::make_pair(false, success);
   }
