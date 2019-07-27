@@ -1,15 +1,14 @@
 #include <bcl/bcl.hpp>
-//#include <bcl/containers/FastQueue.hpp>
-#include <bcl/containers/experimental/ChecksumQueue.hpp>
+#include <bcl/containers/CircularQueue.hpp>
 
 int main(int argc, char** argv) {
   BCL::init(16);
-  size_t num_ops = 100000;
+  size_t num_ops = 10000;
 
-  std::vector<BCL::ChecksumQueue<int>> queues;
+  std::vector<BCL::CircularQueue<int>> queues;
 
   for (size_t rank = 0; rank < BCL::nprocs(); rank++) {
-    queues.push_back(BCL::ChecksumQueue<int>(rank, num_ops*2));
+    queues.push_back(BCL::CircularQueue<int>(rank, num_ops*2));
   }
 
   srand48(BCL::rank());
@@ -22,7 +21,7 @@ int main(int argc, char** argv) {
 
     queues[remote_proc].push(BCL::rank());
   }
-  
+
   BCL::barrier();
   auto end = std::chrono::high_resolution_clock::now();
   double duration = std::chrono::duration<double>(end - begin).count();
