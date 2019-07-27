@@ -188,6 +188,22 @@ public:
     return success;
   }
 
+  bool insert_nonatomic_impl_(const Key& key, const T& val) {
+    size_t hash = hash_fn_(key);
+    size_type probe = 0;
+    bool success = false;
+    do {
+      size_type slot = (hash + get_probe(probe++)) % capacity();
+      auto ptr = slot_ptr(slot);
+      int rv = BCL::compare_and_swap<int>(pointerto(used, ptr), free_flag, ready_flag);
+      if (rv == free_flag) {
+        set_entry(slot, HME{key, val});
+        success = true;
+      }
+    } while(!success && probe < capacity());
+    return success;
+  }
+
   template <typename Fn>
   bool modify(const Key& key, Fn&& fn) {
     size_t hash = hash_fn_(key);
