@@ -4,10 +4,23 @@
 int main(int argc, char** argv) {
   BCL::init(16);
 
-  constexpr size_t num_ops = 10000;
-  constexpr size_t local_size = 100;
+  size_t num_ops = 10000;
+  constexpr size_t local_size = 1000;
   constexpr size_t message_size_bytes = 4;
   constexpr size_t message_size = (message_size_bytes + sizeof(int) - 1) / sizeof(int);
+
+  if(argc == 1)
+    BCL::print("./get -n <number of put operations = 10000>\n");
+  else if(argc > 1)
+  {
+    for(int i=1; i<argc; i++)
+    {
+       if(std::string(argv[i]) == "-n")
+	 num_ops = std::stoll(argv[i+1]);
+    }
+  }
+  BCL::print("run with: num_ops %llu, local_size %llu, message_size_bytes %llu\n", num_ops, local_size, message_size_bytes);
+
 
   std::vector<BCL::GlobalPtr<int>> ptr(BCL::nprocs(), nullptr);
 
@@ -36,7 +49,6 @@ int main(int argc, char** argv) {
     auto ptr_ = ptr[remote_rank] + remote_offset;
 
     BCL::rget(ptr_, local_buffer.data(), message_size);
-    BCL::flush();
   }
 
   BCL::barrier();

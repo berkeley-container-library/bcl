@@ -4,8 +4,21 @@
 int main(int argc, char** argv) {
   BCL::init(16);
 
-  constexpr size_t num_ops = 10000;
-  constexpr size_t local_size = 100;
+  size_t num_ops = 10000;
+  size_t local_size = 100;
+  if(argc == 1)
+    BCL::print("./cas -n <number of put operations = 10000> -s <local buffer size = 100>\n");
+  else if(argc > 1)
+  {
+    for(int i=1; i<argc; i++)
+    {
+       if(std::string(argv[i]) == "-n")
+	 num_ops = std::stoll(argv[i+1]);
+       else if(std::string(argv[i]) == "-s")
+	 local_size = std::stoll(argv[i+1]);
+    }
+  }
+  BCL::print("run with: num_ops %llu, local_size %llu\n", num_ops, local_size);
 
   std::vector<BCL::GlobalPtr<int>> ptr(BCL::nprocs(), nullptr);
 

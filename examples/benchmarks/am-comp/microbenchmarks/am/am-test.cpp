@@ -36,6 +36,18 @@ int main(int argc, char** argv) {
 
   int rv = gex_EP_RegisterHandlers(BCL::ep, entry, 2);
   size_t num_ams = 100000;
+  if(argc == 1)
+    BCL::print("./unordered map add -n <number of put operations = 10000>\n");
+  else if(argc > 1)
+  {
+    for(int i=1; i<argc; i++)
+    {
+       if(std::string(argv[i]) == "-n")
+	 num_ams = std::stoll(argv[i+1]);
+    }
+  }
+  BCL::print("run with: num_ops %llu\n", num_ams);
+
   srand48(BCL::rank());
   BCL::barrier();
   auto begin = std::chrono::high_resolution_clock::now();
