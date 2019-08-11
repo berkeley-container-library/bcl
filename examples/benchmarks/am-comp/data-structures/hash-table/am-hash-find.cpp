@@ -1,7 +1,11 @@
 #include <bcl/bcl.hpp>
 #include <queue>
+#include <limits>
+#include <experimental/random>
 
-std::unordered_map<int, int> map;
+using value_type = std::size_t;
+
+std::unordered_map<value_type, value_type> map;
 
 int main(int argc, char** argv) {
   BCL::init();
@@ -9,13 +13,13 @@ int main(int argc, char** argv) {
   BCL::gas::init_am();
   BCL::gas::init_2wayam();
 
-  auto insert = BCL::gas::register_am([](int key, int value) -> void {
+  auto insert = BCL::gas::register_am([](value_type key, value_type value) -> void {
     map[key] = value;
-  }, int(), int());
+  }, value_type(), value_type());
 
-  auto find = BCL::gas::register_2wayam([](int key) -> int {
+  auto find = BCL::gas::register_2wayam([](value_type key) -> value_type {
     return map[key];
-  }, int());
+  }, value_type());
 
   size_t num_ams = 100000;
   size_t key_space = 1000000;
@@ -23,7 +27,7 @@ int main(int argc, char** argv) {
 
   srand48(BCL::rank());
 
-  std::vector<int> random_numbers;
+  std::vector<value_type> random_numbers;
 
   for (size_t i = 0; i < num_ams; i++) {
     size_t value = lrand48() % key_space;

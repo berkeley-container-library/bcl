@@ -20,6 +20,8 @@ namespace BCL {
 
 // TODO: add KeyEqual, Allocator(?)
 
+size_t collisions_check = 0;
+
 template <
   typename Key,
   typename T,
@@ -170,6 +172,7 @@ public:
     return std::make_pair(false, success);
   }
 
+  // *actually* insert OR update
   bool insert_atomic_impl_(const Key &key, const T &val) {
     size_t hash = hash_fn_(key);
     size_type probe = 0;
@@ -188,6 +191,24 @@ public:
     return success;
   }
 
+  // *strictly* an insert operation
+  bool strictly_insert_atomic_impl_(const Key &key, const T &val) {
+    size_t hash = hash_fn_(key);
+    size_type probe = 0;
+    bool success = false;
+    do {
+      size_type slot = (hash + get_probe(probe++)) % capacity();
+      auto ptr = slot_ptr(slot);
+      int rv = BCL::compare_and_swap<int>(pointerto(used, ptr), free_flag, reserved_flag);
+      if (rv == free_flag) {
+        set_entry(slot, HME{key, val});
+        ready_slot(slot);
+        success = true;
+      }
+    } while (!success && probe < capacity());
+    return success;
+  }
+
   bool insert_nonatomic_impl_(const Key& key, const T& val) {
     size_t hash = hash_fn_(key);
     size_type probe = 0;
@@ -199,8 +220,10 @@ public:
       if (rv == free_flag) {
         set_entry(slot, HME{key, val});
         success = true;
+      } else {
+        collisions_check++;
       }
-    } while(!success && probe < capacity());
+    } while (!success && probe < capacity());
     return success;
   }
 
