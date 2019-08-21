@@ -4,8 +4,8 @@
 int main(int argc, char** argv) {
   BCL::init(16);
 
-  size_t num_ops = 10000;
-  size_t local_size = 100;
+  size_t num_ops = 1000000;
+  size_t local_size = 100000;
   if(argc == 1)
     BCL::print("./cas -n <number of put operations = 10000> -s <local buffer size = 100>\n");
   else if(argc > 1)

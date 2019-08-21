@@ -5,8 +5,8 @@
 int main(int argc, char** argv) {
   BCL::init(16);
 
-  size_t num_ops = 10000;
-  size_t local_size = 100;
+  size_t num_ops = 1000000;
+  size_t local_size = 100000;
   constexpr size_t message_size_bytes = 4;
   constexpr size_t message_size = (message_size_bytes + sizeof(int) - 1) / sizeof(int);
 
