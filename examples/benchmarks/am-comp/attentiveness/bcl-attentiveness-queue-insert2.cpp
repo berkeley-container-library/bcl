@@ -2,7 +2,7 @@
 #include <bcl/containers/FastQueue.hpp>
 
 void compute_by_time(double time_us);
-void compute_by_work(double time_us);
+long compute_by_work(double time_us);
 void warmup(size_t num_ops);
 double calculate_workload_us(double workload);
 
@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
 
   for (auto compute_workload : compute_array) {
     std::vector<BCL::FastQueue<int>> queues;
-
+    long t = 0;
     // calculate compute time
     double workload_us = calculate_workload_us(compute_workload);
 
@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
 
       queues[remote_proc].push(BCL::rank());
 
-      compute_by_time(compute_workload);
+      t = compute_by_work(compute_workload);
     }
 
     BCL::barrier();
@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
     double duration_us = 1e6*duration;
     double latency_us = (duration_us - workload_us*num_ops) / num_ops;
 
-    BCL::print("Compute time is %.2lf us per op\n", workload_us);
+    BCL::print("Compute time is %.2lf us per op. t = %ld\n", workload_us, t);
     BCL::print("Latency is %.2lf us per op. (Finished in %.2lf s)\n",
                latency_us, duration);
   }
@@ -62,14 +62,15 @@ void compute_by_time(double time_us) {
   }
 }
 
-void compute_by_work(double workload) {
-  long workload_unit = 100000;
+long compute_by_work(double workload) {
+  long workload_unit = 1000;
   long a = 1, b = 1, c;
-  for (long i = 0; i < workload * workload_unit; ++i) {
+  for (long i = 0; i < workload_unit*workload; ++i) {
     c = a + b;
     a = b;
     b = c;
   }
+  return c;
 }
 
 void warmup(size_t num_ops) {
@@ -94,10 +95,12 @@ void warmup(size_t num_ops) {
 
 double calculate_workload_us(double workload) {
   size_t num_ops = 100000;
+  long t = 0;
+  BCL::barrier();
   auto begin = std::chrono::high_resolution_clock::now();
 
   for (size_t i = 0; i < num_ops; i++) {
-    compute_by_work(workload);
+    t = compute_by_work(workload);
   }
 
   BCL::barrier();
@@ -106,7 +109,7 @@ double calculate_workload_us(double workload) {
 
   double duration_us = 1e6 * duration;
   double latency_us = duration_us / num_ops;
-  BCL::print("Duration is %.2lf us per op\n", duration);
+  BCL::print("t = %ld\n", t);
 
   return latency_us;
 }
