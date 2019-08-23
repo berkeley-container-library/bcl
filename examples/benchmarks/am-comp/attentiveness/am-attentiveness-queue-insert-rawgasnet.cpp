@@ -11,7 +11,7 @@ void service_ampoll() {
 }
 
 size_t issued = 0;
-size_t received = 0;
+std::atomic<size_t> received = 0;
 
 std::mutex mutex;
 std::queue<int> queue;
@@ -32,6 +32,7 @@ int main(int argc, char** argv) {
   size_t num_ams = 50000;
 
   BCL::init();
+  BCL::print("Start!\n");
 
   size_t handler_num = GEX_AM_INDEX_BASE;
   size_t max_args = gex_AM_MaxArgs();
@@ -52,6 +53,7 @@ int main(int argc, char** argv) {
   auto thread_ampool = std::thread(service_ampoll);
 
   srand48(BCL::rank());
+  fprintf(stderr, "Starting experiment...\n");
   BCL::barrier();
 
   for (size_t i = 0; i < num_ams; i++) {
@@ -60,9 +62,11 @@ int main(int argc, char** argv) {
     issued++;
     int rv = gex_AM_RequestShort(BCL::tm, remote_proc, GEX_AM_INDEX_BASE, 0, BCL::rank());
   }
+  fprintf(stderr, "Waiting until finished...\n");
   while (received < issued) {}
 
   BCL::barrier();
+  fprintf(stderr, "After barrier...\n");
 
   thread_run = false;
   thread_ampool.join();
