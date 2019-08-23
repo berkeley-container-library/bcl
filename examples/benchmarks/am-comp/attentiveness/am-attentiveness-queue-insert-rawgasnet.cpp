@@ -1,5 +1,6 @@
 #include <bcl/bcl.hpp>
 #include <queue>
+#include <mutex>
 
 bool thread_run = true;
 
@@ -12,10 +13,14 @@ void service_ampoll() {
 size_t issued = 0;
 size_t received = 0;
 
+std::mutex mutex;
 std::queue<int> queue;
 
 void queue_insert_handler(gex_Token_t token, gex_AM_Arg_t value) {
-  queue.push(value);
+  {
+    std::lock_guard<std::mutex> guard(mutex);
+    queue.push(value);
+  }
   gex_AM_ReplyShort(token, GEX_AM_INDEX_BASE+1, 0);
 }
 
@@ -27,7 +32,7 @@ int main(int argc, char** argv) {
   size_t num_ams = 50000;
 
   BCL::init();
-  
+
   size_t handler_num = GEX_AM_INDEX_BASE;
   size_t max_args = gex_AM_MaxArgs();
 
