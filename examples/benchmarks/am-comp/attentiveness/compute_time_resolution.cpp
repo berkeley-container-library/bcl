@@ -25,9 +25,9 @@ int main(int argc, char** argv) {
     auto begin = std::chrono::high_resolution_clock::now();
 
     for (size_t i = 0; i < num_ops; i++) {
-      size_t remote_proc = lrand48() % BCL::nprocs();
+//      size_t remote_proc = lrand48() % BCL::nprocs();
 
-      queues[remote_proc].push(BCL::rank());
+//      queues[remote_proc].push(BCL::rank());
 
       compute_by_time(compute_us);
     }
@@ -36,10 +36,10 @@ int main(int argc, char** argv) {
     auto end = std::chrono::high_resolution_clock::now();
     double duration = std::chrono::duration<double>(end - begin).count();
     double duration_us = 1e6*duration;
-    double latency_us = (duration_us - compute_us*num_ops) / num_ops;
+    double latency_us = duration_us / num_ops - compute_us;
 
     BCL::print("Compute time is %.2lf us per op\n", compute_us);
-    BCL::print("Latency is %lf us per op. (Finished in %lf s)\n",
+    BCL::print("Overhead is %lf us per op. (Finished in %lf s)\n",
                latency_us, duration);
   }
 
