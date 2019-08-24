@@ -29,7 +29,8 @@ int main(int argc, char** argv) {
 
 //      queues[remote_proc].push(BCL::rank());
 
-      compute_by_time(compute_us);
+      std::chrono::high_resolution_clock::now();
+//      compute_by_time(compute_us);
     }
 
     BCL::barrier();

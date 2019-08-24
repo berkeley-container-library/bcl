@@ -34,9 +34,9 @@ else
   BCL_RUN=mpirun --oversubscribe -n 4
 endif
 
-# CXXFLAGS = -O3 -std=gnu++17 $(BCLFLAGS)
-# TODO: TURN ON OPTIMIZATIONS BEFORE DOING ANY IMPORTANT PERF BENCHMARKING!!!!
-CXXFLAGS = -std=gnu++17 $(BCLFLAGS)
+CXXFLAGS = -O3 -std=gnu++17 $(BCLFLAGS)
+# DONE: TURN ON OPTIMIZATIONS BEFORE DOING ANY IMPORTANT PERF BENCHMARKING!!!!
+# CXXFLAGS = -std=gnu++17 $(BCLFLAGS)
 
 SOURCES += $(wildcard *.cpp)
 TARGETS := $(patsubst %.cpp, %, $(SOURCES))

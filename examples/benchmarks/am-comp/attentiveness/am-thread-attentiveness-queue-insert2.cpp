@@ -1,12 +1,21 @@
 #include <bcl/bcl.hpp>
 #include <queue>
 
-void compute_by_time(double time_us);
 long compute_by_work(double workload);
-void warmup(size_t num_ams);
 double calculate_workload_us(double workload);
 
+template <typename AM>
+void warmup(size_t num_ams, AM& insert);
+
+bool thread_run = true;
+std::mutex queue_mutex;
 std::queue<int> queue;
+
+void service_ampoll() {
+  while (thread_run) {
+    gasnet_AMPoll();
+  }
+}
 
 int main(int argc, char** argv) {
   size_t num_ams = 100000;
@@ -15,13 +24,15 @@ int main(int argc, char** argv) {
   BCL::init();
   BCL::gas::init_am();
 
-  warmup(num_ams);
+  auto thread_ampool = std::thread(service_ampoll);
+  auto insert = BCL::gas::register_am([](int value) -> void {
+      std::lock_guard<std::mutex> guard(queue_mutex);
+      queue.push(value);
+  }, int());
+
+  warmup(num_ams, insert);
 
   for (auto compute_workload : compute_array) {
-    auto insert = BCL::gas::register_am([](int value) -> void {
-      queue.push(value);
-    }, int());
-
     long t = 0;
     // calculate compute time
 //    double workload_us = calculate_workload_us(compute_workload);
@@ -35,11 +46,11 @@ int main(int argc, char** argv) {
       size_t remote_proc = lrand48() % BCL::nprocs();
 
       insert.launch(remote_proc, BCL::rank());
-      BCL::gas::flush_am();
+      BCL::gas::flush_am_nopoll();
 
       t = compute_by_work(compute_workload);
     }
-
+    BCL::gas::flush_am();
     BCL::barrier();
     auto end = std::chrono::high_resolution_clock::now();
     double duration = std::chrono::duration<double>(end - begin).count();
@@ -52,19 +63,11 @@ int main(int argc, char** argv) {
     BCL::print("Latency is %.2lf us per op. (Finished in %.2lf s)\n",
                latency_us, duration);
   }
+
+  thread_run = false;
+  thread_ampool.join();
   BCL::finalize();
   return 0;
-}
-
-void compute_by_time(double time_us) {
-  double time = time_us / 1e6;
-  auto begin = std::chrono::high_resolution_clock::now();
-  auto now = begin;
-  double duration = std::chrono::duration<double>(now - begin).count();
-  while (duration < time) {
-    now = std::chrono::high_resolution_clock::now();
-    duration = std::chrono::duration<double>(now - begin).count();
-  }
 }
 
 long compute_by_work(double workload) {
@@ -78,11 +81,8 @@ long compute_by_work(double workload) {
   return b;
 }
 
-void warmup(size_t num_ams) {
-  auto insert = BCL::gas::register_am([](int value) -> void {
-      queue.push(value);
-  }, int());
-
+template <typename AM>
+void warmup(size_t num_ams, AM& insert) {
   srand48(BCL::rank());
   BCL::barrier();
 
@@ -90,8 +90,10 @@ void warmup(size_t num_ams) {
     size_t remote_proc = lrand48() % BCL::nprocs();
 
     insert.launch(remote_proc, BCL::rank());
-    BCL::gas::flush_am();
+    BCL::gas::flush_am_nopoll();
   }
+  BCL::gas::flush_am();
+  BCL::barrier();
 }
 
 double calculate_workload_us(double workload) {

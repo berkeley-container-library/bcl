@@ -59,7 +59,7 @@ struct gasnet_pack {
   gex_AM_Arg_t buf[nargs];
 };
 
-size_t acknowledged = 0;
+std::atomic<size_t> acknowledged = 0;
 size_t requested = 0;
 
 size_t handler_num = 0;
@@ -121,6 +121,10 @@ void flush_am() {
   while (acknowledged < requested) {
     gasnet_AMPoll();
   }
+}
+
+void flush_am_nopoll() {
+  while (acknowledged < requested) {}
 }
 
 template <typename Fn, typename... Args>
