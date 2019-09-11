@@ -2,7 +2,6 @@
 
 #include <unistd.h>
 #include <cuda.h>
-#include <thrust/device_vector.h>
 
 /*
   NOTE: This is a `device_vector`, a simple vector type that is allocated
