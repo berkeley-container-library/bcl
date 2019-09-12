@@ -13,14 +13,19 @@ struct FastQueue {
             capacity_(capacity), host_(host) {
     if (BCL::rank() == host) {
       data_ = BCL::cuda::alloc<value_type>(capacity);
-      head_ = BCL::cuda::alloc<value_type>(1);
-      tail_ = BCL::cuda::alloc<value_type>(1);
-      head_ = 0;
-      tail_ = 0;
+      head_ = BCL::cuda::alloc<int>(1);
+      tail_ = BCL::cuda::alloc<int>(1);
+      int value = 0;
+      BCL::cuda::memcpy(head_, &value, sizeof(int));
+      BCL::cuda::memcpy(tail_, &value, sizeof(int));
     }
     data_ = BCL::broadcast(data_, host);
     head_ = BCL::broadcast(head_, host);
     tail_ = BCL::broadcast(tail_, host);
+
+    if (data_ == nullptr || head_ == nullptr || tail_ == nullptr) {
+      throw std::runtime_error("FastQueue ran out of memory with request for " + std::to_string(capacity*sizeof(value_type)) + " bytes.");
+    }
   }
 
   __device__ bool push(const value_type& value) {
@@ -67,6 +72,14 @@ struct FastQueue {
 
   __host__ __device__ size_t capacity() const noexcept {
     return capacity_;
+  }
+
+  __host__ __device__ size_t size() const noexcept {
+    int head;
+    int tail;
+    BCL::cuda::memcpy(&head, head_, sizeof(int));
+    BCL::cuda::memcpy(&tail, tail_, sizeof(int));
+    return tail - head;
   }
 
   BCL::cuda::ptr<value_type> data_;
