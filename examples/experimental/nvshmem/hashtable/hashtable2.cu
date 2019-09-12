@@ -4,6 +4,7 @@
 #include <bcl/containers/experimental/cuda/launch_kernel.cuh>
 
 #include <bcl/containers/experimental/cuda/DHashMap.cuh>
+#include <iostream>
 
 __global__ void testcheck(BCL::cuda::DHashMap<uint32_t, int> map, size_t size, int my_pe)
 {
