@@ -47,6 +47,50 @@ struct FastQueue {
     return true;
   }
 
+  __device__ bool push(const value_type* ptr, size_t size) {
+    int loc = BCL::cuda::fetch_and_add(tail_, size);
+    int new_tail = loc+size;
+    // TODO: update tail_buffer
+    if (new_tail - head_buf_ > capacity()) {
+      // head_buf_ = BCL::cuda::rget(head_);
+      BCL::cuda::memcpy(&head_buf_, head_, sizeof(int));
+      if (new_tail - head_buf_ > capacity()) {
+        BCL::cuda::fetch_and_add(tail_, -size);
+        return false;
+      }
+    }
+
+    // data_[loc % capacity()] = value;
+    BCL::cuda::memcpy(data_ + (loc % capacity()), ptr, size*sizeof(value_type));
+
+    return true;
+  }
+
+  __device__ bool push_warp(const value_type* ptr, size_t size) {
+    int warp_id = threadIdx.x % 32;
+    int loc;
+    if (warp_id == 0) {
+      loc = BCL::cuda::fetch_and_add(tail_, size);
+      int new_tail = loc+size;
+      // TODO: update tail_buffer
+      if (new_tail - head_buf_ > capacity()) {
+        // head_buf_ = BCL::cuda::rget(head_);
+        BCL::cuda::memcpy(&head_buf_, head_, sizeof(int));
+        if (new_tail - head_buf_ > capacity()) {
+          BCL::cuda::fetch_and_add(tail_, -size);
+          return false;
+        }
+      }
+    }
+
+    loc = __shfl_sync(0xffffffff, loc, 0);
+
+    // data_[loc % capacity()] = value;
+    BCL::cuda::memcpy_warp(data_ + (loc % capacity()), ptr, size*sizeof(value_type));
+
+    return true;
+  }
+
   __device__ bool pop(value_type& value) {
     int loc = BCL::cuda::fetch_and_add(head_, 1);
     int new_head = loc+1;

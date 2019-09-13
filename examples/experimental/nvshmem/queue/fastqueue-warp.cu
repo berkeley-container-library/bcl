@@ -24,7 +24,9 @@ int main(int argc, char** argv) {
 
   BCL::cuda::global_launch(num_inserts,
                      [] __device__ (size_t idx, BCL::cuda::FastQueue<int>& queue) {
-                       bool success = queue.push(idx);
+                       size_t warp_id = idx % 32;
+                       int values[32];
+                       bool success = queue.push_warp(values, 32);
                        if (!success) {
                          printf("AGH! I have failed!\n");
                        }
