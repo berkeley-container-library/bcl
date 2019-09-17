@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
     int n_pes = nvshmem_n_pes();
     int numBlock = 224;
     int numThread = 256;
-    cudaOccupancyMaxPotentialBlockSize(&numBlock, &numThread, (void *)_runQueueInsert_block<int, uint32_t, uint32_t>);
+    cudaOccupancyMaxPotentialBlockSize(&numBlock, &numThread, (void *)_runQueueInsert_block2<int, uint32_t, uint32_t>);
 //    cudaOccupancyMaxActiveBlocksPerMultiprocessor(&numBlock,(void *)_launchWarpPer32Items4<int, int, PageRankFuncWarp<int,int,float>, PageRank<int, int, float>, Context<PageRankEntry<int, float>>>, numThread, 0);
     cout << "n_pes: "<< n_pes << " my_pe: "<< my_pe << " numBlocks: "<< numBlock << " numThreads: "<< numThread << " number of items to insert: "<< num_items << " local percentage: " << local_percentage << endl;
 
@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
     cout << "PE " << my_pe <<" About to start the insertion\n";
     nvshmem_barrier_all();
     timer.Start();
-    runQueueInsert_block(numBlock, numThread, queue, items, num_items, max_rand, local_percentage);
+    runQueueInsert_block2(numBlock, numThread, queue, items, num_items, max_rand, local_percentage);
 //    runQueueInsert(numBlock, numThread, queue, items, num_items, max_rand, local_percentage);
     timer.Stop();
     nvshmem_barrier_all();

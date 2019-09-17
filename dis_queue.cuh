@@ -124,6 +124,41 @@ struct DQueue {
 		s[i*TOTAL_WARPS_BLOCK + LANE_] = 0;
 	 }
     }
+
+    __forceinline__ __device__ void push_block2(bool ifpush, int pe, T item)
+    {
+	// num of (n_pes-1) end counters and (n_pes-1) data pool
+	extern __shared__ int s[];
+	if(threadIdx.x <  (n_pes-1))
+		s[threadIdx.x] = 0;
+	__syncthreads();
+	if(ifpush)
+	{
+	   unsigned int mask = __match_any_sync(__activemask(), pe);
+	   uint32_t total = __popc(mask);
+	   uint32_t rank = __popc(mask & lanemask_lt());
+	   int pe_ = (pe > my_pe)? pe-1:pe;
+	   uint32_t alloc;
+	   if(rank == 0)
+	      alloc = atomicAdd(s+pe_, total);
+	   alloc = __shfl_sync(mask, alloc, __ffs(mask)-1);
+	   s[n_pes-1 + pe_*1024 + alloc+rank] = item;
+	}
+	__syncthreads();
+	for(int i=0; i<n_pes-1; i++)
+	{
+	    __shared__ uint32_t alloc;
+	    int send_size = s[i];
+	    if(send_size > 0)
+	    {
+	       if(threadIdx.x == 0)
+		  alloc = atomicAdd(local_end+i, send_size);
+	       __syncthreads();
+	       int send_pe = (i<my_pe)?i:i+1;
+	       nvshmemx_int_put_block((int *)queue+alloc, s+n_pes-1+i*1024, send_size, send_pe);
+	    }
+	}
+    }
 };
 
 
