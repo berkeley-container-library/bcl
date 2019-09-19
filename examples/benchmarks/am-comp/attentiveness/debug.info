@@ -1,0 +1,114 @@
+jackyan@nid00213:~/lbnl/bcl/examples/benchmarks/am-comp/attentiveness> GASNET_BACKTRACE=1 srun -N 1 -n 2 am-attentiveness-queue-insert3
+*** Caught a fatal signal (proc 1): SIGSEGV(11)
+[1] Invoking GDB for backtrace...
+[1] /usr/bin/gdb -nx -batch -x /tmp/gasnet_GqQkp4 '/global/u1/j/jackyan/lbnl/bcl/examples/benchmarks/am-comp/attentiveness/am-attentiveness-queue-insert3' 9504
+[1] [New LWP 9508]
+[1] [Thread debugging using libthread_db enabled]
+[1] Using host libthread_db library "/lib64/libthread_db.so.1".
+[1] 0x0000000020006fe4 in _gasnet_AMPoll () at /global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:1064
+[1] 1064	  }
+[1]   Id   Target Id                                          Frame 
+[1] * 1    Thread 0x40975d40 (LWP 9504) "am-attentivenes"     0x0000000020006fe4 in _gasnet_AMPoll () at /global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:1064
+[1]   2    Thread 0x2aab0b800700 (LWP 9508) "am-attentivenes" 0x00000000203a5387 in __waitpid (pid=9509, stat_loc=stat_loc@entry=0x2aab0b7fc608, options=options@entry=0) at ../sysdeps/unix/sysv/linux/waitpid.c:29
+[1] 
+[1] Thread 2 (Thread 0x2aab0b800700 (LWP 9508)):
+[1] #0  0x00000000203a5387 in __waitpid (pid=9509, stat_loc=stat_loc@entry=0x2aab0b7fc608, options=options@entry=0) at ../sysdeps/unix/sysv/linux/waitpid.c:29
+[1] #1  0x0000000020669cef in do_system (line=<optimized out>) at ../sysdeps/posix/system.c:148
+[1] #2  0x000000002009bf43 in gasneti_system_redirected (cmd=0x4090ba20 <cmd> "/usr/bin/gdb -nx -batch -x /tmp/gasnet_GqQkp4 '/global/u1/j/jackyan/lbnl/bcl/examples/benchmarks/am-comp/attentiveness/am-attentiveness-queue-insert3' 9504", stdout_fd=9) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:1271
+[1] #3  0x000000002009c6c2 in gasneti_bt_gdb (fd=9) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:1518
+[1] #4  0x000000002009cf35 in gasneti_print_backtrace (fd=2) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:1793
+[1] #5  0x000000002009d516 in _gasneti_print_backtrace_ifenabled (fd=2) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:1925
+[1] #6  0x0000000020287cd5 in gasneti_defaultSignalHandler (sig=11) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_internal.c:704
+[1] #7  <signal handler called>
+[1] #8  0x000000002001d408 in __gnu_cxx::new_allocator<int>::construct<int, int const&> (this=0x409059a0 <queue>, __p=0x0, __args#0=@0x2aab0b7ff034: 0) at /opt/gcc/8.2.0/snos/include/g++/ext/new_allocator.h:136
+[1] #9  0x000000002001cc85 in std::allocator_traits<std::allocator<int> >::construct<int, int const&> (__a=..., __p=0x0, __args#0=@0x2aab0b7ff034: 0) at /opt/gcc/8.2.0/snos/include/g++/bits/alloc_traits.h:475
+[1] #10 0x000000002001c708 in std::deque<int, std::allocator<int> >::push_back (this=0x409059a0 <queue>, __x=@0x2aab0b7ff034: 0) at /opt/gcc/8.2.0/snos/include/g++/bits/stl_deque.h:1557
+[1] #11 0x000000002001c133 in std::queue<int, std::deque<int, std::allocator<int> > >::push (this=0x409059a0 <queue>, __x=@0x2aab0b7ff034: 0) at /opt/gcc/8.2.0/snos/include/g++/bits/stl_queue.h:252
+[1] #12 0x000000002001aca6 in <lambda(int)>::operator()(int) const (__closure=0x2aab0b7ff13c, value=0) at am-attentiveness-queue-insert3.cpp:75
+[1] #13 0x000000002001b6ba in std::__invoke_impl<void, warmup(size_t)::<lambda(int)>, int>(std::__invoke_other, <lambda(int)> &&, int &&) (__f=..., __args#0=@0x2aab0b7ff13c: 0) at /opt/gcc/8.2.0/snos/include/g++/bits/invoke.h:60
+[1] #14 0x000000002001b4d5 in std::__invoke<warmup(size_t)::<lambda(int)>, int>(<lambda(int)> &&, int &&) (__fn=..., __args#0=@0x2aab0b7ff13c: 0) at /opt/gcc/8.2.0/snos/include/g++/bits/invoke.h:95
+[1] #15 0x000000002001b0b6 in std::__apply_impl<warmup(size_t)::<lambda(int)>, std::tuple<int>, 0>(<lambda(int)> &&, std::tuple<int> &&, std::index_sequence) (__f=..., __t=...) at /opt/gcc/8.2.0/snos/include/g++/tuple:1678
+[1] #16 0x000000002001b0f5 in std::apply<warmup(size_t)::<lambda(int)>, std::tuple<int> >(<lambda(int)> &&, std::tuple<int> &&) (__f=..., __t=...) at /opt/gcc/8.2.0/snos/include/g++/tuple:1687
+[1] #17 0x000000002001b204 in BCL::gas::generic_handler_<warmup(size_t)::<lambda(int)>, int>(gex_Token_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t, gex_AM_Arg_t) (token=0x2aab0b7ff331, arg0=0, arg1=192934705, arg2=0, arg3=1, arg4=192933671, arg5=0, arg6=0, arg7=0, arg8=0, arg9=0, arg10=1083671472, arg11=0, arg12=-1083787681, arg13=1083792880, arg14=2, arg15=813183008) at /global/homes/j/jackyan/lbnl/bcl/examples/benchmarks/am-comp/attentiveness/../../../../bcl/backends/gasnet-ex/am_utils.hpp:101
+[1] #18 0x00000000200ba979 in gasneti_AMPSHM_service_incoming_msg (vnet=0x409783b0, isReq=1) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_pshm.c:1177
+[1] #19 0x00000000200bd49c in gasneti_AMPSHMPoll (repliesOnly=0) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_pshm.c:1223
+[1] #20 0x000000002003b3fe in gasnetc_AMPoll () at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gemini-conduit/gasnet_core.c:1232
+[1] #21 0x0000000020006cd6 in _gasneti_AMPoll () at /global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:977
+[1] #22 0x0000000020006fe3 in _gasnet_AMPoll () at /global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:1063
+[1] #23 0x000000002001a68f in service_ampoll () at am-attentiveness-queue-insert3.cpp:12
+[1] #24 0x000000002001c613 in std::__invoke_impl<void, void (*)()> (__f=@0x40994238: 0x2001a67b <service_ampoll()>) at /opt/gcc/8.2.0/snos/include/g++/bits/invoke.h:60
+[1] #25 0x000000002001c071 in std::__invoke<void (*)()> (__fn=@0x40994238: 0x2001a67b <service_ampoll()>) at /opt/gcc/8.2.0/snos/include/g++/bits/invoke.h:95
+[1] #26 0x000000002001e3c6 in std::thread::_Invoker<std::tuple<void (*)()> >::_M_invoke<0ul> (this=0x40994238) at /opt/gcc/8.2.0/snos/include/g++/thread:234
+[1] #27 0x000000002001e39c in std::thread::_Invoker<std::tuple<void (*)()> >::operator() (this=0x40994238) at /opt/gcc/8.2.0/snos/include/g++/thread:243
+[1] #28 0x000000002001e380 in std::thread::_State_impl<std::thread::_Invoker<std::tuple<void (*)()> > >::_M_run (this=0x40994230) at /opt/gcc/8.2.0/snos/include/g++/thread:186
+[1] #29 0x00000000205f155f in std::execute_native_thread_routine (__p=0x40994230) at ../../../../../cray-gcc-8.2.0-201811010913.df0113f60eb17/libstdc++-v3/src/c++11/thread.cc:80
+[1] #30 0x000000002001f789 in start_thread (arg=0x2aab0b800700) at pthread_create.c:465
+[1] #31 0x00000000206de3bf in clone () at ../sysdeps/unix/sysv/linux/x86_64/clone.S:95
+[1] 
+[1] Thread 1 (Thread 0x40975d40 (LWP 9504)):
+[1] #0  0x0000000020006fe4 in _gasnet_AMPoll () at /global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:1064
+[1] #1  0x000000002001a444 in BCL::gas::flush_am () at /global/homes/j/jackyan/lbnl/bcl/examples/benchmarks/am-comp/attentiveness/../../../../bcl/backends/gasnet-ex/am_utils.hpp:122
+[1] #2  0x000000002001ae01 in warmup (num_ams=50000) at am-attentiveness-queue-insert3.cpp:85
+[1] #3  0x000000002001a8a3 in main (argc=1, argv=0x7fffffff6ce8) at am-attentiveness-queue-insert3.cpp:24
+[1] [Inferior 1 (process 9504) detached]
+srun: error: nid00213: task 1: Segmentation fault
+srun: Terminating job step 24101793.6
+slurmstepd: error: *** STEP 24101793.6 ON nid00213 CANCELLED AT 2019-08-23T12:37:58 ***
+*** Caught a signal (proc 0): SIGTERM(15)
+*** FATAL ERROR (proc 0): Assertion failure in gasneti_mutex_trylock() at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_toolhelp.h:546: Invalid recursive mutex acquire in gasneti_mutex_trylock
+[0] Invoking GDB for backtrace...
+[0] /usr/bin/gdb -nx -batch -x /tmp/gasnet_4W6mhs '/global/u1/j/jackyan/lbnl/bcl/examples/benchmarks/am-comp/attentiveness/am-attentiveness-queue-insert3' 9503
+[0] [New LWP 9507]
+[0] [Thread debugging using libthread_db enabled]
+[0] Using host libthread_db library "/lib64/libthread_db.so.1".
+[0] 0x00000000203a5387 in __waitpid (pid=9551, stat_loc=stat_loc@entry=0x7fffffff3028, options=options@entry=0) at ../sysdeps/unix/sysv/linux/waitpid.c:29
+[0]   Id   Target Id                                          Frame 
+[0] * 1    Thread 0x40975d40 (LWP 9503) "am-attentivenes"     0x00000000203a5387 in __waitpid (pid=9551, stat_loc=stat_loc@entry=0x7fffffff3028, options=options@entry=0) at ../sysdeps/unix/sysv/linux/waitpid.c:29
+[0]   2    Thread 0x2aab0ba00700 (LWP 9507) "am-attentivenes" 0x000000002028c4e7 in _gasneti_memcheck (ptr=0x10000092790, curloc=0x20715dc0 "/global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:972", checktype=2) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_internal.c:2047
+[0] 
+[0] Thread 2 (Thread 0x2aab0ba00700 (LWP 9507)):
+[0] #0  0x000000002028c4e7 in _gasneti_memcheck (ptr=0x10000092790, curloc=0x20715dc0 "/global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:972", checktype=2) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_internal.c:2047
+[0] #1  0x000000002028bd7b in _gasneti_memcheck_one (curloc=0x20715dc0 "/global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:972") at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_internal.c:1992
+[0] #2  0x0000000020006c90 in _gasneti_AMPoll () at /global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:972
+[0] #3  0x0000000020006fe3 in _gasnet_AMPoll () at /global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:1063
+[0] #4  0x000000002001a68f in service_ampoll () at am-attentiveness-queue-insert3.cpp:12
+[0] #5  0x000000002001c613 in std::__invoke_impl<void, void (*)()> (__f=@0x40997fd8: 0x2001a67b <service_ampoll()>) at /opt/gcc/8.2.0/snos/include/g++/bits/invoke.h:60
+[0] #6  0x000000002001c071 in std::__invoke<void (*)()> (__fn=@0x40997fd8: 0x2001a67b <service_ampoll()>) at /opt/gcc/8.2.0/snos/include/g++/bits/invoke.h:95
+[0] #7  0x000000002001e3c6 in std::thread::_Invoker<std::tuple<void (*)()> >::_M_invoke<0ul> (this=0x40997fd8) at /opt/gcc/8.2.0/snos/include/g++/thread:234
+[0] #8  0x000000002001e39c in std::thread::_Invoker<std::tuple<void (*)()> >::operator() (this=0x40997fd8) at /opt/gcc/8.2.0/snos/include/g++/thread:243
+[0] #9  0x000000002001e380 in std::thread::_State_impl<std::thread::_Invoker<std::tuple<void (*)()> > >::_M_run (this=0x40997fd0) at /opt/gcc/8.2.0/snos/include/g++/thread:186
+[0] #10 0x00000000205f155f in std::execute_native_thread_routine (__p=0x40997fd0) at ../../../../../cray-gcc-8.2.0-201811010913.df0113f60eb17/libstdc++-v3/src/c++11/thread.cc:80
+[0] #11 0x000000002001f789 in start_thread (arg=0x2aab0ba00700) at pthread_create.c:465
+[0] #12 0x00000000206de3bf in clone () at ../sysdeps/unix/sysv/linux/x86_64/clone.S:95
+[0] 
+[0] Thread 1 (Thread 0x40975d40 (LWP 9503)):
+[0] #0  0x00000000203a5387 in __waitpid (pid=9551, stat_loc=stat_loc@entry=0x7fffffff3028, options=options@entry=0) at ../sysdeps/unix/sysv/linux/waitpid.c:29
+[0] #1  0x0000000020669cef in do_system (line=<optimized out>) at ../sysdeps/posix/system.c:148
+[0] #2  0x000000002009bf43 in gasneti_system_redirected (cmd=0x4090ba20 <cmd> "/usr/bin/gdb -nx -batch -x /tmp/gasnet_4W6mhs '/global/u1/j/jackyan/lbnl/bcl/examples/benchmarks/am-comp/attentiveness/am-attentiveness-queue-insert3' 9503", stdout_fd=9) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:1271
+[0] #3  0x000000002009c6c2 in gasneti_bt_gdb (fd=9) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:1518
+[0] #4  0x000000002009cf35 in gasneti_print_backtrace (fd=2) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:1793
+[0] #5  0x000000002009d516 in _gasneti_print_backtrace_ifenabled (fd=2) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:1925
+[0] #6  0x000000002009afc6 in gasneti_error_abort () at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:739
+[0] #7  0x000000002009b362 in _gasneti_assert_fail (funcname=0x2071e1b0 <__func__.5247> "gasneti_mutex_trylock", filename=0x20719960 "/global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_toolhelp.h", linenum=546, fmt=0x20719959 "%s") at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:804
+[0] #8  0x00000000200237b2 in gasneti_mutex_trylock (_pl=0x408fbfa0 <gasneti_throttle_spinpoller>) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_toolhelp.h:545
+[0] #9  0x000000002002646b in _gasneti_AMPoll () at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_help.h:974
+[0] #10 0x000000002003d56e in gasnetc_AMRequestShortM (tm=0xffffffffbf66c6ff, rank=1, handler=2 '\002', flags=0, numargs=1) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gemini-conduit/gasnet_core.c:1600
+[0] #11 0x000000002003b0b1 in gasnetc_exit (exitcode=1) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gemini-conduit/gasnet_core.c:1135
+[0] #12 0x0000000020287c85 in gasneti_defaultSignalHandler (sig=3) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_internal.c:689
+[0] #13 <signal handler called>
+[0] #14 raise (sig=3) at ../sysdeps/unix/sysv/linux/raise.c:51
+[0] #15 0x000000002009b8fb in gasneti_raise (sig=3) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_tools.c:1062
+[0] #16 0x0000000020287d95 in gasneti_defaultSignalHandler (sig=15) at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gasnet_internal.c:732
+[0] #17 <signal handler called>
+[0] #18 0x00000000200650c8 in gasnetc_poll_local_queue () at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gemini-conduit/gasnet_gemini.c:2384
+[0] #19 0x0000000020065fe2 in gasnetc_poll () at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gemini-conduit/gasnet_gemini.c:2505
+[0] #20 0x000000002003b403 in gasnetc_AMPoll () at /global/u1/j/jackyan/lbnl/tmp/GASNet-2019.6.0/gemini-conduit/gasnet_core.c:1239
+[0] #21 0x0000000020006cd6 in _gasneti_AMPoll () at /global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:977
+[0] #22 0x0000000020006fe3 in _gasnet_AMPoll () at /global/homes/j/jackyan/lbnl/GASNet-2019.6.0-debug/include/gasnet_help.h:1063
+[0] #23 0x000000002001a444 in BCL::gas::flush_am () at /global/homes/j/jackyan/lbnl/bcl/examples/benchmarks/am-comp/attentiveness/../../../../bcl/backends/gasnet-ex/am_utils.hpp:122
+[0] #24 0x000000002001ae01 in warmup (num_ams=50000) at am-attentiveness-queue-insert3.cpp:85
+[0] #25 0x000000002001a8a3 in main (argc=1, argv=0x7fffffff6ce8) at am-attentiveness-queue-insert3.cpp:24
+[0] [Inferior 1 (process 9503) detached]
+*** Caught a fatal signal (proc 0): SIGABRT(6)
+srun: error: nid00213: task 0: Aborted
+

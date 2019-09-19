@@ -1,9 +1,10 @@
 #include <string>
 #include <cassert>
-#include <cstdio>
+
+#include<stdio.h>
 
 #include <bcl/bcl.hpp>
-#include <bcl/containers/experimental/rpc.hpp>
+#include <bcl/containers/experimental/rpc_checksum.hpp>
 
 template <typename Future>
 bool ready(std::vector<Future>& futures) {
@@ -40,23 +41,16 @@ int main(int argc, char** argv) {
 
   using rv = decltype(BCL::buffered_rpc(0, fn, a, b));
   std::vector<rv> futures;
-
-  srand48(BCL::rank());
-  auto begin = std::chrono::high_resolution_clock::now();
-  size_t rpcs = 1000;
-  for (size_t i = 0 ; i < rpcs; i++) {
-    size_t rand_proc = lrand48() % BCL::nprocs();
-    auto f = BCL::buffered_rpc(rand_proc, fn, a, b);
-    futures.push_back(std::move(f));
+  if (BCL::rank() == 1) {
+    for (int i = 0 ; i < 1000; i++) {
+      auto f = BCL::buffered_rpc(0, fn, a, b);
+      futures.push_back(std::move(f));
+    }
   }
 
-  BCL::flush_signal();
+  BCL::flush_signal(); 
 
   future_barrier(futures);
-  auto end = std::chrono::high_resolution_clock::now();
-  double duration = std::chrono::duration<double>(end - begin).count();
-
-  BCL::print("%lu buffered RPCs serviced in %lf s\n", rpcs*BCL::nprocs(), duration);
 
   for (auto& f : futures) {
     int val = f.get();
@@ -65,5 +59,6 @@ int main(int argc, char** argv) {
 
   BCL::finalize_rpc();
   BCL::finalize();
+
   return 0;
 }

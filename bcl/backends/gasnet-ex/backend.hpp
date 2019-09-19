@@ -3,6 +3,7 @@
 #include <gasnetex.h>
 #include "detail/gasnet_ad.hpp"
 #include "comm.hpp"
+#include "am_utils.hpp"
 
 namespace BCL {
 
