@@ -53,6 +53,8 @@ struct ptr {
 
   // Local pointer to somewhere in my shared memory segment.
   __host__ __device__ T *local() const {
+    return rptr();
+    /*
     if (rank_ != BCL::rank()) {
       // TODO: Exception?
       // fprintf(stderr, "error: calling local() on a remote ptr\n");
@@ -60,6 +62,7 @@ struct ptr {
     } else {
       return rptr();
     }
+    */
   }
 
   // Pointer to shared memory segment on another node.

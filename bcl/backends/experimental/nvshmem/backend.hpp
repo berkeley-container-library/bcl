@@ -7,6 +7,7 @@
 #include "malloc.hpp"
 #include "comm.hpp"
 #include "allocator.hpp"
+#include "gpu_side_allocator.hpp"
 
 namespace BCL {
 
@@ -16,13 +17,26 @@ extern size_t shared_segment;
 extern char* smem_base_ptr;
 __device__ char* device_smem_base_ptr;
 
-__global__ void set_device_ptr(char* smem_base_ptr) {
+__device__ size_t rank_;
+__device__ size_t nprocs_;
+
+__global__ void set_device_ptr(char* smem_base_ptr, size_t rank, size_t nprocs) {
   device_smem_base_ptr = smem_base_ptr;
+  rank_ = rank;
+  nprocs_ = nprocs;
 }
 
 inline void barrier() {
   nvshmem_barrier_all();
   BCL::barrier();
+}
+
+inline __device__ __host__ size_t rank() {
+  return rank_;
+}
+
+inline __device__ __host__ size_t nprocs() {
+  return nprocs_;
 }
 
 inline void init(size_t shared_segment_size = 256) {
@@ -42,7 +56,7 @@ inline void init(size_t shared_segment_size = 256) {
   cudaSetDevice(BCL::rank() % device_count);
   BCL::barrier();
 
-  BCL::cuda::smem_base_ptr = (char *) nvshmem_malloc(BCL::shared_segment_size);
+  BCL::cuda::smem_base_ptr = (char *) nvshmem_malloc(BCL::cuda::shared_segment_size);
 
   if (smem_base_ptr == nullptr) {
     throw std::runtime_error("BCL: nvshmem backend could not allocate shared memory segment.");
@@ -52,8 +66,11 @@ inline void init(size_t shared_segment_size = 256) {
     throw std::runtime_error("BCL: MPI and nvshmem ranks do not match up.");
   }
 
-  set_device_ptr<<<1, 1>>>(smem_base_ptr);
+  set_device_ptr<<<1, 1>>>(smem_base_ptr, BCL::rank(), BCL::nprocs());
   cudaDeviceSynchronize();
+
+  double total = BCL::cuda::shared_segment_size*0.1;
+  init_gpu_side_allocator(total);
 
   BCL::cuda::barrier();
 }
@@ -64,6 +81,7 @@ inline __host__ __device__ void flush() {
 
 inline void finalize() {
   BCL::cuda::barrier();
+  finalize_gpu_side_allocator();
   nvshmem_free(smem_base_ptr);
   nvshmem_finalize();
 }

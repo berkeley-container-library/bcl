@@ -53,7 +53,7 @@ inline BCL::cuda::ptr<T> __to_global_ptr(T* ptr) {
 
   size_t offset = sizeof(T)*(ptr - reinterpret_cast<T*>(BCL::cuda::smem_base_ptr));
 
-  if (ptr < BCL::cuda::smem_base_ptr || offset >= BCL::cuda::shared_segment_size) {
+  if ((char *) ptr < BCL::cuda::smem_base_ptr || offset >= BCL::cuda::shared_segment_size) {
     // XXX: alternative would be returning nullptr
     throw std::runtime_error("BCL::__to_global_ptr(): given pointer is outside shared segment.");
   }
@@ -83,7 +83,7 @@ public:
   }
 
   void deallocate(pointer ptr, size_type n = 0) {
-    auto gptr = __to_global_ptr(ptr);
+    auto gptr = __to_global_ptr<value_type>(ptr);
     BCL::cuda::dealloc<value_type>(gptr);
   }
 
