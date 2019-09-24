@@ -21,7 +21,7 @@ struct DuplQueue {
       }
       ptrs[i] = BCL::broadcast(ptrs[i], host);
       if (ptrs[i] == nullptr) {
-        throw std::runtime_error("AGH! Ran out of memory.");
+        throw std::runtime_error("AGH! Ran out of memory with request for " + std::to_string(1e-9*capacity*sizeof(value_type)) + "GB");
       }
     }
     ptrs_.assign(ptrs.begin(), ptrs.end());
@@ -35,7 +35,7 @@ struct DuplQueue {
 
     limits_ = BCL::broadcast(limits_, host);
     if (limits_ == nullptr) {
-      throw std::runtime_error("AGH! Ran out of memory.");
+      throw std::runtime_error("AGH! Ran out of memory with request for " + std::to_string(1e-9*capacity*sizeof(value_type)) + "GB");
     }
 
     head = BCL::cuda::alloc<int>(4);
@@ -85,7 +85,7 @@ struct DuplQueue {
     unsigned mask =  __ballot_sync(0xffffffff, (ifpush == 1));
     uint32_t total = __popc(mask);
     int rank = __popc(mask & lanemask_lt());
-    
+
     T* values;
     int pos;
     if(warp_id == 0)
@@ -105,32 +105,44 @@ struct DuplQueue {
     if (warp_id == 0) {
       BCL::cuda::memcpy(...);
     }
-    
-  }
 
-  __device__ bool push_warp(bool ifpush, value_type* data, size_t size) {
-    //this requires whole warp to execute
-    
-    size_t warp_id = treadIdx.x % 32;
+  }
+  */
+
+  // REQUIRES: data is in pinned memory
+  //           called as a collective function by a warp
+  __device__ bool push_warp(value_type* data, size_t size) {
+    size_t warp_id = threadIdx.x % 32;
     int pos;
     if (warp_id == 0) {
       pos = atomicAdd(tail.local(), size);
     }
 
-    __shflsync(..., pos);
+    pos = __shfl_sync(0xffffffff, pos, 0);
 
-    BCL::cuda::memcpy_warp(...);
-    BCL::cuda::flush(...);
+    BCL::cuda::ptr<value_type> ptr = ptrs_[BCL::cuda::rank()];
+    BCL::cuda::memcpy_warp(ptr + (pos % capacity()), data, size*sizeof(value_type));
+    BCL::cuda::flush();
 
     if (warp_id == 0) {
-      get_lock();
-      write_value();
-      release_lock();
-    }
-  }
-  */
+      // Get lock
+      while (atomicCAS(tail_mutex.local(), 0, 1) != 0) {}
 
-  // REQUIRES: data is in pinned memory 
+      // Copy value
+      int* new_tail_value_ = (int *) emalloc::emalloc(sizeof(int));
+      int& new_tail_value = *new_tail_value_;
+      new_tail_value = max(*tail.local(), pos);
+
+      BCL::cuda::memcpy(tail_ptr(), &new_tail_value, sizeof(int));
+      BCL::cuda::flush();
+
+      // Unlock
+      atomicCAS(tail_mutex.local(), 1, 0);
+    }
+    return true;
+  }
+
+  // REQUIRES: data is in pinned memory
   __device__ bool push(value_type* data, size_t size) {
     // TODO: bounds check
     int pos = atomicAdd(tail.local(), size);
