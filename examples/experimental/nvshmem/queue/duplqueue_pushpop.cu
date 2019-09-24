@@ -5,7 +5,7 @@
 
 #include <chrono>
 
-#define NUM_INSERTS 2*1024
+#define NUM_INSERTS 2*8*1024
 
 int main(int argc, char** argv) {
   BCL::init(16);
@@ -13,10 +13,10 @@ int main(int argc, char** argv) {
   printf("Hello, world! I am rank %lu/%lu\n",
          BCL::rank(), BCL::nprocs());
 
-  BCL::cuda::init();
+  BCL::cuda::init(8*1024);
 
   size_t num_inserts = NUM_INSERTS;
-  size_t insert_size = 64;
+  size_t insert_size = 1024;
 
   BCL::cuda::DuplQueue<int> queue(0, num_inserts*insert_size);
 
@@ -40,13 +40,23 @@ int main(int argc, char** argv) {
 
   cudaDeviceSynchronize();
   BCL::cuda::barrier();
+  auto end = std::chrono::high_resolution_clock::now();
+
+  double duration = std::chrono::duration<double>(end - begin).count();
+
+  double data_moved = num_inserts*insert_size*sizeof(int);
+
+  double bw = data_moved / duration;
+  double bw_gb = bw*1e-9;
+
+  BCL::print("Total %lf s (%lf GB/s)\n", duration, bw_gb);
 
   if (BCL::rank() == 0) {
     BCL::cuda::launch(num_inserts,
                       [] __device__ (size_t idx, BCL::cuda::DuplQueue<int>& queue) {
                         int value = 12;
                         bool success = queue.local_pop(value);
-                        printf("%lu: %d (%s)\n", idx, value, (success) ? "success" : "failure");
+                        // printf("%lu: %d (%s)\n", idx, value, (success) ? "success" : "failure");
                       }, queue);
     cudaDeviceSynchronize();
   }
@@ -56,7 +66,6 @@ int main(int argc, char** argv) {
 
   BCL::cuda::barrier();
   BCL::print("After barrier...\n");
-  auto end = std::chrono::high_resolution_clock::now();
 
   BCL::finalize();
   return 0;
