@@ -22,13 +22,13 @@ else ifeq ($(BACKEND),GASNET_EX)
   BCLFLAGS = -lpthread $(GASNET_CXXCPPFLAGS) $(GASNET_CXXFLAGS) $(GASNET_LDFLAGS) $(GASNET_LIBS) -DGASNET_EX -I$(BCLROOT)
   CXX = mpic++
 
-  BCL_RUN=mpirun --oversubscribe -n 4
+  BCL_RUN=mpirun -n 4
 else
   BACKEND=MPI
   BCLFLAGS = -lpthread -I$(BCLROOT)
   CXX=mpic++
 
-  BCL_RUN=mpirun --oversubscribe -n 4
+  BCL_RUN=mpirun -n 4
 endif
 
 CXXFLAGS = -std=gnu++17 $(BCLFLAGS)
@@ -42,11 +42,16 @@ all: $(TARGETS)
 	@echo "C $@ $(BACKEND)"
 	@time $(CXX) -o $@ $^ $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
 
+ifeq ($(BACKEND),MPI)
+test: all
+	@echo "Not running RPC tests with MPI"
+else
 test: all
 	@for target in $(TARGETS) ; do \
 		echo "R $$target $(BACKEND)" ;\
-	  time $(BCL_RUN) ./$$target || (echo "$$target $(BACKEND) FAIL $$?"; exit 1) ;\
+  	time $(BCL_RUN) ./$$target || (echo "$$target $(BACKEND) FAIL $$?"; exit 1) ;\
 	done
+endif
 
 clean:
 	@rm -f $(TARGETS)

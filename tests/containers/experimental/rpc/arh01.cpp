@@ -1,3 +1,4 @@
+#ifdef GASNET_EX
 #include "bcl/bcl.hpp"
 #include "bcl/containers/experimental/rpc_oneway/arh.hpp"
 
@@ -12,3 +13,11 @@ int main(int argc, char** argv) {
 
   BCL::finalize();
 }
+#else
+#include <iostream>
+using namespace std;
+int main() {
+  cout << "Only run arh test with GASNET_EX" << endl;
+  return 0;
+}
+#endif

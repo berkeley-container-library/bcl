@@ -1,6 +1,8 @@
-#include "bcl/bcl.hpp"
-#include "bcl/containers/experimental/rpc_oneway/arh.hpp"
-#include <cassert>
+#ifdef GASNET_EX
+  #include "bcl/bcl.hpp"
+  #include "bcl/containers/experimental/rpc_oneway/arh.hpp"
+  #include <cassert>
+
 
 int fn(int a, int b) {
   return a * b;
@@ -31,7 +33,7 @@ void worker() {
     int val = f.wait();
     assert(val == my_rank*my_rank);
   }
-  std::printf("worker %lu finished\n", ARH::my_worker());
+//  std::printf("worker %lu finished\n", ARH::my_worker());
 }
 
 int main(int argc, char** argv) {
@@ -43,3 +45,11 @@ int main(int argc, char** argv) {
 
   BCL::finalize();
 }
+#else
+#include <iostream>
+using namespace std;
+int main() {
+  cout << "Only run arh test with GASNET_EX" << endl;
+  return 0;
+}
+#endif

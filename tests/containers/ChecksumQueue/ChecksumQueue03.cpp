@@ -11,7 +11,7 @@
 int main(int argc, char** argv) {
   BCL::init();
 
-  size_t n_pushes = 10000;
+  size_t n_pushes = 1000;
   size_t push_size = 10;
 
   constexpr bool print_verbose = false;
