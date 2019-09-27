@@ -2,6 +2,7 @@
 #define BCL_ARH_HPP
 
 #include "bcl/bcl.hpp"
+#include "am_utils_arh.hpp"
 #include <functional>
 #include <iostream>
 #include <thread>
@@ -10,16 +11,32 @@
 #include <atomic>
 
 namespace ARH {
-
   std::unordered_map<std::thread::id, size_t> worker_ids;
   std::unordered_map<std::thread::id, size_t> progress_ids;
   size_t num_threads_per_node = 32;
   size_t num_workers_per_node = 30;
   std::atomic<bool> worker_run = true;
 
+  inline size_t my_worker() {
+    return worker_ids[std::this_thread::get_id()];
+  }
+
+  inline size_t nworkers() {
+    return BCL::nprocs() * num_workers_per_node;
+  }
+
+  inline size_t my_proc() {
+    return BCL::rank();
+  }
+
+  inline size_t nprocs() {
+    return BCL::nprocs();
+  }
+
+  // progress thread
   void progress() {
     while (worker_run.load()) {
-      // poll the queue
+      flush_am();
     }
   }
 
@@ -50,18 +67,11 @@ namespace ARH {
     }
 
     worker_run = false;
+    std::printf("process %lu finished\n", my_proc());
 
     for (size_t i = 0; i < num_progress_per_node; ++i) {
       progress_pool[i].join();
     }
-  }
-
-  inline size_t my_worker() {
-    return worker_ids[std::this_thread::get_id()];
-  }
-
-  inline size_t nworkers() {
-    return BCL::nprocs() * num_workers_per_node;
   }
 
 }

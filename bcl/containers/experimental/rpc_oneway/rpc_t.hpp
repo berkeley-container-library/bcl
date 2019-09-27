@@ -1,6 +1,8 @@
 #ifndef BCL_RPC_T_HPP
 #define BCL_RPC_T_HPP
 
+#include <array>
+
 namespace BCL {
     // Get a *position independent* function pointer
     template<typename T>

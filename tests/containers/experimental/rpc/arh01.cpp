@@ -1,5 +1,5 @@
 #include "bcl/bcl.hpp"
-#include "bcl/containers/experimental/rpc_oneway/ARH.hpp"
+#include "bcl/containers/experimental/rpc_oneway/arh.hpp"
 
 void worker() {
   std::printf("Hello, I am thread %lu/%lu!\n", ARH::my_worker(), ARH::nworkers());
