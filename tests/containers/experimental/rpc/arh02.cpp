@@ -33,17 +33,15 @@ void worker() {
     int val = f.wait();
     assert(val == my_rank*my_rank);
   }
-//  std::printf("worker %lu finished\n", ARH::my_worker());
 }
 
 int main(int argc, char** argv) {
   // one process per node
-  BCL::init();
-  ARH::init_am();
+  ARH::init();
 
   ARH::run(worker);
 
-  BCL::finalize();
+  ARH::finalize();
 }
 #else
 #include <iostream>

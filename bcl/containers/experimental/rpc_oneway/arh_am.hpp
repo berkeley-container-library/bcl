@@ -1,14 +1,27 @@
-#pragma once
+#ifndef ARH_AM_HPP
+#define ARH_AM_HPP
 
-#include "bcl/bcl.hpp"
-#include <cstring>
-#include "rpc_t.hpp"
 #include "arh.hpp"
+#include "rpc_t.hpp"
 #include "bcl/core/util/Backoff.hpp"
 
 namespace ARH {
 
-  extern gex_EP_t ep;
+  extern size_t nprocs(void);
+  extern void barrier(void);
+
+  std::atomic<size_t> rpc_nonce_ = 0;
+  std::atomic<size_t> acknowledged = 0;
+  std::atomic<size_t> requested = 0;
+
+  gex_AM_Index_t hidx_generic_rpc_ackhandler_;
+  gex_AM_Index_t hidx_generic_rpc_reqhandler_;
+
+  using rpc_t = BCL::rpc_t;
+  using rpc_result_t = BCL::rpc_t::rpc_result_t;
+  std::unordered_map<size_t, rpc_result_t> rpc_results_; // this needs to be guarded by mutex
+  std::mutex rpc_mutex_;
+
 
   template<typename T>
   struct gasnet_pack {
@@ -32,38 +45,27 @@ namespace ARH {
     gex_AM_Arg_t buf[nargs];
   };
 
-  std::atomic<size_t> rpc_nonce_ = 0;
-  std::atomic<size_t> acknowledged = 0;
-  std::atomic<size_t> requested = 0;
-
-  size_t acknowledge_handler_id_;
-  size_t generic_handler_id_;
-
-  using rpc_result_t = BCL::rpc_t::rpc_result_t;
-  std::unordered_map<size_t, rpc_result_t> rpc_results_; // this needs to be guarded by mutex
-  std::mutex rpc_mutex_;
-
   template<std::size_t... I>
-  void generic_handler_reply_impl_(gex_Token_t token, gasnet_pack<BCL::rpc_t> &pack, std::index_sequence<I...>) {
-    gasnetc_AMReplyShortM(token, acknowledge_handler_id_, 0, sizeof...(I), pack.buf[I]...);
+  void generic_handler_reply_impl_(gex_Token_t token, gasnet_pack<rpc_t> &pack, std::index_sequence<I...>) {
+    gasnetc_AMReplyShortM(token, hidx_generic_rpc_ackhandler_, 0, sizeof...(I), pack.buf[I]...);
   }
 
   template<std::size_t... I>
-  void generic_handler_request_impl_(size_t remote_proc, gasnet_pack<BCL::rpc_t> &pack, std::index_sequence<I...>) {
-    gasnetc_AMRequestShortM(BCL::tm, remote_proc, generic_handler_id_, 0
+  void generic_handler_request_impl_(size_t remote_proc, gasnet_pack<rpc_t> &pack, std::index_sequence<I...>) {
+    gasnetc_AMRequestShortM(BCL::tm, remote_proc, hidx_generic_rpc_reqhandler_, 0
     GASNETI_THREAD_GET, sizeof...(I), pack.buf[I]...);
   }
 
-  void acknowledge_handler_(gex_Token_t token,
+  void generic_rpc_ackhandler_(gex_Token_t token,
                             gex_AM_Arg_t arg0, gex_AM_Arg_t arg1, gex_AM_Arg_t arg2,
                             gex_AM_Arg_t arg3, gex_AM_Arg_t arg4, gex_AM_Arg_t arg5,
                             gex_AM_Arg_t arg6, gex_AM_Arg_t arg7, gex_AM_Arg_t arg8,
                             gex_AM_Arg_t arg9, gex_AM_Arg_t arg10, gex_AM_Arg_t arg11,
                             gex_AM_Arg_t arg12, gex_AM_Arg_t arg13, gex_AM_Arg_t arg14,
                             gex_AM_Arg_t arg15) {
-    gasnet_pack<BCL::rpc_t> packed_args({arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8,
+    gasnet_pack<rpc_t> packed_args({arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8,
                                          arg9, arg10, arg11, arg12, arg13, arg14, arg15});
-    BCL::rpc_t &rpc_result = packed_args.as_T();
+    rpc_t &rpc_result = packed_args.as_T();
 
     rpc_mutex_.lock();
     rpc_results_[rpc_result.rpc_id_] = rpc_result.data_;
@@ -72,45 +74,39 @@ namespace ARH {
     acknowledged++;
   }
 
-// could we use a variadic function parameter?
-  void generic_handler_(gex_Token_t token,
+  void generic_rpc_reqhandler_(gex_Token_t token,
                         gex_AM_Arg_t arg0, gex_AM_Arg_t arg1, gex_AM_Arg_t arg2,
                         gex_AM_Arg_t arg3, gex_AM_Arg_t arg4, gex_AM_Arg_t arg5,
                         gex_AM_Arg_t arg6, gex_AM_Arg_t arg7, gex_AM_Arg_t arg8,
                         gex_AM_Arg_t arg9, gex_AM_Arg_t arg10, gex_AM_Arg_t arg11,
                         gex_AM_Arg_t arg12, gex_AM_Arg_t arg13, gex_AM_Arg_t arg14,
                         gex_AM_Arg_t arg15) {
-    gasnet_pack<BCL::rpc_t> packed_args({arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8,
+    gasnet_pack<rpc_t> packed_args({arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8,
                                          arg9, arg10, arg11, arg12, arg13, arg14, arg15});
-    BCL::rpc_t &my_rpc = packed_args.as_T();
+    rpc_t &my_rpc = packed_args.as_T();
 
-    BCL::rpc_t rpc_result = my_rpc.run();
+    rpc_t rpc_result = my_rpc.run();
 
-    gasnet_pack<BCL::rpc_t> packed_result(rpc_result);
+    gasnet_pack<rpc_t> packed_result(rpc_result);
 
-    generic_handler_reply_impl_(token, packed_result, std::make_index_sequence<gasnet_pack<BCL::rpc_t>::nargs>());
+    generic_handler_reply_impl_(token, packed_result, std::make_index_sequence<gasnet_pack<rpc_t>::nargs>());
   }
 
   void init_am() {
     size_t handler_num = GEX_AM_INDEX_BASE;
 
-    acknowledge_handler_id_ = handler_num++;
+    hidx_generic_rpc_ackhandler_ = handler_num++;
+    hidx_generic_rpc_reqhandler_ = handler_num;
 
-    gex_AM_Entry_t entry[2];
-    entry[0].gex_index = acknowledge_handler_id_;
-    entry[0].gex_fnptr = (gex_AM_Fn_t) acknowledge_handler_;
-    entry[0].gex_flags = GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REPLY;
-    entry[0].gex_nargs = gasnet_pack<BCL::rpc_t>::nargs;
+    gex_AM_Entry_t htable[2] = {
+        { hidx_generic_rpc_ackhandler_, (gex_AM_Fn_t) generic_rpc_ackhandler_,
+          GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REPLY, gasnet_pack<rpc_t>::nargs },
+        { hidx_generic_rpc_reqhandler_, (gex_AM_Fn_t) generic_rpc_reqhandler_,
+          GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REPLY, gasnet_pack<rpc_t>::nargs },
+    };
 
-    generic_handler_id_ = handler_num++;
-
-    entry[1].gex_index = generic_handler_id_;
-    entry[1].gex_fnptr = (gex_AM_Fn_t) generic_handler_;
-    entry[1].gex_flags = GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REQUEST;
-    entry[1].gex_nargs = gasnet_pack<BCL::rpc_t>::nargs;
-
-    gex_EP_RegisterHandlers(BCL::ep, entry, 2);
-    BCL::barrier();
+    gex_EP_RegisterHandlers(BCL::ep, htable, sizeof(htable)/sizeof(gex_AM_Entry_t));
+    barrier();
   }
 
   void flush_am() {
@@ -171,17 +167,19 @@ namespace ARH {
 
   template <typename Fn, typename... Args>
   auto rpc(size_t remote_proc, Fn&& fn, Args&&... args) {
-    assert(remote_proc < BCL::nprocs());
+    assert(remote_proc < nprocs());
 
     rpc_nonce_++;
-    BCL::rpc_t my_rpc(rpc_nonce_.load(), false, 0);
+    rpc_t my_rpc(rpc_nonce_.load(), false, 0);
     my_rpc.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
 
-    gasnet_pack<BCL::rpc_t> packed_rpc(my_rpc);
+    gasnet_pack<rpc_t> packed_rpc(my_rpc);
 
-    generic_handler_request_impl_(remote_proc, packed_rpc, std::make_index_sequence<gasnet_pack<BCL::rpc_t>::nargs>());
+    generic_handler_request_impl_(remote_proc, packed_rpc, std::make_index_sequence<gasnet_pack<rpc_t>::nargs>());
     requested++;
 
     return Future<std::invoke_result_t<Fn, Args...>>(my_rpc.rpc_id_);
   }
 } // end of arh
+
+#endif

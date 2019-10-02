@@ -8,10 +8,10 @@ void worker() {
 
 int main(int argc, char** argv) {
   // one process per node
-  BCL::init();
+  ARH::init();
   ARH::run(worker);
 
-  BCL::finalize();
+  ARH::finalize();
 }
 #else
 #include <iostream>
