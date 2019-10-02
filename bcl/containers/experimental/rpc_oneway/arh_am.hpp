@@ -100,9 +100,9 @@ namespace ARH {
 
     gex_AM_Entry_t htable[2] = {
         { hidx_generic_rpc_ackhandler_, (gex_AM_Fn_t) generic_rpc_ackhandler_,
-          GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REPLY, gasnet_pack<rpc_t>::nargs },
+          GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REPLY,   gasnet_pack<rpc_t>::nargs },
         { hidx_generic_rpc_reqhandler_, (gex_AM_Fn_t) generic_rpc_reqhandler_,
-          GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REPLY, gasnet_pack<rpc_t>::nargs },
+          GEX_FLAG_AM_SHORT | GEX_FLAG_AM_REQUEST, gasnet_pack<rpc_t>::nargs },
     };
 
     gex_EP_RegisterHandlers(BCL::ep, htable, sizeof(htable)/sizeof(gex_AM_Entry_t));
