@@ -2,7 +2,7 @@ SHELL='bash'
 
 # XXX: Modify BCLROOT if you move this Makefile
 #      out of an examples/* directory.
-BCLROOT=$(PWD)/../../../../
+BCLROOT=$(PWD)/../../../
 
 BACKEND = $(shell echo $(BCL_BACKEND) | tr '[:lower:]' '[:upper:]')
 
@@ -17,10 +17,10 @@ ifeq ($(BACKEND),SHMEM)
 else ifeq ($(BACKEND),GASNET_EX)
   BACKEND=GASNET_EX
   # XXX: Allow selection of conduit.
-  include $(gasnet_prefix)/include/mpi-conduit/mpi-par.mak
+  include $(gasnet_prefix)/include/aries-conduit/aries-par.mak
 
   BCLFLAGS = -lpthread $(GASNET_CXXCPPFLAGS) $(GASNET_CXXFLAGS) $(GASNET_LDFLAGS) $(GASNET_LIBS) -DGASNET_EX -I$(BCLROOT)
-  CXX = mpic++
+  CXX = CC
 
   BCL_RUN=mpirun -n 4
 else

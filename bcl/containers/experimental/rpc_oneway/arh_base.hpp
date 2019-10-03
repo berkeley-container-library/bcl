@@ -87,6 +87,7 @@ namespace ARH {
       worker_pool[i].join();
     }
 
+    ARH::barrier();
     worker_run = false;
 //    std::printf("process %lu finished\n", my_proc());
 

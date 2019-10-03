@@ -26,7 +26,7 @@ void worker() {
 
   double duration = std::chrono::duration<double>(end - begin).count();
   if (ARH::my_worker() == 0) {
-    printf("%lf total %lfus / op\n", duration, 1e6*duration / (num_ops*ARH::nworkers()));
+    printf("%lf total %lfus / op\n", duration, 1e6*duration);
   }
 }
 
@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
   // one process per node
   ARH::init();
 
-  ARH::run(worker, 15, 16);
+  ARH::run(worker, 8, 16);
 
   ARH::finalize();
 }
