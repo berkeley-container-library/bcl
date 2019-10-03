@@ -78,8 +78,17 @@ namespace ARH {
 
     workers_initialized = 0;
 
+    cpu_set_t cpuset[8];
+
     for (size_t i = 0; i < num_workers_per_node; ++i) {
       auto t = std::thread(worker_handler, worker);
+      CPU_ZERO(&cpuset);
+      CPU_SET(i, (cpu_set_t *) &cpuset);
+      // int rv = pthread_setaffinity_np(t.native_handle(), 8, (cpu_set_t *) &cpuset);
+      int rv = 0;
+      if (rv != 0) {
+        throw std::runtime_error("ERROR Didn't work.");
+      }
       worker_ids[t.get_id()] = i + BCL::rank() * num_workers_per_node;
       workers_initialized++;
       worker_pool.push_back(std::move(t));
@@ -89,6 +98,13 @@ namespace ARH {
     size_t num_progress_per_node = num_threads_per_node - num_workers_per_node;
     for (size_t i = 0; i < num_progress_per_node; ++i) {
       auto t = std::thread(progress_thread);
+      CPU_ZERO(&cpuset);
+      CPU_SET(i + num_workers_per_node, (cpu_set_t *) &cpuset);
+      // int rv = pthread_setaffinity_np(t.native_handle(), 8, (cpu_set_t *) &cpuset);
+      int rv = 0;
+      if (rv != 0) {
+        throw std::runtime_error("ERROR Didn't work.");
+      }
       progress_ids[t.get_id()] = i + BCL::rank() * num_workers_per_node;
       progress_pool.push_back(std::move(t));
     }
