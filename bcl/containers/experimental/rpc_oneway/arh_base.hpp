@@ -20,6 +20,7 @@ namespace ARH {
   size_t num_threads_per_node = 32;
   size_t num_workers_per_node = 30;
   std::atomic<bool> worker_run = true;
+  std::atomic<size_t> workers_initialized;
 
   inline size_t my_worker() {
     return worker_ids[std::this_thread::get_id()];
@@ -69,6 +70,12 @@ namespace ARH {
     BCL::finalize();
   }
 
+  void worker_handler(const std::function<void(void)>& worker) {
+    while (workers_initialized != num_workers_per_node) {}
+    barrier();
+    worker();
+  }
+
   void run(const std::function<void(void)> &worker, size_t custom_num_workers_per_node = 30,
            size_t custom_num_threads_per_node = 32) {
 //    std::vector<std::thread> thread_pool(num_workers_per_node, std::thread(worker));
@@ -77,9 +84,21 @@ namespace ARH {
 
     std::vector<std::thread> worker_pool;
 
+    workers_initialized = 0;
+
+    cpu_set_t cpuset[8];
+
     for (size_t i = 0; i < num_workers_per_node; ++i) {
-      auto t = std::thread(worker);
+      auto t = std::thread(worker_handler, worker);
+      CPU_ZERO(&cpuset);
+      CPU_SET(i, (cpu_set_t *) &cpuset);
+      // int rv = pthread_setaffinity_np(t.native_handle(), 8, (cpu_set_t *) &cpuset);
+      int rv = 0;
+      if (rv != 0) {
+        throw std::runtime_error("ERROR Didn't work.");
+      }
       worker_ids[t.get_id()] = i + BCL::rank() * num_workers_per_node;
+      workers_initialized++;
       worker_pool.push_back(std::move(t));
     }
 
@@ -87,6 +106,13 @@ namespace ARH {
     size_t num_progress_per_node = num_threads_per_node - num_workers_per_node;
     for (size_t i = 0; i < num_progress_per_node; ++i) {
       auto t = std::thread(progress_thread);
+      CPU_ZERO(&cpuset);
+      CPU_SET(i + num_workers_per_node, (cpu_set_t *) &cpuset);
+      // int rv = pthread_setaffinity_np(t.native_handle(), 8, (cpu_set_t *) &cpuset);
+      int rv = 0;
+      if (rv != 0) {
+        throw std::runtime_error("ERROR Didn't work.");
+      }
       progress_ids[t.get_id()] = i + BCL::rank() * num_workers_per_node;
       progress_pool.push_back(std::move(t));
     }
