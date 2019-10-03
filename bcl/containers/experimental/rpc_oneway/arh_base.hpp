@@ -52,7 +52,7 @@ namespace ARH {
     }
   }
 
-  inline void init(uint64_t shared_segment_size = 256) {
+  inline void init(size_t shared_segment_size = 256) {
     BCL::init(shared_segment_size, true);
     init_am();
   }
