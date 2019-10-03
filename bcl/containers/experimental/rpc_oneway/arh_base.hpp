@@ -29,6 +29,10 @@ namespace ARH {
     return BCL::nprocs() * num_workers_per_node;
   }
 
+  inline size_t my_local_worker() {
+    return my_worker() % num_workers_per_node;
+  }
+
   inline size_t my_proc() {
     return BCL::rank();
   }
@@ -38,11 +42,15 @@ namespace ARH {
   }
 
   inline void barrier() {
-    BCL::barrier();
+    flush_am();
+    if (my_local_worker() == 0) {
+      BCL::barrier();
+    }
+    // local_barrier();
   }
 
   void progress() {
-    flush_am();
+    gasnet_AMPoll();
   }
 
   // progress thread
@@ -94,6 +102,17 @@ namespace ARH {
     for (size_t i = 0; i < num_progress_per_node; ++i) {
       progress_pool[i].join();
     }
+  }
+
+  template <typename ...Args>
+  void print(std::string format, Args... args) {
+    fflush(stdout);
+    ARH::barrier();
+    if (ARH::my_worker() == 0) {
+      std::printf(format.c_str(), args...);
+    }
+    fflush(stdout);
+    ARH::barrier();
   }
 
 }

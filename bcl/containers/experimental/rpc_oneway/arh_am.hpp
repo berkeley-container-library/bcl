@@ -9,6 +9,7 @@ namespace ARH {
 
   extern size_t nprocs(void);
   extern void barrier(void);
+  extern void process(void);
 
   std::atomic<size_t> rpc_nonce_ = 0;
   std::atomic<size_t> acknowledged = 0;
@@ -107,7 +108,6 @@ namespace ARH {
   }
 
   rpc_result_t::payload_t wait_for_rpc_result(size_t rpc_nonce) {
-    BCL::Backoff backoff;
     bool success = false;
 
     do {
@@ -116,7 +116,7 @@ namespace ARH {
       if (!success) {
         rpc_mutex_.unlock();
       }
-      backoff.backoff();
+      process();
     } while (!success);
 
     rpc_result_t::payload_t rpc_result = rpc_results_[rpc_nonce];

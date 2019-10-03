@@ -25,9 +25,7 @@ void worker() {
   auto end = std::chrono::high_resolution_clock::now();
 
   double duration = std::chrono::duration<double>(end - begin).count();
-  if (ARH::my_worker() == 0) {
-    printf("%lf total %lfus / op\n", duration, 1e6*duration);
-  }
+  ARH::print("%lf total %lfus / op\n", duration, 1e6*duration / num_ops);
 }
 
 int main(int argc, char** argv) {
