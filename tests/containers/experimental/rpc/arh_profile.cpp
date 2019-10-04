@@ -2,6 +2,7 @@
 #include "bcl/containers/experimental/rpc_oneway/arh.hpp"
 
 void worker() {
+  ARH::print("The number of processors configured is :%ld\n", sysconf(_SC_NPROCESSORS_CONF));
   ARH::print("Size of ARH::rpc_t %lu\n", sizeof(ARH::rpc_t));
   ARH::print("Size of ARH::rpc_t::rpc_result_t %lu\n", sizeof(ARH::rpc_t::rpc_result_t));
   ARH::print("Size of ARH::rpc_t::payload_t %lu\n", sizeof(ARH::rpc_t::payload_t));

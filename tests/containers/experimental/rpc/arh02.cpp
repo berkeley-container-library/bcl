@@ -27,7 +27,7 @@ void worker() {
     futures.push_back(std::move(f));
   }
 
-//  ARH::flush_am();
+  //  ARH::flush_am();
 
   for (auto& f : futures) {
     int val = f.wait();

@@ -8,8 +8,7 @@
 namespace ARH {
 
   extern size_t nprocs(void);
-  extern void barrier(void);
-  extern void process(void);
+  extern void progress(void);
 
   std::atomic<size_t> rpc_nonce_ = 0;
   std::atomic<size_t> acknowledged = 0;
@@ -94,7 +93,6 @@ namespace ARH {
     };
 
     gex_EP_RegisterHandlers(BCL::ep, htable, sizeof(htable)/sizeof(gex_AM_Entry_t));
-    barrier();
   }
 
   void flush_am() {
@@ -115,8 +113,8 @@ namespace ARH {
       success = rpc_results_.find(rpc_nonce) != rpc_results_.end();
       if (!success) {
         rpc_mutex_.unlock();
+        progress();
       }
-      process();
     } while (!success);
 
     rpc_result_t::payload_t rpc_result = rpc_results_[rpc_nonce];
