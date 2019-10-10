@@ -10,7 +10,6 @@ namespace ARH {
   extern size_t nprocs(void);
   extern void progress(void);
 
-  std::atomic<size_t> rpc_nonce_ = 0;
   std::atomic<size_t> acknowledged = 0;
   std::atomic<size_t> requested = 0;
 
@@ -19,9 +18,6 @@ namespace ARH {
 
   using rpc_t = ARH::rpc_t;
   using rpc_result_t = ARH::rpc_t::rpc_result_t;
-  std::unordered_map<size_t, rpc_result_t::payload_t> rpc_results_; // this needs to be guarded by mutex
-  std::mutex rpc_mutex_;
-
 
   template<typename T>
   struct BufferPack {
@@ -58,11 +54,10 @@ namespace ARH {
   void generic_rpc_ackhandler_(gex_Token_t token, void *buf, size_t nbytes) {
     BufferPack<rpc_result_t> results(buf, nbytes);
 
-    rpc_mutex_.lock();
     for (size_t i = 0; i < results.size(); ++i) {
-      rpc_results_[results[i].rpc_id_] = results[i].data_;
+      results[i].future_p_->payload = results[i].data_;
+      results[i].future_p_->ready = true;
     }
-    rpc_mutex_.unlock();
 
     acknowledged += results.size();
   }
@@ -105,64 +100,58 @@ namespace ARH {
     while (acknowledged < requested) {}
   }
 
-  rpc_result_t::payload_t wait_for_rpc_result(size_t rpc_nonce) {
-    bool success = false;
-
-    do {
-      rpc_mutex_.lock();
-      success = rpc_results_.find(rpc_nonce) != rpc_results_.end();
-      if (!success) {
-        rpc_mutex_.unlock();
-        progress();
-      }
-    } while (!success);
-
-    rpc_result_t::payload_t rpc_result = rpc_results_[rpc_nonce];
-    rpc_results_.erase(rpc_nonce);
-    rpc_mutex_.unlock();
-
-    return rpc_result;
-  }
-
   template<typename T>
   struct Future {
 
-    Future(size_t rpc_id) : rpc_id_(rpc_id) {}
+    Future() : data_p(new FutureData()) {}
+    Future(Future&& future) = default;
+
+    FutureData* get_p() const {
+      return data_p.get();
+    }
 
     T wait() const {
-      rpc_result_t::payload_t rpc_result = wait_for_rpc_result(rpc_id_);
+      while (!data_p->ready) {
+        progress();
+      }
 
       if constexpr(!std::is_void<T>::value) {
-        static_assert(sizeof(T) <= sizeof(rpc_result_t::payload_t));
-        return *reinterpret_cast<T*>(&rpc_result);
+        static_assert(sizeof(FutureData::payload_t) >= sizeof(T));
+        return *reinterpret_cast<T*>(data_p->payload.data());
       }
     }
 
     [[nodiscard]] std::future_status check() const {
-      std::lock_guard<std::mutex> guard(rpc_mutex_);
-      if (rpc_results_.find(rpc_id_) != rpc_results_.end()) {
+      if (data_p->ready) {
         return std::future_status::ready;
       } else {
         return std::future_status::timeout;
       }
     }
 
+    ~Future() {
+      if (get_p() != NULL) {
+        wait();
+      }
+    }
+
   private:
-    size_t rpc_id_;
+    std::unique_ptr<FutureData> data_p;
   };
 
   template <typename Fn, typename... Args>
-  auto rpc(size_t remote_proc, Fn&& fn, Args&&... args) {
+  Future<std::invoke_result_t<Fn, Args...>>
+  rpc(size_t remote_proc, Fn&& fn, Args&&... args) {
     assert(remote_proc < nprocs());
 
-    rpc_nonce_++;
-    rpc_t my_rpc(rpc_nonce_.load());
+    Future<std::invoke_result_t<Fn, Args...>> future;
+    rpc_t my_rpc(future.get_p());
     my_rpc.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
 
     generic_handler_request_impl_(remote_proc, std::vector<rpc_t>(1, my_rpc));
     requested++;
 
-    return Future<std::invoke_result_t<Fn, Args...>>(my_rpc.rpc_id_);
+    return std::move(future);
   }
 } // end of arh
 

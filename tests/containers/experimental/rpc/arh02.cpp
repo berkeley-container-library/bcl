@@ -27,8 +27,6 @@ void worker() {
     futures.push_back(std::move(f));
   }
 
-  //  ARH::flush_am();
-
   for (auto& f : futures) {
     int val = f.wait();
     assert(val == my_rank*my_rank);

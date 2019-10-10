@@ -2,10 +2,12 @@
 #define ARH_RPC_T_HPP
 
 #include "arh.hpp"
+#include "arh_am.hpp"
 #include <array>
 
 namespace ARH {
   extern void init(size_t);
+
   // Get a *position independent* function pointer
   template<typename T>
   std::uintptr_t get_pi_fnptr_(T *fn) {
@@ -19,20 +21,30 @@ namespace ARH {
     return reinterpret_cast<T *>(fn + reinterpret_cast<std::uintptr_t>(init));
   }
 
+  struct FutureData;
+
   struct result_t {
     static constexpr size_t max_payload_size = 8; // return value data size
     using payload_t = std::array<char, max_payload_size>;
 
-    std::size_t rpc_id_;
+    FutureData* future_p_;
     payload_t data_;
 
-    result_t(size_t rpc_id) : rpc_id_(rpc_id) {}
+    result_t(FutureData* future_p) : future_p_(future_p) {}
 
     template<typename T>
     void load_result(const T &value) {
       static_assert(sizeof(T) <= max_payload_size, "Max return val size too small");
       *reinterpret_cast<T *>(data_.data()) = value;
     }
+  };
+
+  struct FutureData {
+    using payload_t = result_t::payload_t;
+    std::atomic<bool> ready;
+    payload_t payload;
+
+    FutureData(): ready(false) {}
   };
 
   template<typename Fn, typename... Args>
@@ -43,14 +55,12 @@ namespace ARH {
     using payload_t = std::array<char, max_payload_size>;
     using rpc_result_t = result_t;
 
-    std::size_t rpc_id_;
+    FutureData* future_p_;
     std::uintptr_t fn_;
     std::uintptr_t invoker_;
     payload_t data_;
 
-    rpc_t() = default;
-
-    rpc_t(std::size_t rpc_id) : rpc_id_(rpc_id) {}
+    rpc_t(FutureData* future_p) : future_p_(future_p) {}
 
     template<typename Fn, typename... Args>
     void load(Fn &&fn, Args &&... args) {
@@ -95,7 +105,7 @@ namespace ARH {
     }
 
     static rpc_result_t invoke(rpc_t &rpc_requests) {
-      rpc_result_t rpc_result(rpc_requests.rpc_id_);
+      rpc_result_t rpc_result(rpc_requests.future_p_);
       if constexpr(std::is_void<std::invoke_result_t<Fn, Args...>>::value) {
         invoke_impl_(rpc_requests, std::index_sequence_for<Args...>{});
       } else {
