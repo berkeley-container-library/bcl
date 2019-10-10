@@ -3,27 +3,22 @@
   #include "bcl/containers/experimental/rpc_oneway/arh.hpp"
   #include <cassert>
 
-
 void worker() {
-
   int my_rank = (int) ARH::my_worker();
 
-  auto fn = [](int a, int b) -> int {
-    return a * b;
-  };
+  auto fn = [](int a) {};
 
-  using rv = decltype(ARH::rpc(0, fn, my_rank, my_rank));
+  using rv = decltype(ARH::rpc(0, fn, my_rank));
   std::vector<rv> futures;
 
   for (int i = 0 ; i < 10; i++) {
     size_t target_rank = rand() % ARH::nprocs();
-    auto f = ARH::rpc(target_rank, fn, my_rank, my_rank);
+    auto f = ARH::rpc(target_rank, fn, my_rank);
     futures.push_back(std::move(f));
   }
 
   for (auto& f : futures) {
-    int val = f.wait();
-    assert(val == my_rank*my_rank);
+    f.wait();
   }
 }
 
