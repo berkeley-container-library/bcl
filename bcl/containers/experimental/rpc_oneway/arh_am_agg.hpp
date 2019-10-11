@@ -32,7 +32,7 @@ namespace ARH {
   }
 
   void flush_agg_buffer() {
-    for (size_t i = my_local_worker(); i < nprocs(); i += num_workers_per_node) {
+    for (size_t i = my_worker_local(); i < nprocs(); i += nworkers_local()) {
       agg_lock.lock();
       if (!agg_buffers[i].empty()) {
         std::vector<rpc_t> send_buf = std::move(agg_buffers[i]);

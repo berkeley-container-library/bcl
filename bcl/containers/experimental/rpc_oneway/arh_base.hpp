@@ -38,8 +38,12 @@ namespace ARH {
     return BCL::nprocs() * num_workers_per_node;
   }
 
-  inline size_t my_local_worker() {
+  inline size_t my_worker_local() {
     return my_worker() % num_workers_per_node;
+  }
+
+  inline size_t nworkers_local() {
+    return num_workers_per_node;
   }
 
   inline size_t my_proc() {
@@ -54,7 +58,7 @@ namespace ARH {
     threadBarrier.wait();
     flush_agg_buffer();
     flush_am();
-    if (my_local_worker() == 0) {
+    if (my_worker_local() == 0) {
       BCL::barrier();
     }
     threadBarrier.wait();
