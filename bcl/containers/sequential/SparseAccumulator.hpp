@@ -252,7 +252,11 @@ struct EagerMKLAccumulator {
   }
 };
 
-template <typename T, typename index_type, typename Allocator = std::allocator<T>>
+template <
+          typename T,
+          typename index_type,
+          typename Plus = std::plus<T>,
+          typename Allocator = std::allocator<T>>
 struct SparseVecHashAccumulator {
   using value_type = T;
 
@@ -272,7 +276,8 @@ struct SparseVecHashAccumulator {
   SparseVecHashAccumulator& operator=(SparseVecHashAccumulator&&) = default;
 
   void accumulate(index_type idx, T value) {
-    values_[idx] += value;
+    // values_[idx] += value;
+    values_[idx] = Plus{}(values_[idx], value);
   }
 
   std::vector<std::pair<index_type, T>, HashAllocator> get() const {
@@ -300,6 +305,7 @@ struct SparseVecHashAccumulator {
 
 template <typename T,
           typename index_type = int,
+          typename Plus = std::plus<int>,
           typename Allocator = std::allocator<T>>
 struct SparseVecAccumulator {
   using value_type = T;
@@ -329,7 +335,8 @@ struct SparseVecAccumulator {
       values_[idx] = value;
       nnz_++;
     } else {
-      values_[idx] += value;
+      // values_[idx] += value;
+      values_[idx] = Plus(values_[idx], value);
     }
   }
 
@@ -372,7 +379,12 @@ struct SparseVecAccumulator {
 // TODO: refactor the "SparseAccumulator" concept
 //       handle signed/unsigned integer stuff.
 
-template <typename T, typename index_type = int, typename Allocator = std::allocator<T>>
+template <
+          typename T,
+          typename index_type = int,
+          typename Plus = std::plus<T>,
+          typename Allocator = std::allocator<T>
+          >
 struct SparseHashAccumulator {
   using value_type = T;
 
@@ -392,6 +404,7 @@ struct SparseHashAccumulator {
     auto begin = std::chrono::high_resolution_clock::now();
     SparseVecHashAccumulator<T,
                              index_type,
+                             Plus,
                              tbb::scalable_allocator<T>> acc;
 
     std::vector<decltype(acc.get())> rows(m);
@@ -509,6 +522,7 @@ struct SparseSPAAccumulator {
     auto begin = std::chrono::high_resolution_clock::now();
     SparseVecAccumulator<T,
                          index_type,
+                         std::plus<T>,
                          tbb::scalable_allocator<T>> acc;
 
     std::vector<decltype(acc.get())> rows(m);

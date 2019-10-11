@@ -257,6 +257,10 @@ struct CSRMatrix {
     }
   }
 
+  template <
+            typename Mult = std::multiplies<value_type>,
+            typename Plus = std::plus<value_type>
+            >
   CSRMatrix dot(CSRMatrix& b) {
     CSRMatrix& a = *this;
 
@@ -285,7 +289,7 @@ struct CSRMatrix {
     b_mat.values = b.vals_.data();
     b_mat.zerobased = true;
 
-    HashSpGEMM<false, true>(a_mat, b_mat, c_mat, std::multiplies<T>(), std::plus<T>());
+    HashSpGEMM<false, true>(a_mat, b_mat, c_mat, Mult(), Plus());
 
     CSRMatrix c(c_mat.rows, c_mat.cols, c_mat.nnz);
 
