@@ -21,7 +21,12 @@ void compare(const std::vector<std::pair<std::pair<index_type, index_type>, valu
              const std::vector<std::pair<std::pair<index_type, index_type>, value_type>>& b,
              value_type rtole = 1e-05, value_type atole=1e-08);
 
-template <typename T, typename index_type>
+template <
+          typename T,
+          typename index_type,
+          typename Mult = std::multiplies<T>,
+          typename Plus = std::plus<T>
+          >
 void async_gemm(const BCL::SPMatrix<T, index_type>& a,
                  const BCL::SPMatrix<T, index_type>& b,
                        BCL::SPMatrix<T, index_type>& c);
@@ -105,7 +110,8 @@ int main(int argc, char **argv) {
   BCL::SPMatrix<float, MKL_INT> b(fname, std::move(blocking[1]), mat_format);
   // BCL::SPMatrix<float, MKL_INT> b(fname, a.complementary_block(), mat_format);
 
-  BCL::SPMatrix<float, MKL_INT> c(zero_fname, std::move(blocking[2]), zero_format);
+  // BCL::SPMatrix<float, MKL_INT> c(zero_fname, std::move(blocking[2]), zero_format);
+  BCL::SPMatrix<float, MKL_INT> c(a.shape()[0], b.shape()[1], std::move(blocking[2]));
   // BCL::SPMatrix<float, MKL_INT> c(zero_fname, a.dry_product_block(b), zero_format);
 
   auto end = std::chrono::high_resolution_clock::now();
@@ -184,7 +190,12 @@ int main(int argc, char **argv) {
 
 #include <unordered_map>
 
-template <typename T, typename index_type>
+template <
+          typename T,
+          typename index_type,
+          typename Mult = std::multiplies<T>,
+          typename Plus = std::plus<T>
+          >
 void async_gemm(const BCL::SPMatrix<T, index_type>& a,
                  const BCL::SPMatrix<T, index_type>& b,
                        BCL::SPMatrix<T, index_type>& c) {
@@ -194,11 +205,12 @@ void async_gemm(const BCL::SPMatrix<T, index_type>& a,
              c.grid_shape()[0], b.grid_shape()[1]);
   // accumulated C's: a map of grid coordinates to sparse
   //                  matrices (for now, also maps)
+  //
 
   std::unordered_map<
                      std::pair<size_t, size_t>,
                      // BCL::SparseSPAAccumulator<T, index_type, BCL::bcl_allocator<T>>,
-                     BCL::SparseHashAccumulator<T, index_type, BCL::bcl_allocator<T>>,
+                     BCL::SparseHashAccumulator<T, index_type, Plus, BCL::bcl_allocator<T>>,
                      // BCL::SparseHeapAccumulator<T, index_type, BCL::bcl_allocator<T>>,
                      // BCL::CombBLASAccumulator<T, index_type>,
                      // BCL::EagerMKLAccumulator<T, index_type>,
@@ -239,7 +251,7 @@ void async_gemm(const BCL::SPMatrix<T, index_type>& a,
           }
 
           begin = std::chrono::high_resolution_clock::now();
-          auto c = my_a.dot(my_b);
+          auto c = my_a. template dot<Mult, Plus>(my_b);
           end = std::chrono::high_resolution_clock::now();
           duration = std::chrono::duration<double>(end - begin).count();
           compute += duration;
