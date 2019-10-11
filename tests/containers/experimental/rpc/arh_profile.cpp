@@ -7,6 +7,8 @@ void worker() {
   ARH::print("Size of ARH::rpc_t::rpc_result_t %lu\n", sizeof(ARH::rpc_t::rpc_result_t));
   ARH::print("Size of ARH::rpc_t::payload_t %lu\n", sizeof(ARH::rpc_t::payload_t));
   ARH::print("Size of ARH::rpc_t::rpc_result_t::payload_t %lu\n", sizeof(ARH::rpc_t::rpc_result_t::payload_t));
+  ARH::print("maximum aggregation size = %lu\n", ARH::get_max_agg_size());
+  ARH::print("aggregation size = %lu\n", ARH::get_agg_size());
 }
 
 int main(int argc, char** argv) {

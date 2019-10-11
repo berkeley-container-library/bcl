@@ -1,8 +1,8 @@
 #ifndef ARH_RPC_T_HPP
 #define ARH_RPC_T_HPP
 
-#include "arh.hpp"
 #include "arh_am.hpp"
+#include "arh_base.hpp"
 #include <array>
 
 namespace ARH {

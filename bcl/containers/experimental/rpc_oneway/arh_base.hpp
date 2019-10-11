@@ -18,6 +18,11 @@
 #include <pthread.h>
 
 namespace ARH {
+  extern void init_am(void);
+  extern void flush_am(void);
+  extern void init_agg(void);
+  extern void flush_agg_buffer(void);
+
   std::unordered_map<std::thread::id, size_t> worker_ids;
   std::unordered_map<std::thread::id, size_t> progress_ids;
   size_t num_threads_per_node = 32;
@@ -46,6 +51,8 @@ namespace ARH {
   }
 
   inline void barrier() {
+    threadBarrier.wait();
+    flush_agg_buffer();
     flush_am();
     if (my_local_worker() == 0) {
       BCL::barrier();
@@ -73,6 +80,7 @@ namespace ARH {
   inline void init(size_t shared_segment_size = 256) {
     BCL::init(shared_segment_size, true);
     init_am();
+    init_agg();
   }
 
   inline void finalize() {
