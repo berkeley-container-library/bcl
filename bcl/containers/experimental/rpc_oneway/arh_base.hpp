@@ -92,7 +92,7 @@ namespace ARH {
   }
 
   void run(const std::function<void(void)> &worker, size_t custom_num_workers_per_node = 30,
-           size_t custom_num_threads_per_node = 32) {
+           size_t custom_num_threads_per_node = 32, bool thread_pin = true) {
     num_workers_per_node = custom_num_workers_per_node;
     num_threads_per_node = custom_num_threads_per_node;
     threadBarrier.init(num_workers_per_node, progress);
@@ -106,11 +106,13 @@ namespace ARH {
     for (size_t i = 0; i < num_workers_per_node; ++i) {
       auto t = std::thread(worker_handler, worker);
 
-      CPU_ZERO(&cpuset);
-      CPU_SET(i % proc_num, &cpuset);
-      int rv = pthread_setaffinity_np(t.native_handle(), sizeof(cpuset), &cpuset);
-      if (rv != 0) {
-        throw std::runtime_error("ERROR thread affinity didn't work.");
+      if (thread_pin) {
+        CPU_ZERO(&cpuset);
+        CPU_SET(i % proc_num, &cpuset);
+        int rv = pthread_setaffinity_np(t.native_handle(), sizeof(cpuset), &cpuset);
+        if (rv != 0) {
+          throw std::runtime_error("ERROR thread affinity didn't work.");
+        }
       }
 
       worker_ids[t.get_id()] = i + BCL::rank() * num_workers_per_node;
@@ -120,11 +122,13 @@ namespace ARH {
     for (size_t i = num_workers_per_node; i < num_threads_per_node; ++i) {
       auto t = std::thread(progress_handler);
 
-      CPU_ZERO(&cpuset);
-      CPU_SET(i % proc_num, &cpuset);
-      int rv = pthread_setaffinity_np(t.native_handle(), sizeof(cpuset), &cpuset);
-      if (rv != 0) {
-        throw std::runtime_error("ERROR thread affinity didn't work.");
+      if (thread_pin) {
+        CPU_ZERO(&cpuset);
+        CPU_SET(i % proc_num, &cpuset);
+        int rv = pthread_setaffinity_np(t.native_handle(), sizeof(cpuset), &cpuset);
+        if (rv != 0) {
+          throw std::runtime_error("ERROR thread affinity didn't work.");
+        }
       }
 
       progress_ids[t.get_id()] = i + BCL::rank() * num_workers_per_node; // might break

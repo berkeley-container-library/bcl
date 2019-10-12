@@ -10,7 +10,7 @@ int fn(int a, int b) {
 
 void worker() {
 
-  size_t num_ops = 100000;
+  size_t num_ops = 1000;
 
   ARH::barrier();
   auto begin = std::chrono::high_resolution_clock::now();
@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
   // one process per node
   ARH::init();
 
-  ARH::run(worker, 8, 16, false);
+  ARH::run(worker, 8, 16);
 
   ARH::finalize();
 }
