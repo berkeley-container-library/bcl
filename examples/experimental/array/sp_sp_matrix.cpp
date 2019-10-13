@@ -3,33 +3,10 @@
 #include <bcl/bcl.hpp>
 #include <bcl/containers/SPMatrix.hpp>
 
-#include <mkl.h>
-
-#include <bcl/core/detail/hash_functions.hpp>
-
-double synct = 0;
-double issue = 0;
-double acc = 0;
-double compute = 0;
-double load = 0;
-double end_acc = 0;
-double rebroadcast = 0;
-
-
 template <typename index_type, typename value_type>
 void compare(const std::vector<std::pair<std::pair<index_type, index_type>, value_type>>& a,
              const std::vector<std::pair<std::pair<index_type, index_type>, value_type>>& b,
              value_type rtole = 1e-05, value_type atole=1e-08);
-
-template <
-          typename T,
-          typename index_type,
-          typename Mult = std::multiplies<T>,
-          typename Plus = std::plus<T>
-          >
-void async_gemm(const BCL::SPMatrix<T, index_type>& a,
-                 const BCL::SPMatrix<T, index_type>& b,
-                       BCL::SPMatrix<T, index_type>& c);
 
 template <typename T>
 bool allclose(std::vector<T> a, std::vector<T> b, T rtole = 1e-03, T atole = 1e-05);
@@ -64,51 +41,12 @@ int main(int argc, char **argv) {
   // Compute optimal blocking for A, B, C.
   auto blocking = BCL::block_matmul(m, n, k);
 
-  BCL::print("Reading in sparse matrix \"%s\"...\n", fname.c_str());
-  auto begin = std::chrono::high_resolution_clock::now();
-
-  BCL::print("Reading in A!!\n");
   BCL::SPMatrix<float, MKL_INT> a(fname, std::move(blocking[0]));
-  BCL::print("Reading in B!!\n");
   BCL::SPMatrix<float, MKL_INT> b(fname, std::move(blocking[1]));
 
-  BCL::print("Reading in C!!\n");
   BCL::SPMatrix<float, MKL_INT> c(a.shape()[0], b.shape()[1], std::move(blocking[2]));
 
-  auto end = std::chrono::high_resolution_clock::now();
-  double duration = std::chrono::duration<double>(end - begin).count();
-
-  BCL::print("Read sparse matrix in %lfs.\n", duration);
-
-  if (BCL::rank() == 0) {
-    printf("A:\n");
-    a.print_details();
-    printf("B:\n");
-    b.print_details();
-    printf("C:\n");
-    c.print_details();
-  }
-
-  BCL::barrier();
-
-  BCL::print("A has %lu nnz\n", a.nnz());
-  BCL::print("B has %lu nnz\n", b.nnz());
-
-  BCL::print("Doing distributed GEMM...\n");
-  BCL::print("Before GEMM, have %lu nnz\n", c.nnz());
-  BCL::barrier();
-  begin = std::chrono::high_resolution_clock::now();
-  async_gemm(a, b, c);
-  end = std::chrono::high_resolution_clock::now();
-  double d_duration = std::chrono::duration<double>(end - begin).count();
-  BCL::print("Done in %lfs\n", d_duration);
-
-  BCL::barrier();
-  printf("(%lu) sync %lf, issue %lf acc %lf compute %lf load %lf end_acc %lf rebroadcast %lf\n",
-         BCL::rank(), synct, issue, acc, compute, load, end_acc, rebroadcast);
-  BCL::barrier();
-  fflush(stdout);
-  BCL::barrier();
+  BCL::gemm(a, b, c);
 
   bool local_compare = verify;
   bool mkl_check = verify;
@@ -145,117 +83,6 @@ int main(int argc, char **argv) {
   }
 
   BCL::finalize();
-}
-
-#include <unordered_map>
-
-template <
-          typename T,
-          typename index_type,
-          typename Mult = std::multiplies<T>,
-          typename Plus = std::plus<T>
-          >
-void async_gemm(const BCL::SPMatrix<T, index_type>& a,
-                 const BCL::SPMatrix<T, index_type>& b,
-                       BCL::SPMatrix<T, index_type>& c) {
-  // accumulated C's: a map of grid coordinates to sparse
-  //                  matrices (for now, also maps)
-  //
-
-  std::unordered_map<
-                     std::pair<size_t, size_t>,
-                     // BCL::SparseSPAAccumulator<T, index_type, BCL::bcl_allocator<T>>,
-                     BCL::SparseHashAccumulator<T, index_type, Plus, BCL::bcl_allocator<T>>,
-                     // BCL::SparseHeapAccumulator<T, index_type, BCL::bcl_allocator<T>>,
-                     // BCL::CombBLASAccumulator<T, index_type>,
-                     // BCL::EagerMKLAccumulator<T, index_type>,
-                     BCL::djb2_hash<std::pair<size_t, size_t>>
-                     >
-                     accumulated_cs;
-
-  for (size_t i = 0; i < c.grid_shape()[0]; i++) {
-    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
-      if (c.tile_locale(i, j) == BCL::rank()) {
-
-        size_t k_offset = j % a.grid_shape()[1];
-
-        auto begin = std::chrono::high_resolution_clock::now();
-        auto buf_a = a.arget_tile(i, k_offset % a.grid_shape()[1]);
-        auto buf_b = b.arget_tile(k_offset % a.grid_shape()[1], j);
-        auto end = std::chrono::high_resolution_clock::now();
-        double duration = std::chrono::duration<double>(end - begin).count();
-        issue += duration;
-
-        for (size_t k_ = 0; k_ < a.grid_shape()[1]; k_++) {
-          size_t k = (k_ + k_offset) % a.grid_shape()[1];
-
-          begin = std::chrono::high_resolution_clock::now();
-          auto my_a = buf_a.get();
-          auto my_b = buf_b.get();
-          end = std::chrono::high_resolution_clock::now();
-          duration = std::chrono::duration<double>(end - begin).count();
-          synct += duration;
-
-          if (k_+1 < a.grid_shape()[1]) {
-            begin = std::chrono::high_resolution_clock::now();
-            buf_a = a.arget_tile(i, (k+1) % a.grid_shape()[1]);
-            buf_b = b.arget_tile((k+1) % a.grid_shape()[1], j);
-            end = std::chrono::high_resolution_clock::now();
-            duration = std::chrono::duration<double>(end - begin).count();
-            issue += duration;
-          }
-
-          begin = std::chrono::high_resolution_clock::now();
-          auto c = my_a. template dot<Mult, Plus>(my_b);
-          end = std::chrono::high_resolution_clock::now();
-          duration = std::chrono::duration<double>(end - begin).count();
-          compute += duration;
-
-          begin = std::chrono::high_resolution_clock::now();
-          accumulated_cs[{i, j}].accumulate(std::move(c));
-          end = std::chrono::high_resolution_clock::now();
-          duration = std::chrono::duration<double>(end - begin).count();
-          acc += duration;
-        }
-      }
-    }
-  }
-
-  auto begin = std::chrono::high_resolution_clock::now();
-  BCL::barrier();
-  BCL::print("Done with compute, accumulating...\n");
-  auto end = std::chrono::high_resolution_clock::now();
-  double duration = std::chrono::duration<double>(end - begin).count();
-  load += duration;
-
-  begin = std::chrono::high_resolution_clock::now();
-  for (size_t i = 0; i < c.grid_shape()[0]; i++) {
-    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
-      if (c.tile_locale(i, j) == BCL::rank()) {
-        /*
-        auto c_local = c.get_tile(i, j);
-        accumulated_cs[{i, j}].accumulate(c_local);
-        */
-
-        auto cmatrix = accumulated_cs[{i, j}].get_matrix(c.tile_shape(i, j)[0], c.tile_shape(i, j)[1]);
-
-        c.assign_tile(i, j, cmatrix);
-      }
-    }
-  }
-  end = std::chrono::high_resolution_clock::now();
-  duration = std::chrono::duration<double>(end - begin).count();
-  end_acc += duration;
-  begin = std::chrono::high_resolution_clock::now();
-  BCL::barrier();
-  end = std::chrono::high_resolution_clock::now();
-  duration = std::chrono::duration<double>(end - begin).count();
-  load += duration;
-  begin = std::chrono::high_resolution_clock::now();
-  c.rebroadcast_tiles();
-  end = std::chrono::high_resolution_clock::now();
-  duration = std::chrono::duration<double>(end - begin).count();
-  rebroadcast += duration;
 }
 
 template <typename T>
