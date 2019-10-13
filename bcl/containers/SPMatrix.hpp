@@ -528,3 +528,5 @@ public:
 };
 
 }
+
+#include <bcl/containers/algorithms/spgemm.hpp>
