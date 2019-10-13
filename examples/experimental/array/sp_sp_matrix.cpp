@@ -34,85 +34,46 @@ void async_gemm(const BCL::SPMatrix<T, index_type>& a,
 template <typename T>
 bool allclose(std::vector<T> a, std::vector<T> b, T rtole = 1e-03, T atole = 1e-05);
 
-auto detect_file_type(const std::string& fname) {
-  size_t suffix_spot = 0;
-
-  for (int64_t i = fname.size()-1; i >= 0; i--) {
-    if (fname[i] == '.') {
-      suffix_spot = i;
-    }
-  }
-
-  std::string suffix = fname.substr(suffix_spot);
-
-  if (suffix == ".mtx") {
-    return BCL::FileFormat::MatrixMarket;
-  } else if (suffix == ".binary") {
-    return BCL::FileFormat::Binary;
-  } else {
-    assert(false);
-    return BCL::FileFormat::Unknown;
-  }
-}
-
 int main(int argc, char **argv) {
-  BCL::init(8192);
+  BCL::init();
 
   if (argc < 3) {
-    BCL::print("usage: ./sp_sp_matrix [matrix_file] [zero_file] [verify (true|false)]\n");
+    BCL::print("usage: ./sp_sp_matrix [matrix_file] [verify (true|false)]\n");
     BCL::finalize();
     return 0;
   }
 
+  // Get arguments.
   std::string fname = std::string(argv[1]);
-  std::string zero_fname = std::string(argv[2]);
-  bool verify = std::string(argv[3]) == "true";
+  bool verify = std::string(argv[2]) == "true";
 
-  auto mat_format = detect_file_type(fname);
-  auto zero_format = detect_file_type(zero_fname);
-
+  // Detect, print out matrix format.
+  auto mat_format = BCL::matrix_io::detect_file_type(fname);
   std::string format_str = (mat_format == BCL::FileFormat::MatrixMarket) ? "mtx" : "binary";
-  std::string zero_format_str = (zero_format == BCL::FileFormat::MatrixMarket) ? "mtx" : "binary";
+  BCL::print("Main matrix is in format \".%s\"\n",
+             format_str.c_str());
 
-  BCL::print("Main matrix is in format \".%s\", zero matrix is in format \".%s\"\n",
-             format_str.c_str(), zero_format_str.c_str());
-
-  /*
-  std::string dir = "/global/cscratch1/sd/brock/sparse-data/nlpkkt160/";
-  // std::string fname = "nlpkkt160_general.binary";
-  std::string fname = "nlpkkt160_general.mtx";
-  std::string zero_fname = "zero_" + fname;
-  // std::string zero_fname = "zero_nlpkkt160_general.mtx";
-  */
-
+  // Grab dimensions of the matrix to be multiplied.
   size_t m, n, k;
+  auto matrix_shape = BCL::matrix_io::matrix_info(fname);
+  m = matrix_shape.shape[0];
+  n = matrix_shape.shape[1];
+  assert(m == n);
+  k = m;
 
-  {
-    BCL::CSRMatrix<float, MKL_INT> a(zero_fname, zero_format);
-    m = a.shape()[0];
-    n = a.shape()[1];
-    assert(m == n);
-    k = m;
-  }
-
+  // Compute optimal blocking for A, B, C.
   auto blocking = BCL::block_matmul(m, n, k);
 
   BCL::print("Reading in sparse matrix \"%s\"...\n", fname.c_str());
   auto begin = std::chrono::high_resolution_clock::now();
 
-  size_t block_factor = 32;
-  size_t m_block = (m + block_factor - 1) / block_factor;
-  size_t n_block = (n + block_factor - 1) / block_factor;
+  BCL::print("Reading in A!!\n");
+  BCL::SPMatrix<float, MKL_INT> a(fname, std::move(blocking[0]));
+  BCL::print("Reading in B!!\n");
+  BCL::SPMatrix<float, MKL_INT> b(fname, std::move(blocking[1]));
 
-  BCL::SPMatrix<float, MKL_INT> a(fname, std::move(blocking[0]), mat_format);
-  // BCL::SPMatrix<float, MKL_INT> a(fname, BCL::BlockRect({m_block, n_block}), mat_format);
-
-  BCL::SPMatrix<float, MKL_INT> b(fname, std::move(blocking[1]), mat_format);
-  // BCL::SPMatrix<float, MKL_INT> b(fname, a.complementary_block(), mat_format);
-
-  // BCL::SPMatrix<float, MKL_INT> c(zero_fname, std::move(blocking[2]), zero_format);
+  BCL::print("Reading in C!!\n");
   BCL::SPMatrix<float, MKL_INT> c(a.shape()[0], b.shape()[1], std::move(blocking[2]));
-  // BCL::SPMatrix<float, MKL_INT> c(zero_fname, a.dry_product_block(b), zero_format);
 
   auto end = std::chrono::high_resolution_clock::now();
   double duration = std::chrono::duration<double>(end - begin).count();
@@ -153,10 +114,8 @@ int main(int argc, char **argv) {
   bool mkl_check = verify;
 
   if (BCL::rank() == 0 && (local_compare || mkl_check)) {
-    // BCL::CSRMatrix<float, MKL_INT> a_local(dir + fname, BCL::FileFormat::Binary);
-    // BCL::CSRMatrix<float, MKL_INT> b_local(dir + fname, BCL::FileFormat::Binary);
-    BCL::CSRMatrix<float, MKL_INT> a_local(fname, mat_format);
-    BCL::CSRMatrix<float, MKL_INT> b_local(fname, mat_format);
+    BCL::CSRMatrix<float, MKL_INT> a_local(fname);
+    BCL::CSRMatrix<float, MKL_INT> b_local(fname);
 
     printf("Multiplying locally...\n");
     fflush(stdout);
@@ -199,10 +158,6 @@ template <
 void async_gemm(const BCL::SPMatrix<T, index_type>& a,
                  const BCL::SPMatrix<T, index_type>& b,
                        BCL::SPMatrix<T, index_type>& c) {
-  BCL::print("Doing GEMM -- A %d x %d, B %d x %d, C %d x %d\n",
-             a.grid_shape()[0], a.grid_shape()[1],
-             b.grid_shape()[0], b.grid_shape()[1],
-             c.grid_shape()[0], b.grid_shape()[1]);
   // accumulated C's: a map of grid coordinates to sparse
   //                  matrices (for now, also maps)
   //

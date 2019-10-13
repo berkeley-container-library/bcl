@@ -23,6 +23,7 @@
 #include <bcl/bcl.hpp>
 #include <bcl/containers/detail/mkl/mkl_error_handle.hpp>
 #include <bcl/containers/detail/mkl/spmatrix.hpp>
+#include "matrix_io.hpp"
 
 #include <mtspgemmlib/utility.h>
 #include <mtspgemmlib/CSC.h>
@@ -37,13 +38,6 @@ namespace BCL {
 
 template <typename T, typename index_type>
 struct SparseAccumulator;
-
-enum FileFormat {
-  MatrixMarket,
-  MatrixMarketZeroIndexed,
-  Binary,
-  Unknown
-};
 
 template <
           typename T,
@@ -130,13 +124,20 @@ struct CSRMatrix {
     row_ptr_.resize(m+1, 0);
   }
 
-  CSRMatrix(const std::string& fname, FileFormat format = FileFormat::MatrixMarket) {
+  CSRMatrix(const std::string& fname, FileFormat format = FileFormat::Unknown) {
+    // If file format not given, attempt to detect.
+    if (format == FileFormat::Unknown) {
+      format = matrix_io::detect_file_type(fname);
+    }
     if (format == FileFormat::MatrixMarket) {
       read_MatrixMarket(fname);
     } else if (format == FileFormat::MatrixMarketZeroIndexed) {
       read_MatrixMarket(fname, false);
     } else if (format == FileFormat::Binary) {
       read_Binary(fname);
+    } else {
+      throw std::runtime_error("CSRMatrix: Could not detect file format for \""
+                               + fname + "\"");
     }
   }
 

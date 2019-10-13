@@ -90,25 +90,26 @@ public:
 
   template <typename TeamType>
   SPMatrix(const std::string& fname, Block&& blocking, const TeamType& team,
-           FileFormat format = FileFormat::MatrixMarket) :
+           FileFormat format = FileFormat::Unknown) :
            team_ptr_(team.clone()) {
     init(fname, std::move(blocking), format);
   }
 
   SPMatrix(const std::string& fname, Block&& blocking = BCL::BlockOpt(),
-           FileFormat format = FileFormat::MatrixMarket) :
+           FileFormat format = FileFormat::Unknown) :
           team_ptr_(new BCL::WorldTeam()) {
     init(fname, std::move(blocking), format);
   }
 
   // XXX: in progress, initialize with an empty matrix
   template <typename TeamType>
-  SPMatrix(size_t m, size_t n, Block&& blocking, const TeamType& team) : 
+  SPMatrix(size_t m, size_t n, Block&& blocking, const TeamType& team) :
            team_ptr_(team.clone()) {
     init_with_zero(m, n, blocking);
   }
 
-  SPMatrix(size_t m, size_t n, Block&& blocking) {
+  SPMatrix(size_t m, size_t n, Block&& blocking) :
+           team_ptr_(new BCL::WorldTeam()) {
     init_with_zero(m, n, std::move(blocking));
   }
 
@@ -166,7 +167,8 @@ public:
     }
   }
 
-  void init(const std::string& fname, Block&& blocking, FileFormat format = FileFormat::MatrixMarket) {
+  void init(const std::string& fname, Block&& blocking,
+            FileFormat format = FileFormat::Unknown) {
     CSRMatrix<T, index_type> mat(fname, format);
 
     m_ = mat.m_;
