@@ -6,7 +6,7 @@
 #include <array>
 
 namespace ARH {
-  extern void init(size_t);
+  extern void init(size_t, size_t, size_t);
 
   // Get a *position independent* function pointer
   template<typename T>
@@ -56,11 +56,12 @@ namespace ARH {
     using rpc_result_t = result_t;
 
     FutureData* future_p_;
+    u_int8_t target_worker_local_;
     std::uintptr_t fn_;
     std::uintptr_t invoker_;
     payload_t data_;
 
-    rpc_t(FutureData* future_p) : future_p_(future_p) {}
+    rpc_t(FutureData* future_p, u_int8_t target_worker_local) : future_p_(future_p), target_worker_local_(target_worker_local) {}
 
     template<typename Fn, typename... Args>
     void load(Fn &&fn, Args &&... args) {

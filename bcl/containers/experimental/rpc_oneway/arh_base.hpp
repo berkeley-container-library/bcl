@@ -23,27 +23,31 @@ namespace ARH {
   extern void init_agg(void);
   extern void flush_agg_buffer(void);
 
-  std::unordered_map<std::thread::id, size_t> worker_ids;
-  std::unordered_map<std::thread::id, size_t> progress_ids;
-  size_t num_threads_per_node = 32;
-  size_t num_workers_per_node = 30;
+  std::unordered_map<std::thread::id, size_t> thread_ids;
+  std::vector<size_t> thread_contexts;
+  size_t num_threads_per_proc = 16;
+  size_t num_workers_per_proc = 15;
   std::atomic<bool> worker_run = true;
   ThreadBarrier threadBarrier;
 
-  inline size_t my_worker() {
-    return worker_ids[std::this_thread::get_id()];
+  inline size_t get_thread_id() {
+    return thread_ids[std::this_thread::get_id()];
   }
 
-  inline size_t nworkers() {
-    return BCL::nprocs() * num_workers_per_node;
+  inline void set_context(size_t mContext) {
+    thread_contexts[get_thread_id()] = mContext;
+  }
+
+  inline size_t get_context() {
+    return thread_contexts[get_thread_id()];
   }
 
   inline size_t my_worker_local() {
-    return my_worker() % num_workers_per_node;
+    return get_context();
   }
 
   inline size_t nworkers_local() {
-    return num_workers_per_node;
+    return num_workers_per_proc;
   }
 
   inline size_t my_proc() {
@@ -52,6 +56,14 @@ namespace ARH {
 
   inline size_t nprocs() {
     return BCL::nprocs();
+  }
+
+  inline size_t my_worker() {
+    return my_worker_local() + my_proc() * num_workers_per_proc;
+  }
+
+  inline size_t nworkers() {
+    return BCL::nprocs() * num_workers_per_proc;
   }
 
   inline void barrier() {
@@ -81,7 +93,13 @@ namespace ARH {
     barrier();
   }
 
-  inline void init(size_t shared_segment_size = 256) {
+  inline void init(size_t custom_num_workers_per_proc = 15,
+      size_t custom_num_threads_per_proc = 16, size_t shared_segment_size = 256) {
+    num_workers_per_proc = custom_num_workers_per_proc;
+    num_threads_per_proc = custom_num_threads_per_proc;
+    thread_contexts.resize(num_threads_per_proc, 0);
+    threadBarrier.init(num_workers_per_proc, progress);
+
     BCL::init(shared_segment_size, true);
     init_am();
     init_agg();
@@ -91,53 +109,50 @@ namespace ARH {
     BCL::finalize();
   }
 
-  void run(const std::function<void(void)> &worker, size_t custom_num_workers_per_node = 30,
-           size_t custom_num_threads_per_node = 32) {
-    num_workers_per_node = custom_num_workers_per_node;
-    num_threads_per_node = custom_num_threads_per_node;
-    threadBarrier.init(num_workers_per_node, progress);
-
+  void run(const std::function<void(void)> &worker) {
     std::vector<std::thread> worker_pool;
     std::vector<std::thread> progress_pool;
 
-    size_t proc_num = sysconf(_SC_NPROCESSORS_CONF);
-    cpu_set_t cpuset;
+//    size_t proc_num = sysconf(_SC_NPROCESSORS_CONF);
+//    cpu_set_t cpuset;
 
-    for (size_t i = 0; i < num_workers_per_node; ++i) {
+    for (size_t i = 0; i < num_workers_per_proc; ++i) {
       auto t = std::thread(worker_handler, worker);
 
-      CPU_ZERO(&cpuset);
-      CPU_SET(i % proc_num, &cpuset);
-      int rv = pthread_setaffinity_np(t.native_handle(), sizeof(cpuset), &cpuset);
-      if (rv != 0) {
-        throw std::runtime_error("ERROR thread affinity didn't work.");
-      }
+//      CPU_ZERO(&cpuset);
+//      CPU_SET(i % proc_num, &cpuset);
+//      int rv = pthread_setaffinity_np(t.native_handle(), sizeof(cpuset), &cpuset);
+//      if (rv != 0) {
+//        throw std::runtime_error("ERROR thread affinity didn't work.");
+//      }
 
-      worker_ids[t.get_id()] = i + BCL::rank() * num_workers_per_node;
+      thread_ids[t.get_id()] = i;
+      thread_contexts[i] = i;
       worker_pool.push_back(std::move(t));
     }
 
-    for (size_t i = num_workers_per_node; i < num_threads_per_node; ++i) {
+    for (size_t i = num_workers_per_proc; i < num_threads_per_proc; ++i) {
       auto t = std::thread(progress_handler);
 
-      CPU_ZERO(&cpuset);
-      CPU_SET(i % proc_num, &cpuset);
-      int rv = pthread_setaffinity_np(t.native_handle(), sizeof(cpuset), &cpuset);
-      if (rv != 0) {
-        throw std::runtime_error("ERROR thread affinity didn't work.");
-      }
+//      CPU_ZERO(&cpuset);
+//      CPU_SET(i % proc_num, &cpuset);
+//      int rv = pthread_setaffinity_np(t.native_handle(), sizeof(cpuset), &cpuset);
+//      if (rv != 0) {
+//        throw std::runtime_error("ERROR thread affinity didn't work.");
+//      }
 
-      progress_ids[t.get_id()] = i + BCL::rank() * num_workers_per_node; // might break
+      thread_ids[t.get_id()] = i;
+      thread_contexts[i] = i;
       progress_pool.push_back(std::move(t));
     }
 
-    for (size_t i = 0; i < num_workers_per_node; ++i) {
+    for (size_t i = 0; i < num_workers_per_proc; ++i) {
       worker_pool[i].join();
     }
 
     worker_run = false;
 
-    for (size_t i = 0; i < num_threads_per_node - num_workers_per_node; ++i) {
+    for (size_t i = 0; i < num_threads_per_proc - num_workers_per_proc; ++i) {
       progress_pool[i].join();
     }
   }

@@ -17,7 +17,7 @@ void worker() {
   std::vector<rv> futures;
 
   for (int i = 0 ; i < steps; i++) {
-    size_t target_rank = rand() % ARH::nprocs();
+    size_t target_rank = rand() % ARH::nworkers();
     auto f = ARH::rpc_agg(target_rank, fn, my_rank, my_rank);
     futures.push_back(std::move(f));
   }
@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
   ARH::init();
   ARH::set_agg_size(5);
 
-  ARH::run(worker, 3, 4);
+  ARH::run(worker);
 
   ARH::finalize();
 }

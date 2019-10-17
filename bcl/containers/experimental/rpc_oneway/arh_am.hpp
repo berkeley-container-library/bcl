@@ -66,7 +66,10 @@ namespace ARH {
     std::vector<rpc_result_t> results;
 
     for (size_t i = 0; i < rpcs.size(); ++i) {
+      size_t mContext = get_context();
+      set_context((size_t) rpcs[i].target_worker_local_);
       rpc_result_t result = rpcs[i].run();
+      set_context(mContext);
       results.push_back(result);
     }
 
@@ -140,11 +143,14 @@ namespace ARH {
 
   template <typename Fn, typename... Args>
   Future<std::invoke_result_t<Fn, Args...>>
-  rpc(size_t remote_proc, Fn&& fn, Args&&... args) {
-    assert(remote_proc < nprocs());
+  rpc(size_t remote_worker, Fn&& fn, Args&&... args) {
+    assert(remote_worker < nworkers());
+
+    size_t remote_proc = remote_worker / nworkers_local();
+    u_int8_t remote_worker_local = (u_int8_t) remote_worker % nworkers_local();
 
     Future<std::invoke_result_t<Fn, Args...>> future;
-    rpc_t my_rpc(future.get_p());
+    rpc_t my_rpc(future.get_p(), remote_worker_local);
     my_rpc.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
 
     generic_handler_request_impl_(remote_proc, std::vector<rpc_t>(1, my_rpc));

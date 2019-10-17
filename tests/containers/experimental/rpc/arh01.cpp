@@ -8,7 +8,7 @@ void worker() {
 
 int main(int argc, char** argv) {
   // one process per node
-  ARH::init();
+  ARH::init(2, 2);
   ARH::run(worker);
 
   ARH::finalize();

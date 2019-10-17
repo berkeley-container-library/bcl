@@ -3,6 +3,7 @@
 
 #include "arh_am_agg.hpp"
 #include "arh_am.hpp"
+#include "arh_global_object.hpp"
 #include "arh_base.hpp"
 
 namespace ARH {

@@ -16,7 +16,7 @@ void worker() {
   std::vector<rv> futures;
 
   for (int i = 0 ; i < 10; i++) {
-    size_t target_rank = rand() % ARH::nprocs();
+    size_t target_rank = rand() % ARH::nworkers();
     auto f = ARH::rpc(target_rank, fn, my_rank, my_rank);
     futures.push_back(std::move(f));
   }

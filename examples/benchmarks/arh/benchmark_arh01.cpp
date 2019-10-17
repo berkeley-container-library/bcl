@@ -16,7 +16,7 @@ void worker() {
   auto begin = std::chrono::high_resolution_clock::now();
 
   for (size_t i = 0; i < num_ops; i++) {
-    size_t remote_rank = lrand48() % ARH::nprocs();
+    size_t remote_rank = lrand48() % ARH::nworkers();
     auto f = ARH::rpc(remote_rank, [](int lel) { }, i);
     f.wait();
   }
@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
   // one process per node
   ARH::init();
 
-  ARH::run(worker, 8, 16);
+  ARH::run(worker);
 
   ARH::finalize();
 }
