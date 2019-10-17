@@ -10,7 +10,7 @@ int fn(int a, int b) {
 
 void worker() {
 
-  size_t num_ops = 1000;
+  size_t num_ops = 100000;
 
   ARH::barrier();
   auto begin = std::chrono::high_resolution_clock::now();
