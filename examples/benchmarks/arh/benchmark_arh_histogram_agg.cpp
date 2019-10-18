@@ -32,7 +32,7 @@ void worker() {
   for (int i = 0 ; i < num_ops; i++) {
     size_t target_rank = lrand48() % nworkers;
     int val = lrand48() % local_range;
-    auto f = ARH::rpc(target_rank, histogram_handler, val);
+    auto f = ARH::rpc_agg(target_rank, histogram_handler, val);
     futures.push_back(std::move(f));
   }
 
@@ -57,7 +57,9 @@ void worker() {
 int main(int argc, char** argv) {
   // one process per node
   ARH::init(15, 16);
+  ARH::set_agg_size(100);
   mObjects.init();
+//  std::printf("maximum aggregation size = %lu\n", ARH::get_max_agg_size());
 
   ARH::run(worker);
 
