@@ -21,6 +21,9 @@ namespace ARH {
   }
 
   size_t set_agg_size(size_t custom_agg_size) {
+#ifdef ARH_DEBUG
+    assert(custom_agg_size > 0);
+#endif
     agg_size = MIN(agg_size.load(), custom_agg_size);
     return agg_size.load();
   }

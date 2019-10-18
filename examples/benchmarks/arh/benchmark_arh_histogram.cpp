@@ -1,6 +1,10 @@
 #ifdef GASNET_EX
 #include "bcl/containers/experimental/rpc_oneway/arh.hpp"
 #include <cassert>
+#include "include/cxxopts.hpp"
+
+bool use_agg = false;
+size_t agg_size = 0;
 
 struct ThreadObjects {
   std::vector<std::atomic<int>> v;
@@ -32,7 +36,12 @@ void worker() {
   for (int i = 0 ; i < num_ops; i++) {
     size_t target_rank = lrand48() % nworkers;
     int val = lrand48() % local_range;
-    auto f = ARH::rpc(target_rank, histogram_handler, val);
+    rv f;
+    if (use_agg) {
+      f = ARH::rpc_agg(target_rank, histogram_handler, val);
+    } else {
+      f = ARH::rpc(target_rank, histogram_handler, val);
+    }
     futures.push_back(std::move(f));
   }
 
@@ -48,16 +57,28 @@ void worker() {
   auto end = std::chrono::high_resolution_clock::now();
 
   double duration = std::chrono::duration<double>(time1 - begin).count();
-  ARH::print("The first duration %.2lf; %d ops / s\n", duration, (int) (num_ops / duration));
+  ARH::print("Request Phase: agg_size = %lu; duration = %.2lf; overhead = %.2lf us/op\n", agg_size, duration, duration * (1e6 / num_ops));
 
   duration = std::chrono::duration<double>(end - begin).count();
-  ARH::print("Total duration %.2lf; %d ops / s\n", duration, (int) (num_ops / duration));
+  ARH::print("Total: agg_size = %lu; duration = %.2lf; throughput = %d ops/s\n", agg_size, duration, (int) (num_ops / duration));
 }
 
 int main(int argc, char** argv) {
   // one process per node
+  cxxopts::Options options("ARH Benchmark", "Benchmark of ARH system");
+  options.add_options()
+      ("size", "Aggregation size", cxxopts::value<size_t>(0))
+      ;
+  auto result = options.parse(argc, argv);
+  agg_size = result["size"].as<size_t>();
+  assert(agg_size >= 0);
+  use_agg = (agg_size != 0);
+
   ARH::init(15, 16);
   mObjects.init();
+  if (use_agg) {
+    ARH::set_agg_size(agg_size);
+  }
 
   ARH::run(worker);
 
