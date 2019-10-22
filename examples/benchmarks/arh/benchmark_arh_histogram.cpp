@@ -1,4 +1,5 @@
 #ifdef GASNET_EX
+#define ARH_BENCHMARK
 #include "bcl/containers/experimental/rpc_oneway/arh.hpp"
 #include <cassert>
 #include "include/cxxopts.hpp"
@@ -22,6 +23,7 @@ void worker() {
   int total_range = local_range * (int) ARH::nworkers();
   int num_ops = 100000;
   int total_num_ops = num_ops * (int) ARH::nworkers();
+  double duration3 = 0;
 
   size_t my_rank = ARH::my_worker_local();
   size_t nworkers = ARH::nworkers();
@@ -32,9 +34,14 @@ void worker() {
   std::vector<rv> futures;
 
   ARH::barrier();
-  auto begin = std::chrono::high_resolution_clock::now();
+  timespec time0, time1, time2;
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time0);
 
   for (int i = 0 ; i < num_ops; i++) {
+#ifdef ARH_BENCHMARK
+    timespec start, end;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
+#endif
     size_t target_rank = lrand48() % nworkers;
     int val = lrand48() % local_range;
     rv f;
@@ -44,9 +51,16 @@ void worker() {
       f = ARH::rpc(target_rank, histogram_handler, val);
     }
     futures.push_back(std::move(f));
+#ifdef ARH_BENCHMARK
+    static int step = 0;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
+    if (ARH::my_worker_local() == 0) {
+      duration3 = update_average(duration3, time2long(time_diff(start, end)), ++step);
+    }
+#endif
   }
 
-  auto time1 = std::chrono::high_resolution_clock::now();
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time1);
 
   ARH::barrier();
 
@@ -55,14 +69,19 @@ void worker() {
   }
 
   ARH::barrier();
-  auto end = std::chrono::high_resolution_clock::now();
+  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time2);
 
-  double duration = std::chrono::duration<double>(time1 - begin).count();
-  double overhead = duration * (1e6 / num_ops * MAX(agg_size, 1));
-  ARH::print("Request Phase: agg_size = %lu; duration = %.2lf s; overhead   = %.2lf us/op\n", agg_size, duration, overhead);
-
-  duration = std::chrono::duration<double>(end - begin).count();
-  ARH::print("Total:         agg_size = %lu; duration = %.2lf s; throughput = %d op/s\n", agg_size, duration, (int) (num_ops / duration));
+  long duration1 = time2long(time_diff(time0, time1));
+  double agg_overhead = (double) duration1 / 1e3 / num_ops * MAX(agg_size, 1);
+  double ave_overhead = (double) duration1 / 1e3 / num_ops;
+  long duration2 = time2long(time_diff(time0, time2));
+  ARH::print("Setting: agg_size = %lu; duration = %.2lf s\n", agg_size, duration2 / 1e9);
+  ARH::print("ave_overhead = %.2lf us/op; agg_overhead = %.2lf us/op\n", ave_overhead, agg_overhead);
+  ARH::print("Gasnet_ex send: overhead = %.3lf us;\n", ARH::duration0 / 1e3);
+  ARH::print("rpc_agg lock-unlock without send: overhead = %.3lf us;\n", ARH::duration1 / 1e3);
+  ARH::print("rpc_agg lock-unlock with send: overhead = %.3lf us;\n", ARH::duration2 / 1e3);
+  ARH::print("per rpc overhead = %.3lf us;\n", duration3 / 1e3);
+  ARH::print("Total throughput = %d op/s\n", (int) (num_ops / (duration1 / 1e9)));
 }
 
 int main(int argc, char** argv) {

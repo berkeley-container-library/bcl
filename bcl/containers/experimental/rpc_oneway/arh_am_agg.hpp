@@ -4,6 +4,10 @@
 #include <vector>
 #include "arh_am.hpp"
 namespace ARH {
+#ifdef ARH_BENCHMARK
+  double duration1 = 0; // rpc_agg lock-unlock without send
+  double duration2 = 0; // rpc_agg lock-unlock with send
+#endif
   std::vector<std::mutex> agg_locks;
   std::vector<std::vector<rpc_t>> agg_buffers;
   size_t max_agg_size;
@@ -63,16 +67,37 @@ namespace ARH {
     rpc_t my_rpc(future.get_p(), remote_worker_local);
     my_rpc.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
 
+#ifdef ARH_BENCHMARK
+    timespec start, end;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
+#endif
     agg_locks[remote_proc].lock();
     agg_buffers[remote_proc].push_back(my_rpc);
     if (agg_buffers[remote_proc].size() >= agg_size) {
       std::vector<rpc_t> send_buf = std::move(agg_buffers[remote_proc]);
       agg_locks[remote_proc].unlock();
       requested += send_buf.size();
+#ifdef ARH_BENCHMARK
+      static int step = 0;
+      clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
+      if (my_worker_local() == 0) {
+        duration2 = update_average(duration2, time2long(time_diff(start, end)), ++step);
+      }
+//      if (my_worker() == 0) {
+//        std::printf("current=%lu; step=%d; duration=%.2lf\n", diff(start, end).tv_nsec, step, duration2);
+//      }
+#endif
       generic_handler_request_impl_(remote_proc, std::move(send_buf));
     }
     else {
       agg_locks[remote_proc].unlock();
+#ifdef ARH_BENCHMARK
+      static int step = 0;
+      clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
+      if (my_worker_local() == 0) {
+        duration1 = update_average(duration1, time2long(time_diff(start, end)), ++step);
+      }
+#endif
     }
 
     return std::move(future);

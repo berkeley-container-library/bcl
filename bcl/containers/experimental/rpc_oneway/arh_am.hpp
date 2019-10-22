@@ -4,10 +4,18 @@
 #include "arh_rpc_t.hpp"
 #include "arh_base.hpp"
 
+#ifdef ARH_BENCHMARK
+  #include "examples/benchmarks/arh/include/benchmark_tools.hpp"
+#endif
+
 namespace ARH {
 
   extern size_t nprocs(void);
   extern void progress(void);
+
+#ifdef ARH_BENCHMARK
+  double duration0 = 0; // Gasnet_ex send
+#endif
 
   std::atomic<size_t> acknowledged = 0;
   std::atomic<size_t> requested = 0;
@@ -46,8 +54,19 @@ namespace ARH {
   }
 
   void generic_handler_request_impl_(size_t remote_proc, std::vector<rpc_t> &&rpcs) {
+#ifdef ARH_BENCHMARK
+    timespec start, end;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
+#endif
     gex_AM_RequestMedium0(BCL::tm, remote_proc, hidx_generic_rpc_reqhandler_, rpcs.data(),
     rpcs.size() * sizeof(rpc_t), GEX_EVENT_NOW, 0);
+#ifdef ARH_BENCHMARK
+    static int step = 0;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
+    if (my_worker_local() == 0) {
+      duration0 = update_average(duration0, time2long(time_diff(start, end)), ++step);
+    }
+#endif
   }
 
   void generic_rpc_ackhandler_(gex_Token_t token, void *buf, size_t nbytes) {
@@ -107,6 +126,8 @@ namespace ARH {
 
     Future() : data_p(new FutureData()) {}
     Future(Future&& future) = default;
+    Future& operator=(Future&& future) = default;
+
 
     FutureData* get_p() const {
       return data_p.get();
