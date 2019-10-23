@@ -116,7 +116,10 @@ namespace ARH {
 //    size_t proc_num = sysconf(_SC_NPROCESSORS_CONF);
 //    cpu_set_t cpuset;
 
-    for (size_t i = 0; i < num_workers_per_proc; ++i) {
+    thread_ids[std::this_thread::get_id()] = 0;
+    thread_contexts[0] = 0;
+
+    for (size_t i = 1; i < num_workers_per_proc; ++i) {
       auto t = std::thread(worker_handler, worker);
 
 //      CPU_ZERO(&cpuset);
@@ -145,6 +148,8 @@ namespace ARH {
       thread_contexts[i] = i;
       progress_pool.push_back(std::move(t));
     }
+
+    worker_handler(worker);
 
     for (size_t i = 0; i < num_workers_per_proc; ++i) {
       worker_pool[i].join();
