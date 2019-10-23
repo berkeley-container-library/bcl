@@ -151,7 +151,7 @@ namespace ARH {
 
     worker_handler(worker);
 
-    for (size_t i = 0; i < num_workers_per_proc; ++i) {
+    for (size_t i = 0; i < num_workers_per_proc-1; ++i) {
       worker_pool[i].join();
     }
 
