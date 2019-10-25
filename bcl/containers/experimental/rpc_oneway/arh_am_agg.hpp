@@ -4,9 +4,11 @@
 #include <vector>
 #include "arh_am.hpp"
 namespace ARH {
-#ifdef ARH_BENCHMARK
-  double duration1 = 0; // rpc_agg lock-unlock without send
-  double duration2 = 0; // rpc_agg lock-unlock with send
+#ifdef ARH_PROFILE
+  double ticks_load = 0; // rpc_agg lock-unlock without send
+  double ticks_agg_buf_npop = 0; // rpc_agg lock-unlock without send
+  double ticks_agg_buf_pop = 0; // rpc_agg lock-unlock with send
+  double ticks_gex_req = 0; // rpc_agg lock-unlock with send
 #endif
   std::vector<std::mutex> agg_locks;
   std::vector<std::vector<rpc_t>> agg_buffers;
@@ -63,13 +65,22 @@ namespace ARH {
     size_t remote_proc = remote_worker / nworkers_local();
     u_int8_t remote_worker_local = (u_int8_t) remote_worker % nworkers_local();
 
+#ifdef ARH_PROFILE
+    tick_t start_load = ticks_now();
+#endif
     Future<std::invoke_result_t<Fn, Args...>> future;
     rpc_t my_rpc(future.get_p(), remote_worker_local);
     my_rpc.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
+#ifdef ARH_PROFILE
+    static int step_load = 0;
+    tick_t end_load = ticks_now();
+    if (my_worker_local() == 0) {
+      update_average(ticks_load, end_load - start_load, ++step_load);
+    }
+#endif
 
-#ifdef ARH_BENCHMARK
-    timespec start, end;
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
+#ifdef ARH_PROFILE
+    tick_t start = ticks_now();
 #endif
     agg_locks[remote_proc].lock();
     agg_buffers[remote_proc].push_back(my_rpc);
@@ -77,25 +88,33 @@ namespace ARH {
       std::vector<rpc_t> send_buf = std::move(agg_buffers[remote_proc]);
       agg_locks[remote_proc].unlock();
       requested += send_buf.size();
-#ifdef ARH_BENCHMARK
-      static int step = 0;
-      clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
+#ifdef ARH_PROFILE
+      static int step_agg_buffer_pop = 0;
+      tick_t end = ticks_now();
       if (my_worker_local() == 0) {
-        duration2 = update_average(duration2, time2long(time_diff(start, end)), ++step);
+        update_average(ticks_agg_buf_pop, end - start, ++step_agg_buffer_pop);
       }
-//      if (my_worker() == 0) {
-//        std::printf("current=%lu; step=%d; duration=%.2lf\n", diff(start, end).tv_nsec, step, duration2);
-//      }
+#endif
+
+#ifdef ARH_PROFILE
+      tick_t start_gex_req = ticks_now();
 #endif
       generic_handler_request_impl_(remote_proc, std::move(send_buf));
+#ifdef ARH_PROFILE
+      static int step_gex_req = 0;
+      tick_t end_gex_req = ticks_now();
+      if (my_worker_local() == 0) {
+        update_average(ticks_gex_req, end_gex_req - start_gex_req, ++step_gex_req);
+      }
+#endif
     }
     else {
       agg_locks[remote_proc].unlock();
-#ifdef ARH_BENCHMARK
+#ifdef ARH_PROFILE
       static int step = 0;
-      clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
+      tick_t end = ticks_now();
       if (my_worker_local() == 0) {
-        duration1 = update_average(duration1, time2long(time_diff(start, end)), ++step);
+        update_average(ticks_agg_buf_npop, end - start, ++step);
       }
 #endif
     }
