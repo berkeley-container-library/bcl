@@ -2,6 +2,7 @@
   #include "bcl/bcl.hpp"
   #include "bcl/containers/experimental/rpc_oneway/arh.hpp"
   #include <cassert>
+  #include "include/benchmark_tools.hpp"
 
 
 int fn(int a, int b) {
@@ -13,7 +14,7 @@ void worker() {
   size_t num_ops = 100000;
 
   ARH::barrier();
-  auto begin = std::chrono::high_resolution_clock::now();
+  ARH::tick_t start = ARH::tick_now();
 
   for (size_t i = 0; i < num_ops; i++) {
     size_t remote_rank = lrand48() % ARH::nworkers();
@@ -22,10 +23,10 @@ void worker() {
   }
 
   ARH::barrier();
-  auto end = std::chrono::high_resolution_clock::now();
+  ARH::tick_t end = ARH::tick_now();
 
-  double duration = std::chrono::duration<double>(end - begin).count();
-  ARH::print("%lf total %lfus / op\n", duration, 1e6*duration / num_ops);
+  long duration = end - start;
+  ARH::print("%lf total %lfus / op\n", duration / 1e6, duration / num_ops);
 }
 
 int main(int argc, char** argv) {

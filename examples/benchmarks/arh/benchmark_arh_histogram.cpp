@@ -23,7 +23,7 @@ void worker() {
   int total_range = local_range * (int) ARH::nworkers();
   int num_ops = 100000;
   int total_num_ops = num_ops * (int) ARH::nworkers();
-  double duration3 = 0;
+  double ticks_step = 0;
 
   size_t my_rank = ARH::my_worker_local();
   size_t nworkers = ARH::nworkers();
@@ -34,16 +34,14 @@ void worker() {
   std::vector<rv> futures;
 
   ARH::barrier();
-  timespec time0, time1, time2;
-  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time0);
+  ARH::tick_t start = ARH::ticks_now();
 
-  for (int i = 0 ; i < num_ops; i++) {
-#ifdef ARH_BENCHMARK
-    timespec start, end;
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
-#endif
+  for (int i = 0; i < num_ops; i++) {
+    ARH::tick_t start_step = ARH::ticks_now();
+
     size_t target_rank = lrand48() % nworkers;
     int val = lrand48() % local_range;
+
     rv f;
     if (use_agg) {
       f = ARH::rpc_agg(target_rank, histogram_handler, val);
@@ -51,37 +49,44 @@ void worker() {
       f = ARH::rpc(target_rank, histogram_handler, val);
     }
     futures.push_back(std::move(f));
-#ifdef ARH_BENCHMARK
+
     static int step = 0;
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
+    ARH::tick_t end_step = ARH::ticks_now();
     if (ARH::my_worker_local() == 0) {
-      duration3 = update_average(duration3, time2long(time_diff(start, end)), ++step);
+      ARH::update_average(ticks_step, end_step - start_step, ++step);
     }
-#endif
   }
 
-  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time1);
-
   ARH::barrier();
+  ARH::tick_t end_req = ARH::ticks_now();
 
-  for (int i = 0 ; i < num_ops; i++) {
+  for (int i = 0; i < num_ops; i++) {
     futures[i].wait();
   }
 
   ARH::barrier();
-  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time2);
+  ARH::tick_t end_wait = ARH::ticks_now();
 
-  long duration1 = time2long(time_diff(time0, time1));
-  double agg_overhead = (double) duration1 / 1e3 / num_ops * MAX(agg_size, 1);
-  double ave_overhead = (double) duration1 / 1e3 / num_ops;
-  long duration2 = time2long(time_diff(time0, time2));
-  ARH::print("Setting: agg_size = %lu; duration = %.2lf s\n", agg_size, duration2 / 1e9);
+  double duration_req = ARH::ticks_to_ns(end_req - start) / 1e3;
+  double agg_overhead = duration_req / num_ops * MAX(agg_size, 1);
+  double ave_overhead = duration_req / num_ops;
+  double duration_total = ARH::ticks_to_ns(end_wait - start) / 1e3;
+  ARH::print("Setting: agg_size = %lu; duration = %.2lf s\n", agg_size, duration_total / 1e6);
   ARH::print("ave_overhead = %.2lf us/op; agg_overhead = %.2lf us/op\n", ave_overhead, agg_overhead);
-  ARH::print("Gasnet_ex send: overhead = %.3lf us;\n", ARH::duration0 / 1e3);
-  ARH::print("rpc_agg lock-unlock without send: overhead = %.3lf us;\n", ARH::duration1 / 1e3);
-  ARH::print("rpc_agg lock-unlock with send: overhead = %.3lf us;\n", ARH::duration2 / 1e3);
-  ARH::print("per rpc overhead = %.3lf us;\n", duration3 / 1e3);
-  ARH::print("Total throughput = %d op/s\n", (int) (num_ops / (duration1 / 1e9)));
+  ARH::print("Total throughput = %lu op/s\n", (unsigned long) (num_ops / (duration_req / 1e6)));
+  // fine-grained
+  double duration_load = ARH::ticks_to_ns(ARH::ticks_load) / 1e3;
+  double duration_agg_buf_npop = ARH::ticks_to_ns(ARH::ticks_agg_buf_npop) / 1e3;
+  double duration_agg_buf_pop = ARH::ticks_to_ns(ARH::ticks_agg_buf_pop) / 1e3;
+  double duration_gex_req = ARH::ticks_to_ns(ARH::ticks_gex_req) / 1e3;
+  ARH::print("rpc_agg load: overhead = %.3lf us;\n", duration_load);
+  ARH::print("agg buffer without pop: overhead = %.3lf us;\n", duration_agg_buf_npop);
+  ARH::print("agg buffer with pop: overhead = %.3lf us;\n", duration_agg_buf_pop);
+  double duration_agg_buf = MAX(0, agg_size - 1) * duration_agg_buf_npop + duration_agg_buf_pop;
+  ARH::print("agg buffer: overhead = %.3lf us;\n", duration_agg_buf);
+  ARH::print("Gasnet_ex req: overhead = %.3lf us;\n", duration_gex_req);
+  double duration_step = ARH::ticks_to_ns(ticks_step) / 1e3;
+  ARH::print("per rpc overhead = %.3lf us;\n", duration_step);
 }
 
 int main(int argc, char** argv) {
@@ -91,7 +96,11 @@ int main(int argc, char** argv) {
       ("size", "Aggregation size", cxxopts::value<size_t>())
       ;
   auto result = options.parse(argc, argv);
-  agg_size = result["size"].as<size_t>();
+  try {
+    agg_size = result["size"].as<size_t>();
+  } catch (...) {
+    agg_size = 0;
+  }
   assert(agg_size >= 0);
   use_agg = (agg_size != 0);
 
