@@ -3,6 +3,7 @@
   #include "bcl/containers/experimental/arh/arh.hpp"
   #include <cassert>
 
+// test Aggregation
 
 void worker() {
 

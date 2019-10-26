@@ -3,6 +3,7 @@
 
 #include <vector>
 #include "arh_am.hpp"
+#include "arh_agg_buffer.hpp"
 #ifdef ARH_PROFILE
 #include "arh_tools.hpp"
 #endif
@@ -14,8 +15,7 @@ namespace ARH {
   double ticks_agg_buf_pop = 0; // rpc_agg lock-unlock with send
   double ticks_gex_req = 0; // rpc_agg lock-unlock with send
 #endif
-  std::vector<std::mutex> agg_locks;
-  std::vector<std::vector<rpc_t>> agg_buffers;
+  std::vector<AggBuffer<rpc_t>> agg_buffers;
   size_t max_agg_size;
   std::atomic<size_t> agg_size;
 
@@ -26,8 +26,10 @@ namespace ARH {
         );
     agg_size = max_agg_size;
 
-    agg_buffers.resize(nprocs());
-    agg_locks = std::vector<std::mutex>(nprocs());
+    agg_buffers = std::vector<AggBuffer<rpc_t>>(nprocs());
+    for (size_t i = 0; i < nprocs(); ++i) {
+      agg_buffers[i].init(agg_size);
+    }
   }
 
   size_t set_agg_size(size_t custom_agg_size) {
@@ -35,6 +37,9 @@ namespace ARH {
     assert(custom_agg_size > 0);
 #endif
     agg_size = MIN(agg_size.load(), custom_agg_size);
+    for (size_t i = 0; i < nprocs(); ++i) {
+      agg_buffers[i].init(agg_size);
+    }
     return agg_size.load();
   }
 
@@ -48,15 +53,11 @@ namespace ARH {
 
   void flush_agg_buffer() {
     for (size_t i = my_worker_local(); i < nprocs(); i += nworkers_local()) {
-      agg_locks[i].lock();
-      if (!agg_buffers[i].empty()) {
-        std::vector<rpc_t> send_buf = std::move(agg_buffers[i]);
-        agg_locks[i].unlock();
+      std::vector<rpc_t> send_buf;
+      agg_buffers[i].pop_nofull(send_buf);
+      if (!send_buf.empty()) {
         requested += send_buf.size();
         generic_handler_request_impl_(i, std::move(send_buf));
-      }
-      else {
-        agg_locks[i].unlock();
       }
     }
   }
@@ -86,11 +87,14 @@ namespace ARH {
 #ifdef ARH_PROFILE
     tick_t start = ticks_now();
 #endif
-    agg_locks[remote_proc].lock();
-    agg_buffers[remote_proc].push_back(my_rpc);
-    if (agg_buffers[remote_proc].size() >= agg_size) {
-      std::vector<rpc_t> send_buf = std::move(agg_buffers[remote_proc]);
-      agg_locks[remote_proc].unlock();
+    auto status = agg_buffers[remote_proc].push(std::move(my_rpc));
+    while (status == AggBuffer<rpc_t>::status_t::FAIL) {
+      progress();
+      status = agg_buffers[remote_proc].push(std::move(my_rpc));
+    }
+    if (status == AggBuffer<rpc_t>::status_t::SUCCESS_AND_FULL) {
+      std::vector<rpc_t> send_buf;
+      agg_buffers[remote_proc].pop_full(send_buf);
       requested += send_buf.size();
 #ifdef ARH_PROFILE
       static int step_agg_buffer_pop = 0;
@@ -112,16 +116,15 @@ namespace ARH {
       }
 #endif
     }
-    else {
-      agg_locks[remote_proc].unlock();
 #ifdef ARH_PROFILE
+    else {
       static int step = 0;
       tick_t end = ticks_now();
       if (my_worker_local() == 0) {
         update_average(ticks_agg_buf_npop, end - start, ++step);
       }
-#endif
     }
+#endif
 
     return std::move(future);
   }

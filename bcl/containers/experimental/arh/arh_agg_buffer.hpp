@@ -87,6 +87,10 @@ namespace ARH {
       buffer = std::vector<T>(len);
 
       size_t tmp = reserved_tail.load();
+      for (int i = 0; i < len - tmp; ++i) {
+        receiver.pop_back();
+      }
+
       reserved_tail = 0;
       tail = 0;
 

@@ -2,7 +2,7 @@ SHELL='bash'
 
 # XXX: Modify BCLROOT if you move this Makefile
 #      out of an examples/* directory.
-BCLROOT=$(PWD)/../../../../
+BCLROOT=$(PWD)/../../../
 
 BACKEND = $(shell echo $(BCL_BACKEND) | tr '[:lower:]' '[:upper:]')
 PLATFORM = $(shell echo $(BCL_PLATFORM) | tr '[:lower:]' '[:upper:]')

@@ -155,7 +155,9 @@ namespace ARH {
     rpc_t my_rpc(future.get_p(), remote_worker_local);
     my_rpc.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
 
-    generic_handler_request_impl_(remote_proc, std::vector<rpc_t>(1, my_rpc));
+    std::vector<rpc_t> rpcs;
+    rpcs.push_back(std::move(my_rpc));
+    generic_handler_request_impl_(remote_proc, std::move(rpcs));
     requested++;
 
     return std::move(future);
