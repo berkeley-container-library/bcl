@@ -3,6 +3,10 @@
 
 #include <vector>
 #include "arh_am.hpp"
+#ifdef ARH_PROFILE
+#include "arh_tools.hpp"
+#endif
+
 namespace ARH {
 #ifdef ARH_PROFILE
   double ticks_load = 0; // rpc_agg lock-unlock without send

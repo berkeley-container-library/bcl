@@ -4,10 +4,6 @@
 #include "arh_rpc_t.hpp"
 #include "arh_base.hpp"
 
-#ifdef ARH_BENCHMARK
-  #include "examples/benchmarks/arh/include/benchmark_tools.hpp"
-#endif
-
 namespace ARH {
 
   extern size_t nprocs(void);

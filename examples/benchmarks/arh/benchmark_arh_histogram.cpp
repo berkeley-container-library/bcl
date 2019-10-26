@@ -1,6 +1,6 @@
 #ifdef GASNET_EX
 #define ARH_PROFILE
-#include "bcl/containers/experimental/rpc_oneway/arh.hpp"
+#include "bcl/containers/experimental/arh/arh.hpp"
 #include <cassert>
 #include "include/cxxopts.hpp"
 

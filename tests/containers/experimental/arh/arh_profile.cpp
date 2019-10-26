@@ -1,5 +1,5 @@
 #ifdef GASNET_EX
-#include "bcl/containers/experimental/rpc_oneway/arh.hpp"
+#include "bcl/containers/experimental/arh/arh.hpp"
 
 void worker() {
   ARH::print("The number of processors configured is :%ld\n", sysconf(_SC_NPROCESSORS_CONF));

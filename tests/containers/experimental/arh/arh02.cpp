@@ -1,6 +1,6 @@
 #ifdef GASNET_EX
   #include "bcl/bcl.hpp"
-  #include "bcl/containers/experimental/rpc_oneway/arh.hpp"
+  #include "bcl/containers/experimental/arh/arh.hpp"
   #include <cassert>
 
 

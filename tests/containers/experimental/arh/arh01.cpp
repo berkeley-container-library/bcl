@@ -1,6 +1,6 @@
 #ifdef GASNET_EX
 #include "bcl/bcl.hpp"
-#include "bcl/containers/experimental/rpc_oneway/arh.hpp"
+#include "bcl/containers/experimental/arh/arh.hpp"
 
 void worker() {
   std::printf("Hello, I am thread %lu/%lu!\n", ARH::my_worker(), ARH::nworkers());
