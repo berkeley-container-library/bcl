@@ -22,7 +22,7 @@ void worker() {
   }
 
   for (auto& f : futures) {
-    int val = f.wait();
+    int val = f.get();
     assert(val == my_rank*my_rank);
   }
 }

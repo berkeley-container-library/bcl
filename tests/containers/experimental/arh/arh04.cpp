@@ -26,7 +26,7 @@ void worker() {
   ARH::barrier();
 
   for (int i = 0 ; i < steps; i++) {
-    int val = futures[i].wait();
+    int val = futures[i].get();
     assert(val == my_rank*my_rank);
   }
 }

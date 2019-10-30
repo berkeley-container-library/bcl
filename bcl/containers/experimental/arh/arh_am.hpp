@@ -114,7 +114,7 @@ namespace ARH {
       return data_p.get();
     }
 
-    T wait() const {
+    T get() const {
       while (!data_p->ready) {
         progress();
       }
@@ -135,7 +135,7 @@ namespace ARH {
 
     ~Future() {
       if (get_p() != NULL) {
-        wait();
+        get();
       }
     }
 

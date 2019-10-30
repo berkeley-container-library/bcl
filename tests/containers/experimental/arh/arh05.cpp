@@ -37,7 +37,7 @@ void worker() {
   ARH::barrier();
 
   for (int i = 0 ; i < total_range; i++) {
-    futures[i].wait();
+    futures[i].get();
   }
 
   ARH::barrier();

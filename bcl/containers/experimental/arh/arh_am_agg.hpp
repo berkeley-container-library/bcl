@@ -10,10 +10,10 @@
 
 namespace ARH {
 #ifdef ARH_PROFILE
-  double ticks_load = 0; // rpc_agg lock-unlock without send
-  double ticks_agg_buf_npop = 0; // rpc_agg lock-unlock without send
-  double ticks_agg_buf_pop = 0; // rpc_agg lock-unlock with send
-  double ticks_gex_req = 0; // rpc_agg lock-unlock with send
+  ARH::AverageTimer timer_load;
+  ARH::AverageTimer timer_buf_npop;
+  ARH::AverageTimer timer_buf_pop;
+  ARH::AverageTimer timer_gex_req;
 #endif
   std::vector<AggBuffer<rpc_t>> agg_buffers;
   size_t max_agg_size;
@@ -71,21 +71,15 @@ namespace ARH {
     u_int8_t remote_worker_local = (u_int8_t) remote_worker % nworkers_local();
 
 #ifdef ARH_PROFILE
-    tick_t start_load = ticks_now();
+    timer_load.start();
 #endif
     Future<std::invoke_result_t<Fn, Args...>> future;
     rpc_t my_rpc(future.get_p(), remote_worker_local);
     my_rpc.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
 #ifdef ARH_PROFILE
-    static int step_load = 0;
-    tick_t end_load = ticks_now();
-    if (my_worker_local() == 0) {
-      update_average(ticks_load, end_load - start_load, ++step_load);
-    }
-#endif
-
-#ifdef ARH_PROFILE
-    tick_t start = ticks_now();
+    timer_load.end_and_update();
+    timer_buf_npop.start();
+    timer_buf_pop.start();
 #endif
     auto status = agg_buffers[remote_proc].push(std::move(my_rpc));
     while (status == AggBuffer<rpc_t>::status_t::FAIL) {
@@ -97,32 +91,17 @@ namespace ARH {
       agg_buffers[remote_proc].pop_full(send_buf);
       requested += send_buf.size();
 #ifdef ARH_PROFILE
-      static int step_agg_buffer_pop = 0;
-      tick_t end = ticks_now();
-      if (my_worker_local() == 0) {
-        update_average(ticks_agg_buf_pop, end - start, ++step_agg_buffer_pop);
-      }
-#endif
-
-#ifdef ARH_PROFILE
-      tick_t start_gex_req = ticks_now();
+      timer_buf_pop.end_and_update();
+      timer_gex_req.start();
 #endif
       generic_handler_request_impl_(remote_proc, std::move(send_buf));
 #ifdef ARH_PROFILE
-      static int step_gex_req = 0;
-      tick_t end_gex_req = ticks_now();
-      if (my_worker_local() == 0) {
-        update_average(ticks_gex_req, end_gex_req - start_gex_req, ++step_gex_req);
-      }
+      timer_gex_req.end_and_update();
 #endif
     }
 #ifdef ARH_PROFILE
     else {
-      static int step = 0;
-      tick_t end = ticks_now();
-      if (my_worker_local() == 0) {
-        update_average(ticks_agg_buf_npop, end - start, ++step);
-      }
+      timer_buf_npop.end_and_update();
     }
 #endif
 

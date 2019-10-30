@@ -57,11 +57,20 @@ void worker() {
     }
   }
 
-  ARH::barrier();
+  // start ARH::barrier();
+  ARH::threadBarrier.wait();
+  flush_agg_buffer();
   ARH::tick_t end_req = ARH::ticks_now();
 
+  flush_am();
+  if (my_worker_local() == 0) {
+    BCL::barrier();
+  }
+  ARH::threadBarrier.wait();
+  // end ARH::barrier()
+
   for (int i = 0; i < num_ops; i++) {
-    futures[i].wait();
+    futures[i].get();
   }
 
   ARH::barrier();

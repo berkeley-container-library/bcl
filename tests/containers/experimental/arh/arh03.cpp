@@ -18,7 +18,7 @@ void worker() {
   }
 
   for (auto& f : futures) {
-    f.wait();
+    f.get();
   }
 }
 

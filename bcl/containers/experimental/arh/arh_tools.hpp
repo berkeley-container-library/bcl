@@ -23,7 +23,7 @@ namespace ARH {
   // microseconds, 370ns
 //  tick_t ticks_now() {
 //    timespec temp;
-//    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &temp);
+//    clock_gettime(CLOCK_MONOTONIC, &temp);
 //    return temp.tv_sec * 1e6 + temp.tv_nsec / 1e3;
 //  }
 
@@ -33,6 +33,39 @@ namespace ARH {
 //        std::printf("val=%lu; num=%lu; average=%.2lf\n", val, num, average);
 //      }
   }
+
+  struct AverageTimer {
+  private:
+    unsigned long step = 0;
+    tick_t _start = 0;
+    double _duration = 0;
+  public:
+    void start() {
+      if (my_worker_local() == 0) {
+        _start = ticks_now();
+      } else {
+        ticks_now();
+      }
+    }
+
+    void end_and_update() {
+      tick_t _end = ticks_now();
+      if (my_worker_local() == 0) {
+        update_average(_duration, _end - _start, ++step);
+      }
+    }
+
+    void tick_and_update(tick_t _start_) {
+      tick_t _end = ticks_now();
+      if (my_worker_local() == 0) {
+        update_average(_duration, _end - _start_, ++step);
+      }
+    }
+
+    double duration() {
+      return _duration;
+    }
+  };
 }
 
 
