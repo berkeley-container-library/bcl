@@ -46,14 +46,13 @@ void worker() {
 
       threadObjects.get().issued++;
       gex_AM_RequestShort(BCL::tm, remote_proc, hidx_empty_req, 0, ARH::get_context());
-
-      while (threadObjects.get().received < threadObjects.get().issued) {
-        gasnet_AMPoll();
-      }
     }
 
   }
 
+  while (threadObjects.get().received < threadObjects.get().issued) {
+    gasnet_AMPoll();
+  }
   ARH::barrier();
   ARH::tick_t end = ARH::ticks_now();
 
