@@ -60,7 +60,7 @@ struct gasnet_pack {
 };
 
 std::atomic<size_t> acknowledged = 0;
-size_t requested = 0;
+std::atomic<size_t> requested = 0;
 
 size_t handler_num = 0;
 
@@ -102,8 +102,8 @@ void generic_handler_(gex_Token_t token,
   gex_AM_ReplyShort(token, acknowledge_handler_1way_, 0);
 }
 
-void init_am() {
-  handler_num = GEX_AM_INDEX_BASE;
+void init_am(size_t init_handler_num = GEX_AM_INDEX_BASE) {
+  handler_num = init_handler_num;
 
   acknowledge_handler_1way_ = handler_num++;
 
@@ -129,6 +129,7 @@ void flush_am_nopoll() {
 
 template <typename Fn, typename... Args>
 struct launch_am {
+  launch_am() = default;
   launch_am(size_t am_id, Fn fn) : am_id_(am_id), fn_(fn) {}
 
   using args_type = std::tuple<Fn, std::tuple<Args...>>;
@@ -272,6 +273,7 @@ struct am_future {
 
 template <typename Fn, typename... Args>
 struct launch_2wayam {
+  launch_2wayam() = default;
   launch_2wayam(size_t am_id, Fn fn) : am_id_(am_id), fn_(fn) {}
 
   using args_type = std::tuple<void*, Fn, std::tuple<Args...>>;
