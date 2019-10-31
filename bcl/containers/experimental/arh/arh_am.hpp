@@ -9,6 +9,7 @@ namespace ARH {
   extern size_t nprocs(void);
   extern void progress(void);
 
+  size_t handler_num;
   std::atomic<size_t> acknowledged = 0;
   std::atomic<size_t> requested = 0;
 
@@ -77,10 +78,10 @@ namespace ARH {
   }
 
   void init_am() {
-    size_t handler_num = GEX_AM_INDEX_BASE;
+    handler_num = GEX_AM_INDEX_BASE;
 
     hidx_generic_rpc_ackhandler_ = handler_num++;
-    hidx_generic_rpc_reqhandler_ = handler_num;
+    hidx_generic_rpc_reqhandler_ = handler_num++;
 
     gex_AM_Entry_t htable[2] = {
         { hidx_generic_rpc_ackhandler_, (gex_AM_Fn_t) generic_rpc_ackhandler_,

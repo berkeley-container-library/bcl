@@ -38,7 +38,7 @@ namespace ARH {
   private:
     unsigned long step = 0;
     tick_t _start = 0;
-    double _duration = 0;
+    double _ticks = 0;
   public:
     void start() {
       if (my_worker_local() == 0) {
@@ -51,19 +51,27 @@ namespace ARH {
     void end_and_update() {
       tick_t _end = ticks_now();
       if (my_worker_local() == 0) {
-        update_average(_duration, _end - _start, ++step);
+        update_average(_ticks, _end - _start, ++step);
       }
     }
 
     void tick_and_update(tick_t _start_) {
       tick_t _end = ticks_now();
       if (my_worker_local() == 0) {
-        update_average(_duration, _end - _start_, ++step);
+        update_average(_ticks, _end - _start_, ++step);
       }
     }
 
-    double duration() {
-      return _duration;
+    [[nodiscard]] double to_ns() const {
+      return ticks_to_ns(_ticks);
+    }
+
+    [[nodiscard]] double to_us() const {
+      return ticks_to_ns(_ticks) / 1e3;
+    }
+
+    double to_s() {
+      return ticks_to_ns(_ticks) / 1e9;
     }
   };
 }

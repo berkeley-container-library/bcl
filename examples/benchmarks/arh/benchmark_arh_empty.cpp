@@ -1,6 +1,7 @@
 #ifdef GASNET_EX
 #define ARH_PROFILE
 #include "bcl/containers/experimental/arh/arh.hpp"
+#include "bcl/containers/experimental/arh/arh_tools.hpp"
 #include <cassert>
 #include "include/cxxopts.hpp"
 
@@ -91,21 +92,22 @@ void worker() {
   double agg_overhead = duration_req / num_ops * MAX(agg_size, 1);
   double ave_overhead = duration_req / num_ops;
   double duration_total = ARH::ticks_to_ns(end_wait - start) / 1e3;
-  ARH::print("Setting: agg_size = %lu; duration = %.2lf s\n", agg_size, duration_total / 1e6);
+  ARH::print("Setting: agg_size = %lu; duration = %.2lf s; num_ops = %lu\n", agg_size, duration_total / 1e6, num_ops);
   ARH::print("ave_overhead: %.2lf us; agg_overhead: %.2lf us\n", ave_overhead, agg_overhead);
   ARH::print("Total throughput: %lu op/s\n", (unsigned long) (num_ops / (duration_req / 1e6)));
 #ifdef ARH_PROFILE
   // fine-grained
-  ARH::print("rand: %.3lf us\n", timer_rand.duration());
-  ARH::print("rpc/rpc_agg: %.3lf us\n", timer_rpc.duration());
-  ARH::print("push: %.3lf us\n", timer_push.duration());
-  ARH::print("barrier: %.3lf us\n", timer_barrier.duration());
-  ARH::print("get: %.3lf us\n", timer_get.duration());
+  ARH::print("rand: %.3lf us\n", timer_rand.to_us());
+  ARH::print("rpc/rpc_agg: %.3lf us\n", timer_rpc.to_us());
+  ARH::print("push: %.3lf us\n", timer_push.to_us());
+  ARH::print("barrier: %.3lf us (ave: %.3lf us)\n", timer_barrier.to_us(), timer_barrier.to_us() / num_ops);
+  ARH::print("get: %.3lf us\n", timer_get.to_us());
   // rpc backend
-  ARH::print("rpc/future preparation: %.3lf us\n", ARH::timer_load.duration());
-  ARH::print("agg buffer without pop: %.3lf us\n", ARH::timer_buf_npop.duration());
-  ARH::print("agg buffer with pop: %.3lf us\n", ARH::timer_buf_pop.duration());
-  ARH::print("Gasnet_ex req: %.3lf us\n", ARH::timer_gex_req.duration());
+  ARH::print("rpc/future preparation: %.3lf us\n", ARH::timer_load.to_us());
+  ARH::print("agg buffer without pop: %.3lf us\n", ARH::timer_buf_npop.to_us());
+  ARH::print("agg buffer with pop: %.3lf us\n", ARH::timer_buf_pop.to_us());
+  ARH::print("agg buffer ave: %.3lf us\n", (ARH::timer_buf_pop.to_us() + ARH::timer_buf_npop.to_us() * MAX(agg_size - 1, 0)) / MAX(agg_size, 1));
+  ARH::print("Gasnet_ex req: %.3lf us (ave: %.3lf us)\n", ARH::timer_gex_req.to_us(), ARH::timer_gex_req.to_us() / agg_size);
 #endif
 }
 

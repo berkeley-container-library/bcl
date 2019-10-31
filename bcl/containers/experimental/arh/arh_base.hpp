@@ -109,25 +109,32 @@ namespace ARH {
     BCL::finalize();
   }
 
+  void set_affinity(pthread_t pthread_handler, size_t target) {
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(target, &cpuset);
+    int rv = pthread_setaffinity_np(pthread_handler, sizeof(cpuset), &cpuset);
+    if (rv != 0) {
+      throw std::runtime_error("ERROR thread affinity didn't work.");
+    }
+  }
+
   void run(const std::function<void(void)> &worker) {
     std::vector<std::thread> worker_pool;
     std::vector<std::thread> progress_pool;
 
-//    size_t proc_num = sysconf(_SC_NPROCESSORS_CONF);
-//    cpu_set_t cpuset;
+    size_t cpuoffset;
+    int my_cpu = sched_getcpu();
+    if ((my_cpu >= 0 && my_cpu < 16) || (my_cpu >= 32 && my_cpu < 48)) {
+      cpuoffset = 0;
+    } else {
+      cpuoffset = 16;
+    }
 
-    thread_ids[std::this_thread::get_id()] = 0;
-    thread_contexts[0] = 0;
-
-    for (size_t i = 1; i < num_workers_per_proc; ++i) {
+    for (size_t i = 0; i < num_workers_per_proc; ++i) {
       auto t = std::thread(worker_handler, worker);
 
-//      CPU_ZERO(&cpuset);
-//      CPU_SET(i % proc_num, &cpuset);
-//      int rv = pthread_setaffinity_np(t.native_handle(), sizeof(cpuset), &cpuset);
-//      if (rv != 0) {
-//        throw std::runtime_error("ERROR thread affinity didn't work.");
-//      }
+      set_affinity(t.native_handle(), i + cpuoffset);
 
       thread_ids[t.get_id()] = i;
       thread_contexts[i] = i;
@@ -137,21 +144,14 @@ namespace ARH {
     for (size_t i = num_workers_per_proc; i < num_threads_per_proc; ++i) {
       auto t = std::thread(progress_handler);
 
-//      CPU_ZERO(&cpuset);
-//      CPU_SET(i % proc_num, &cpuset);
-//      int rv = pthread_setaffinity_np(t.native_handle(), sizeof(cpuset), &cpuset);
-//      if (rv != 0) {
-//        throw std::runtime_error("ERROR thread affinity didn't work.");
-//      }
+      set_affinity(t.native_handle(), i + cpuoffset);
 
       thread_ids[t.get_id()] = i;
       thread_contexts[i] = i;
       progress_pool.push_back(std::move(t));
     }
 
-    worker_handler(worker);
-
-    for (size_t i = 0; i < num_workers_per_proc-1; ++i) {
+    for (size_t i = 0; i < num_workers_per_proc; ++i) {
       worker_pool[i].join();
     }
 
