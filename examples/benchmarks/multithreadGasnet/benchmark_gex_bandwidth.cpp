@@ -13,7 +13,9 @@ struct ThreadObjects {
 ARH::GlobalObject<ThreadObjects> threadObjects;
 size_t hidx_empty_req;
 size_t hidx_reply;
-bool full_mode = false;
+bool single_worker_mode = false;
+bool single_proc_mode = false;
+bool all2all_mode = false;
 
 void empty_req_handler(gex_Token_t token, gex_AM_Arg_t src_thread) {
   {
@@ -33,10 +35,16 @@ void worker() {
   size_t num_ops = 10000;
 
   srand48(ARH::my_worker());
+
+  bool run =
+      (mode_command == "single_worker" && ARH::my_worker() == 0) ||
+      (mode_command == "single_proc"   && ARH::my_proc()   == 0) ||
+      mode_command == "all2all";
+
   ARH::barrier();
   ARH::tick_t start = ARH::ticks_now();
 
-  if (full_mode || ARH::my_worker() == 0) {
+  if (run) {
 
     for (size_t i = 0; i < num_ops; i++) {
       size_t remote_proc = lrand48() % ARH::nprocs();
@@ -57,22 +65,26 @@ void worker() {
   ARH::tick_t end = ARH::ticks_now();
 
   double duration = ARH::ticks_to_ns(end - start) / 1e3;
-  double latency = duration / num_ops;
-  ARH::print("Setting: full_mode = %d; duration = %.2lf s; num_ops = %lu\n", full_mode, duration / 1e6, num_ops);
-  ARH::print("latency: %.2lf us\n", latency);
+  double overhead = duration / num_ops;
+  ARH::print("Setting: mode = %s; duration = %.2lf s; num_ops = %lu\n", mode_command.c_str(), duration / 1e6, num_ops);
+  ARH::print("overhead: %.2lf us; throughput: %.2lf op/s\n", overhead, 1e6 / overhead);
 
 }
 
 int main(int argc, char** argv) {
   cxxopts::Options options("ARH Benchmark", "Benchmark of ARH system");
   options.add_options()
-      ("full", "Enable full mode")
+      ("mode", "Select mode: single_worker(default), single_proc, all2all", cxxopts::value<std::string>())
       ;
   auto result = options.parse(argc, argv);
+  std::string mode_command;
   try {
-    full_mode = result.count("full");
+    mode_command = result["mode"].as<std::string>();
   } catch (...) {
-    full_mode = false;
+    mode_command = "single_worker";
+  }
+  if (mode_command != "single_worker" && mode_command != "single_proc" && mode_command != "all2all") {
+    mode_command = "single_worker";
   }
 
   ARH::init(15, 16);

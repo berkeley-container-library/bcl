@@ -13,7 +13,7 @@ struct ThreadObjects {
 ARH::GlobalObject<ThreadObjects> threadObjects;
 size_t hidx_empty_req;
 size_t hidx_reply;
-bool full_mode = false;
+std::string mode_command;
 
 void empty_req_handler(gex_Token_t token, gex_AM_Arg_t src_thread) {
   {
@@ -33,10 +33,17 @@ void worker() {
   size_t num_ops = 10000;
 
   srand48(ARH::my_worker());
+
+  bool run =
+      (mode_command == "single_worker" && ARH::my_worker() == 0) ||
+      (mode_command == "single_proc"   && ARH::my_proc()   == 0) ||
+      mode_command == "all2all";
+  ARH::AverageTimer timer;
+
   ARH::barrier();
   ARH::tick_t start = ARH::ticks_now();
 
-  if (full_mode || ARH::my_worker() == 0) {
+  if (run) {
 
     for (size_t i = 0; i < num_ops; i++) {
       size_t remote_proc = lrand48() % ARH::nprocs();
@@ -45,7 +52,9 @@ void worker() {
       }
 
       threadObjects.get().issued++;
+      timer.start();
       gex_AM_RequestShort(BCL::tm, remote_proc, hidx_empty_req, 0, ARH::get_context());
+      timer.end_and_update();
 
       while (threadObjects.get().received < threadObjects.get().issued) {
         gasnet_AMPoll();
@@ -59,24 +68,45 @@ void worker() {
 
   double duration = ARH::ticks_to_ns(end - start) / 1e3;
   double latency = duration / num_ops;
-  ARH::print("Setting: full_mode = %d; duration = %.2lf s; num_ops = %lu\n", full_mode, duration / 1e6, num_ops);
+  ARH::print("Setting: mode = %s; duration = %.2lf s; num_ops = %lu\n", mode_command.c_str(), duration / 1e6, num_ops);
   ARH::print("latency: %.2lf us\n", latency);
-
+  timer.print_us();
 }
 
 int main(int argc, char** argv) {
   cxxopts::Options options("ARH Benchmark", "Benchmark of ARH system");
   options.add_options()
-      ("full", "Enable full mode")
+      ("mode", "Select mode: single_worker(default), single_proc, all2all", cxxopts::value<std::string>())
+      ("w,worker", "worker number", cxxopts::value<size_t>())
+      ("t,thread", "thread number", cxxopts::value<size_t>())
       ;
   auto result = options.parse(argc, argv);
+
   try {
-    full_mode = result.count("full");
+    mode_command = result["mode"].as<std::string>();
   } catch (...) {
-    full_mode = false;
+    mode_command = "single_worker";
+  }
+  if (mode_command != "single_worker" && mode_command != "single_proc" && mode_command != "all2all") {
+    mode_command = "single_worker";
   }
 
-  ARH::init(15, 16);
+  size_t thread_num;
+  try {
+    thread_num = result["t,thread"].as<size_t>();
+  } catch (...) {
+    thread_num = 16;
+  }
+
+  size_t worker_num;
+  try {
+    worker_num = result["w,worker"].as<size_t>();
+  } catch (...) {
+    worker_num = 15;
+  }
+  worker_num = MIN(worker_num, thread_num);
+
+  ARH::init(worker_num, thread_num);
   threadObjects.init();
 
   gex_AM_Entry_t entry[2];
