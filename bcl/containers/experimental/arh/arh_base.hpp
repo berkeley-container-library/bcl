@@ -123,19 +123,19 @@ namespace ARH {
     std::vector<std::thread> worker_pool;
     std::vector<std::thread> progress_pool;
 
-    int numberOfProcessors = sysconf(_SC_NPROCESSORS_ONLN);
-    size_t cpuoffset;
-    int my_cpu = sched_getcpu();
-    if ((my_cpu >= 0 && my_cpu < 16) || (my_cpu >= 32 && my_cpu < 48)) {
-      cpuoffset = 0;
-    } else {
-      cpuoffset = 16;
-    }
+//    int numberOfProcessors = sysconf(_SC_NPROCESSORS_ONLN);
+//    size_t cpuoffset;
+//    int my_cpu = sched_getcpu();
+//    if ((my_cpu >= 0 && my_cpu < 16) || (my_cpu >= 32 && my_cpu < 48)) {
+//      cpuoffset = 0;
+//    } else {
+//      cpuoffset = 16;
+//    }
 
     for (size_t i = 0; i < num_workers_per_proc; ++i) {
       auto t = std::thread(worker_handler, worker);
 
-      set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);
+//      set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);
 
       thread_ids[t.get_id()] = i;
       thread_contexts[i] = i;
@@ -145,7 +145,7 @@ namespace ARH {
     for (size_t i = num_workers_per_proc; i < num_threads_per_proc; ++i) {
       auto t = std::thread(progress_handler);
 
-      set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);
+//      set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);
 
       thread_ids[t.get_id()] = i;
       thread_contexts[i] = i;

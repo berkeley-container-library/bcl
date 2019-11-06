@@ -9,7 +9,6 @@ namespace ARH {
   struct ThreadBarrier {
 
     void init(size_t thread_num, std::function<void(void)> do_something = []{}) {
-      assert(thread_num > 1);
       thread_num_ = thread_num;
       do_something_ = std::move(do_something);
     }

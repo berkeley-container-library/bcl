@@ -5,6 +5,7 @@
 #include "arh_am.hpp"
 #include "arh_global_object.hpp"
 #include "arh_base.hpp"
+#include "arh_tools.hpp"
 
 namespace ARH {
 
