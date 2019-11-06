@@ -4,6 +4,7 @@
 #include <sched.h>
 #include <queue>
 #include <mutex>
+#include <memory>
 #include "include/cxxopts.hpp"
 
 size_t shared_seg_size = 4 * 1e6;
@@ -15,26 +16,28 @@ void init_shared_memory(size_t custom_seg_size = 4 * 1e6) {
   shared_seg_ptr = malloc(shared_seg_size);
 }
 
-void rput_int_handler(size_t offset, int val) {
+auto rput_int_handler = [](size_t offset, int val) {
   if (offset >= shared_seg_size) {
     // do nothing
   }
   char* dest_ptr = (char*) shared_seg_ptr + offset;
   *reinterpret_cast<int*>(dest_ptr) = val;
-}
+};
 
-int rget_int_handler(size_t offset) {
+auto rget_int_handler = [](size_t offset) -> int {
   if (offset >= shared_seg_size) {
     return 0;
   }
   char* dest_ptr = (char*) shared_seg_ptr + offset;
   return *reinterpret_cast<int*>(dest_ptr);
-}
+};
 
-using rput_int_handler_t = BCL::gas::launch_am<decltype(rput_int_handler), size_t(), int()>;
-using rget_int_handler_t = BCL::gas::launch_2wayam<decltype(rget_int_handler), size_t()>;
-rput_int_handler_t rput;
-rget_int_handler_t rget;
+// using rput_int_handler_t = BCL::gas::launch_am<decltype(rput_int_handler), size_t(), int()>;
+using rput_int_handler_t = decltype(BCL::gas::register_am(rput_int_handler, size_t(), int()));
+// using rget_int_handler_t = BCL::gas::launch_2wayam<decltype(rget_int_handler), size_t()>;
+using rget_int_handler_t = decltype(BCL::gas::register_2wayam(rget_int_handler, size_t()));
+rput_int_handler_t* rput_ptr;
+rget_int_handler_t* rget_ptr;
 
 void bench_rput() {
   size_t num_ops = 1000;
@@ -43,6 +46,9 @@ void bench_rput() {
   srand48(ARH::my_worker());
   ARH::barrier();
   ARH::tick_t start = ARH::ticks_now();
+
+  rput_int_handler_t& rput = *rput_ptr;
+  rget_int_handler_t& rget = *rget_ptr;
 
   for (size_t i = 0; i < num_ops; i++) {
     size_t remote_proc = lrand48() % ARH::nprocs();
@@ -66,6 +72,9 @@ void bench_rput() {
 void bench_rget() {
   size_t num_ops = 1000;
   size_t rank = ARH::my_worker();
+
+  rput_int_handler_t& rput = *rput_ptr;
+  rget_int_handler_t& rget = *rget_ptr;
 
   srand48(ARH::my_worker());
   ARH::barrier();
@@ -114,8 +123,8 @@ int main(int argc, char** argv) {
   BCL::gas::init_2wayam();
 
   init_shared_memory();
-  rput = BCL::gas::register_am(&rput_int_handler, size_t(), int());
-  rget = BCL::gas::register_2wayam(&rget_int_handler, size_t());
+  rput_ptr = new rput_int_handler_t(BCL::gas::register_am(rput_int_handler, size_t(), int()));
+  rget_ptr = new rget_int_handler_t(BCL::gas::register_2wayam(rget_int_handler, size_t()));
 
   ARH::run(worker);
   ARH::finalize();
