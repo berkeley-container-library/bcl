@@ -1,20 +1,17 @@
 #ifndef ARH_AM_HPP
 #define ARH_AM_HPP
 
-#include "arh_rpc_t.hpp"
-#include "arh_base.hpp"
-
 namespace ARH {
 
   extern size_t nprocs(void);
   extern void progress(void);
 
-  size_t handler_num;
-  std::atomic<size_t> acknowledged = 0;
-  std::atomic<size_t> requested = 0;
+  alignas(alignof_cacheline) size_t handler_num;
+  alignas(alignof_cacheline) std::atomic<size_t> acknowledged = 0; // TODO: change this to thread-local
+  alignas(alignof_cacheline) std::atomic<size_t> requested = 0; // TODO: change this to thread-local
 
-  gex_AM_Index_t hidx_generic_rpc_ackhandler_;
-  gex_AM_Index_t hidx_generic_rpc_reqhandler_;
+  alignas(alignof_cacheline) gex_AM_Index_t hidx_generic_rpc_ackhandler_;
+  alignas(alignof_cacheline) gex_AM_Index_t hidx_generic_rpc_reqhandler_;
 
   using rpc_t = ARH::rpc_t;
   using rpc_result_t = ARH::rpc_t::rpc_result_t;

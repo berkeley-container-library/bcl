@@ -1,4 +1,5 @@
 #ifdef GASNET_EX
+#define ARH_DEBUG
   #include "bcl/containers/experimental/arh/arh.hpp"
   #include <cassert>
 

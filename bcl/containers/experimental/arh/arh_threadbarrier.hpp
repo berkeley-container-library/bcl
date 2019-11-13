@@ -14,27 +14,24 @@ namespace ARH {
     }
 
     void wait() {
-//      std::printf("enter step %lu, %lu, %lu\n", waiting.load(), step.load(), thread_num_);
       size_t mstep = step.load();
 
       if (++waiting == thread_num_) {
         waiting = 0;
         step++;
-//        std::printf("increase step %lu, %lu, %lu\n", waiting.load(), step.load(), thread_num_);
       }
       else {
         while (step == mstep) {
           do_something_();
         }
       }
-//      std::printf("leave step %lu, %lu, %lu\n", waiting.load(), step.load(), thread_num_);
     }
 
   private:
-    std::atomic<size_t> waiting = 0;
-    std::atomic<size_t> step = 0;
-    size_t thread_num_;
-    std::function<void(void)> do_something_;
+    alignas(alignof_cacheline) std::atomic<size_t> waiting = 0;
+    alignas(alignof_cacheline) std::atomic<size_t> step = 0;
+    alignas(alignof_cacheline) std::function<void(void)> do_something_;
+    alignas(alignof_cacheline) size_t thread_num_;
   };
 }
 

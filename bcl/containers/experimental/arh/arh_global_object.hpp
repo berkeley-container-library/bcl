@@ -8,27 +8,37 @@ namespace ARH {
 
   template <typename T>
   struct GlobalObject {
-#if ARH_DEBUG
+#ifdef ARH_DEBUG
     size_t len = -1;
 #endif
-    std::vector<T> objects;
+    struct align_T {
+      alignas(alignof_cacheline) T _val;
+      align_T() {
+        ARH_Assert_Align(_val, alignof_cacheline);
+      }
+      explicit align_T(T&& val): _val(std::forward(val)) {
+        ARH_Assert_Align(_val, alignof_cacheline);
+      }
+    };
+
+    std::vector<align_T> objects;
 
     void init() {
-#if ARH_DEBUG
+#ifdef ARH_DEBUG
       len = nworkers_local();
 #endif
-      objects = std::vector<T>(nworkers_local());
+      objects = std::vector<align_T>(nworkers_local());
     }
 
-    void init(T val) {
-#if ARH_DEBUG
+    void init(T&& val) {
+#ifdef ARH_DEBUG
       len = nworkers_local();
 #endif
-      objects = std::vector<T>(nworkers_local(), val);
+      objects = std::vector<align_T>(nworkers_local(), std::forward(val));
     }
 
     T &get() {
-#if ARH_DEBUG
+#ifdef ARH_DEBUG
       if (len == -1) {
         std::printf("GlobalObject::get(): you didn't initialize me!");
       }
@@ -37,7 +47,7 @@ namespace ARH {
         std::printf("GlobalObject::get(): oops, out of scope. len = %lu, idx = %lu", len, idx);
       }
 #endif
-      return objects[my_worker_local()];
+      return objects[my_worker_local()]._val;
     }
   };
 

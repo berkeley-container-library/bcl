@@ -6,8 +6,6 @@
 #define BCL_ARH_BASE_HPP
 
 #include "bcl/bcl.hpp"
-#include "arh_am.hpp"
-#include "arh_threadbarrier.hpp"
 #include <functional>
 #include <iostream>
 #include <thread>
@@ -23,12 +21,12 @@ namespace ARH {
   extern void init_agg(void);
   extern void flush_agg_buffer(void);
 
-  std::unordered_map<std::thread::id, size_t> thread_ids;
-  std::vector<size_t> thread_contexts;
-  size_t num_threads_per_proc = 16;
-  size_t num_workers_per_proc = 15;
-  std::atomic<bool> worker_run = true;
-  ThreadBarrier threadBarrier;
+  alignas(alignof_cacheline) std::unordered_map<std::thread::id, size_t> thread_ids;
+  alignas(alignof_cacheline) std::vector<size_t> thread_contexts; // TODO: padding this
+  alignas(alignof_cacheline) ThreadBarrier threadBarrier;
+  alignas(alignof_cacheline) std::atomic<bool> worker_run = true;
+  alignas(alignof_cacheline) size_t num_threads_per_proc = 16;
+  alignas(alignof_cacheline) size_t num_workers_per_proc = 15;
 
   inline size_t get_thread_id() {
     return thread_ids[std::this_thread::get_id()];

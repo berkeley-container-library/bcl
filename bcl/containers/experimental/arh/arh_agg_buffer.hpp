@@ -11,10 +11,10 @@
 namespace ARH {
   template <typename T>
   class AggBuffer {
-    size_t len;
-    std::vector<T> buffer;
-    std::atomic<size_t> tail;
-    std::atomic<size_t> reserved_tail;
+    alignas(alignof_cacheline) std::vector<T> buffer;
+    alignas(alignof_cacheline) std::atomic<size_t> tail;
+    alignas(alignof_cacheline) std::atomic<size_t> reserved_tail;
+    alignas(alignof_cacheline) size_t len;
 
   public:
     enum class status_t {
@@ -23,10 +23,19 @@ namespace ARH {
       SUCCESS_AND_FULL
     };
 
-    AggBuffer(): len(0), tail(0), reserved_tail(0) {}
+    AggBuffer(): len(0), tail(0), reserved_tail(0) {
+      ARH_Assert_Align(buffer, alignof_cacheline);
+      ARH_Assert_Align(tail, alignof_cacheline);
+      ARH_Assert_Align(reserved_tail, alignof_cacheline);
+      ARH_Assert_Align(len, alignof_cacheline);
+    }
 
     explicit AggBuffer(size_t _size): len(_size), tail(0), reserved_tail(0) {
       buffer = std::vector<T>(len);
+      ARH_Assert_Align(buffer, alignof_cacheline);
+      ARH_Assert_Align(tail, alignof_cacheline);
+      ARH_Assert_Align(reserved_tail, alignof_cacheline);
+      ARH_Assert_Align(len, alignof_cacheline);
     }
 
     void init(size_t _size) {

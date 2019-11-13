@@ -2,22 +2,18 @@
 #define BCL_ARH_AM_AGGREGATE_HPP
 
 #include <vector>
-#include "arh_am.hpp"
-#ifdef ARH_PROFILE
-#include "arh_tools.hpp"
-#endif
 
 namespace ARH {
 #ifdef ARH_PROFILE
-  double ticks_load = 0; // rpc_agg lock-unlock without send
-  double ticks_agg_buf_npop = 0; // rpc_agg lock-unlock without send
-  double ticks_agg_buf_pop = 0; // rpc_agg lock-unlock with send
-  double ticks_gex_req = 0; // rpc_agg lock-unlock with send
+  alignas(alignof_cacheline) double ticks_load = 0; // rpc_agg lock-unlock without send
+  alignas(alignof_cacheline) double ticks_agg_buf_npop = 0; // rpc_agg lock-unlock without send
+  alignas(alignof_cacheline) double ticks_agg_buf_pop = 0; // rpc_agg lock-unlock with send
+  alignas(alignof_cacheline) double ticks_gex_req = 0; // rpc_agg lock-unlock with send
 #endif
-  std::vector<std::mutex> agg_locks;
-  std::vector<std::vector<rpc_t>> agg_buffers;
-  size_t max_agg_size;
-  std::atomic<size_t> agg_size;
+  alignas(alignof_cacheline) std::vector<std::mutex> agg_locks;
+  alignas(alignof_cacheline) std::vector<std::vector<rpc_t>> agg_buffers;
+  alignas(alignof_cacheline) size_t max_agg_size;
+  alignas(alignof_cacheline) std::atomic<size_t> agg_size;
 
   void init_agg() {
     max_agg_size = MIN(

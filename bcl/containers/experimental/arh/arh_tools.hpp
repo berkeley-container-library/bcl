@@ -5,8 +5,30 @@
 #ifndef ARH_BENCHMARK_TOOLS_HPP
 #define ARH_BENCHMARK_TOOLS_HPP
 
+#include <gasnetex.h>
 #include <sys/time.h>
 #include <time.h>
+#include <iostream>
+
+#ifndef ARH_DEBUG
+#   define ARH_Assert(Expr, Msg) \
+    __ARH_Assert(#Expr, Expr, __FILE__, __LINE__, Msg)
+#else
+#   define ARH_Assert(Expr, Msg) ;
+#endif
+
+void __ARH_Assert(const char* expr_str, bool expr, const char* file, int line, const char* msg)
+{
+  if (!expr)
+  {
+    std::cerr << "Assert failed:\t" << msg << "\n"
+              << "Expected:\t" << expr_str << "\n"
+              << "Source:\t\t" << file << ", line " << line << "\n";
+    abort();
+  }
+}
+
+#define ARH_Assert_Align(Val, alignof_size) ARH_Assert(alignof(Val) % alignof_size == 0, "alignment check failed!")
 
 namespace ARH {
   typedef uint64_t tick_t;
@@ -34,87 +56,7 @@ namespace ARH {
 //      }
   }
 
-  struct AverageTimer {
-  private:
-    unsigned long step = 0;
-    tick_t _start = 0;
-    double _ticks = 0;
-  public:
-    void start() {
-      if (my_worker_local() == 0) {
-        _start = ticks_now();
-      } else {
-        ticks_now();
-      }
-    }
 
-    void end_and_update() {
-      tick_t _end = ticks_now();
-      if (my_worker_local() == 0) {
-        update_average(_ticks, _end - _start, ++step);
-      }
-    }
-
-    void tick_and_update(tick_t _start_) {
-      tick_t _end = ticks_now();
-      if (my_worker_local() == 0) {
-        update_average(_ticks, _end - _start_, ++step);
-      }
-    }
-
-    [[nodiscard]] double to_ns() const {
-      return ticks_to_ns(_ticks);
-    }
-
-    [[nodiscard]] double to_us() const {
-      return ticks_to_ns(_ticks) / 1e3;
-    }
-
-    [[nodiscard]] double to_s() const {
-      return ticks_to_ns(_ticks) / 1e9;
-    }
-
-    void print_us(std::string &&name = "") const {
-       ARH::print("Duration %s: %.3lf us\n", name.c_str(), to_us());
-    }
-  };
-
-  struct SimpleTimer {
-  private:
-    unsigned long step = 0;
-    tick_t _start = 0;
-    double _ticks = 0;
-  public:
-    void start() {
-      _start = ticks_now();
-    }
-
-    void end_and_update() {
-      tick_t _end = ticks_now();
-      update_average(_ticks, _end - _start, ++step);
-    }
-
-    void tick_and_update(tick_t _start_) {
-      tick_t _end = ticks_now();
-      update_average(_ticks, _end - _start_, ++step);
-    }
-
-    [[nodiscard]] double to_ns() const {
-      return ticks_to_ns(_ticks);
-    }
-
-    [[nodiscard]] double to_us() const {
-      return ticks_to_ns(_ticks) / 1e3;
-    }
-
-    [[nodiscard]] double to_s() const {
-      return ticks_to_ns(_ticks) / 1e9;
-    }
-
-    void print_us(std::string &&name = "") const {
-      printf("Duration %s: %.3lf us\n", name.c_str(), to_us());
-    }
-  };
 }
 
 

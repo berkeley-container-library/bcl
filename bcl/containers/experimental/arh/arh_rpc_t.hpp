@@ -1,8 +1,6 @@
 #ifndef ARH_RPC_T_HPP
 #define ARH_RPC_T_HPP
 
-#include "arh_am.hpp"
-#include "arh_base.hpp"
 #include <array>
 
 namespace ARH {
@@ -56,10 +54,10 @@ namespace ARH {
     using rpc_result_t = result_t;
 
     FutureData* future_p_; // 8 Bytes
-    u_int8_t target_worker_local_; // 1 Bytes
     std::uintptr_t fn_; // 8 Bytes
     std::uintptr_t invoker_; // 8 Bytes
     payload_t data_; // 8 Bytes
+    u_int8_t target_worker_local_; // 1 Byte
 
     rpc_t(FutureData* future_p, u_int8_t target_worker_local) : future_p_(future_p), target_worker_local_(target_worker_local) {}
     rpc_t() = default;
