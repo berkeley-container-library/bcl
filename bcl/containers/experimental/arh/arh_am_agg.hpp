@@ -51,7 +51,6 @@ namespace ARH {
       std::vector<rpc_t> send_buf;
       agg_buffers[i].pop_nofull(send_buf);
       if (!send_buf.empty()) {
-        requested += send_buf.size();
         generic_handler_request_impl_(i, std::move(send_buf));
       }
     }
@@ -84,7 +83,6 @@ namespace ARH {
     if (status == AggBuffer<rpc_t>::status_t::SUCCESS_AND_FULL) {
       std::vector<rpc_t> send_buf;
       agg_buffers[remote_proc].pop_full(send_buf);
-      requested += send_buf.size();
 #ifdef ARH_PROFILE
       timer_buf_pop.end_and_update();
       timer_gex_req.start();
@@ -99,6 +97,7 @@ namespace ARH {
       timer_buf_npop.end_and_update();
     }
 #endif
+    requesteds[my_worker_local()].val++;
 
     return std::move(future);
   }

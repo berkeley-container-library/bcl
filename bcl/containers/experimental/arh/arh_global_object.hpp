@@ -30,11 +30,12 @@ namespace ARH {
       objects = std::vector<align_T>(nworkers_local());
     }
 
+    // T must have copy constructor
     void init(T&& val) {
 #ifdef ARH_DEBUG
       len = nworkers_local();
 #endif
-      objects = std::vector<align_T>(nworkers_local(), std::forward(val));
+      objects = std::vector<align_T>(nworkers_local(), val);
     }
 
     T &get() {

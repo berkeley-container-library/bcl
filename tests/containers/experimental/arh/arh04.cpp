@@ -8,7 +8,7 @@
 void worker() {
 
   int my_rank = (int) ARH::my_worker();
-  int steps = 10;
+  int steps = 1000;
 
   auto fn = [](int a, int b) -> int {
     return a * b;
@@ -34,7 +34,7 @@ void worker() {
 int main(int argc, char** argv) {
   // one process per node
   ARH::init();
-  ARH::set_agg_size(5);
+  ARH::set_agg_size(50);
 
   ARH::run(worker);
 

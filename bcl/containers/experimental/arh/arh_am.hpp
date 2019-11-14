@@ -7,8 +7,14 @@ namespace ARH {
   extern void progress(void);
 
   alignas(alignof_cacheline) size_t handler_num;
-  alignas(alignof_cacheline) std::atomic<size_t> acknowledged = 0; // TODO: change this to thread-local
-  alignas(alignof_cacheline) std::atomic<size_t> requested = 0; // TODO: change this to thread-local
+  struct ThreadAcknowledged {
+    alignas(alignof_cacheline) std::atomic<size_t> val;
+  };
+  struct ThreadRequested {
+    alignas(alignof_cacheline) std::atomic<size_t> val;
+  };
+  alignas(alignof_cacheline) std::vector<ThreadAcknowledged> acknowledgeds; // TODO: change this to thread-local
+  alignas(alignof_cacheline) std::vector<ThreadRequested> requesteds; // TODO: change this to thread-local
 
   alignas(alignof_cacheline) gex_AM_Index_t hidx_generic_rpc_ackhandler_;
   alignas(alignof_cacheline) gex_AM_Index_t hidx_generic_rpc_reqhandler_;
@@ -54,9 +60,8 @@ namespace ARH {
     for (size_t i = 0; i < results.size(); ++i) {
       results[i].future_p_->payload = results[i].data_;
       results[i].future_p_->ready = true;
+      acknowledgeds[results[i].source_worker_local_].val += 1;
     }
-
-    acknowledged += results.size();
   }
 
   void generic_rpc_reqhandler_(gex_Token_t token, void *buf, size_t nbytes) {
@@ -88,16 +93,25 @@ namespace ARH {
     };
 
     gex_EP_RegisterHandlers(BCL::ep, htable, sizeof(htable)/sizeof(gex_AM_Entry_t));
+
+    acknowledgeds = std::vector<ThreadAcknowledged>(nworkers_local());
+    for (auto& t : acknowledgeds) {
+      t.val = 0;
+    }
+    requesteds = std::vector<ThreadRequested>(nworkers_local());
+    for (auto& t : requesteds) {
+      t.val = 0;
+    }
   }
 
   void flush_am() {
-    while (acknowledged < requested) {
+    while (acknowledgeds[my_worker_local()].val < requesteds[my_worker_local()].val) {
       gasnet_AMPoll();
     }
   }
 
   void flush_am_nopoll() {
-    while (acknowledged < requested) {}
+    while (acknowledgeds[my_worker_local()].val < requesteds[my_worker_local()].val) {}
   }
 
   template<typename T>
@@ -156,7 +170,7 @@ namespace ARH {
     std::vector<rpc_t> rpcs;
     rpcs.push_back(std::move(my_rpc));
     generic_handler_request_impl_(remote_proc, std::move(rpcs));
-    requested++;
+    requesteds[my_worker_local()].val++;
 
     return std::move(future);
   }

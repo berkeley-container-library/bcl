@@ -1,6 +1,7 @@
 #ifndef BCL_ARH_HPP
 #define BCL_ARH_HPP
 
+#define ARH_THREAD_PIN
 #include "arh_global.hpp"
 #include "arh_threadbarrier.hpp"
 #include "arh_tools.hpp"

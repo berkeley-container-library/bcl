@@ -25,10 +25,11 @@ namespace ARH {
     static constexpr size_t max_payload_size = 8; // return value data size
     using payload_t = std::array<char, max_payload_size>;
 
-    FutureData* future_p_;
-    payload_t data_;
+    FutureData* future_p_; // 8 Bytes
+    payload_t data_; // 8 Bytes
+    u_int8_t source_worker_local_; // 1 Byte
 
-    result_t(FutureData* future_p) : future_p_(future_p) {}
+    result_t(FutureData* future_p, u_int8_t source_worker_local) : future_p_(future_p), source_worker_local_(source_worker_local) {}
 
     template<typename T>
     void load_result(const T &value) {
@@ -57,9 +58,11 @@ namespace ARH {
     std::uintptr_t fn_; // 8 Bytes
     std::uintptr_t invoker_; // 8 Bytes
     payload_t data_; // 8 Bytes
+    u_int8_t source_worker_local_; // 1 Byte
     u_int8_t target_worker_local_; // 1 Byte
 
-    rpc_t(FutureData* future_p, u_int8_t target_worker_local) : future_p_(future_p), target_worker_local_(target_worker_local) {}
+    rpc_t(FutureData* future_p, u_int8_t target_worker_local) :
+      future_p_(future_p), source_worker_local_((u_int8_t)my_worker_local()), target_worker_local_(target_worker_local) {}
     rpc_t() = default;
     rpc_t(rpc_t&& t) = default;
     rpc_t& operator=(rpc_t&& t) = default;
@@ -107,7 +110,7 @@ namespace ARH {
     }
 
     static rpc_result_t invoke(rpc_t &rpc_requests) {
-      rpc_result_t rpc_result(rpc_requests.future_p_);
+      rpc_result_t rpc_result(rpc_requests.future_p_, rpc_requests.source_worker_local_);
       if constexpr(std::is_void<std::invoke_result_t<Fn, Args...>>::value) {
         invoke_impl_(rpc_requests, std::index_sequence_for<Args...>{});
       } else {
