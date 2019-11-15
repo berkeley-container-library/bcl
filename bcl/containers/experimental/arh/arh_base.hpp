@@ -27,7 +27,8 @@ namespace ARH {
   };
   alignas(alignof_cacheline) std::vector<ThreadContext> thread_contexts;
   alignas(alignof_cacheline) ThreadBarrier threadBarrier;
-  alignas(alignof_cacheline) std::atomic<bool> worker_run = false;
+  alignas(alignof_cacheline) std::atomic<bool> thread_run = false;
+  alignas(alignof_cacheline) std::atomic<bool> worker_exit = false;
   alignas(alignof_cacheline) size_t num_threads_per_proc = 16;
   alignas(alignof_cacheline) size_t num_workers_per_proc = 15;
 
@@ -83,12 +84,18 @@ namespace ARH {
 
   // progress thread
   void progress_handler() {
-    while (worker_run.load()) {
+    while (!thread_run) {
+      usleep(1);
+    }
+    while (!worker_exit) {
       progress();
     }
   }
 
   void worker_handler(const std::function<void(void)>& worker) {
+    while (!thread_run) {
+      usleep(1);
+    }
     barrier();
     worker();
     barrier();
@@ -144,7 +151,6 @@ namespace ARH {
       thread_contexts[i].val = i;
       worker_pool.push_back(std::move(t));
     }
-    worker_run = true;
 
     for (size_t i = num_workers_per_proc; i < num_threads_per_proc; ++i) {
       auto t = std::thread(progress_handler);
@@ -155,12 +161,13 @@ namespace ARH {
       thread_contexts[i].val = i;
       progress_pool.push_back(std::move(t));
     }
+    thread_run = true;
 
     for (size_t i = 0; i < num_workers_per_proc; ++i) {
       worker_pool[i].join();
     }
 
-    worker_run = false;
+    worker_exit = true;
 
     for (size_t i = 0; i < num_threads_per_proc - num_workers_per_proc; ++i) {
       progress_pool[i].join();
