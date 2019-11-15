@@ -10,7 +10,7 @@ struct ThreadObjects {
   std::atomic<size_t> received = 0;
 };
 
-ARH::GlobalObject<ThreadObjects> threadObjects;
+ARH::WorkerObject<ThreadObjects> threadObjects;
 size_t hidx_empty_req;
 size_t hidx_reply;
 bool single_worker_mode = false;

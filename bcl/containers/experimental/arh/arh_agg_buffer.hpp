@@ -71,18 +71,10 @@ namespace ARH {
       if (reserved_tail != len) {
         return false; // not full
       }
-#ifdef ARH_DEBUG
-      if (reserved_tail != len) {
-        std::printf("Warning (ARH::AggBuffer::pop_all): Call pop_all when buffer is not full\n");
-      }
-#endif
+      ARH_Assert(reserved_tail == len, "Call pop_all when buffer is not full");
       receiver = std::move(buffer);
       buffer = std::vector<T>(len);
-#ifdef ARH_DEBUG
-      if (receiver.size() != len) {
-        std::printf("Error (ARH::AggBuffer::pop_all): receiver.size() != len after move\n");
-      }
-#endif
+      ARH_Assert(receiver.size() == len, "receiver is not full");
 
       reserved_tail = 0;
       tail = 0;

@@ -8,7 +8,7 @@
 #include "arh_AverageTimer.hpp"
 #include "arh_rpc_t.hpp"
 #include "arh_agg_buffer.hpp"
-#include "arh_global_object.hpp"
+#include "arh_worker_object.hpp"
 #include "arh_base.hpp"
 #include "arh_am.hpp"
 #include "arh_am_agg.hpp"

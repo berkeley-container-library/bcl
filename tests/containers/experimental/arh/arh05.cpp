@@ -7,7 +7,7 @@ struct ThreadObjects {
     std::vector<std::atomic<int>> v;
 };
 
-ARH::GlobalObject<ThreadObjects> mObjects;
+ARH::WorkerObject<ThreadObjects> mObjects;
 
 void histogram_handler(int idx) {
   mObjects.get().v[idx] += 1;

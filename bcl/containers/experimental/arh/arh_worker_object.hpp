@@ -1,5 +1,5 @@
-#ifndef BCL_ARH_GLOBAL_OBJECT_HPP
-#define BCL_ARH_GLOBAL_OBJECT_HPP
+#ifndef BCL_ARH_WORKER_OBJECT_HPP
+#define BCL_ARH_WORKER_OBJECT_HPP
 
 #include "arh_base.hpp"
 #include <vector>
@@ -7,7 +7,7 @@
 namespace ARH {
 
   template <typename T>
-  struct GlobalObject {
+  struct WorkerObject {
 #ifdef ARH_DEBUG
     size_t len = -1;
 #endif
@@ -40,13 +40,8 @@ namespace ARH {
 
     T &get() {
 #ifdef ARH_DEBUG
-      if (len == -1) {
-        std::printf("GlobalObject::get(): you didn't initialize me!");
-      }
-      size_t idx = my_worker_local();
-      if (idx >= len) {
-        std::printf("GlobalObject::get(): oops, out of scope. len = %lu, idx = %lu", len, idx);
-      }
+      ARH_Assert(len != 1, "Use before calling init!");
+      ARH_Assert(my_worker_local() >= len, "Index out of scope!");
 #endif
       return objects[my_worker_local()]._val;
     }
@@ -54,4 +49,4 @@ namespace ARH {
 
 }
 
-#endif //BCL_ARH_GLOBAL_OBJECT_HPP
+#endif //BCL_ARH_WORKER_OBJECT_HPP
