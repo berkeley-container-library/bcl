@@ -4,27 +4,24 @@
 #include <thread>
 #include <cassert>
 #include "arh_thread_barrier.hpp"
-#include <random>
+
 // GASNet-EX context variables
 
 gex_Client_t client;
 gex_EP_t ep;
 gex_TM_t tm;
 const char* clientName = "BCL";
-const int alignof_cacheline = 64;
 
 size_t rank, nprocs;
 
 size_t num_threads = 16;
-size_t req_num;
-size_t rep_num;
 
 // Process-level variables for thread synchronization
-struct Received_pad {
-  alignas(alignof_cacheline) std::atomic<size_t> val = 0;
-};
-alignas(alignof_cacheline) std::vector<Received_pad> receiveds(num_threads);
-alignas(alignof_cacheline) ARH::ThreadBarrier threadBarrier;
+std::vector<std::atomic<size_t>> issueds(num_threads);
+std::vector<std::atomic<size_t>> receiveds(num_threads);
+size_t req_num;
+size_t rep_num;
+ARH::ThreadBarrier threadBarrier;
 
 void barrier() {
   gex_Event_t event = gex_Coll_BarrierNB(tm, 0);
@@ -39,55 +36,51 @@ void empty_handler(gex_Token_t token, gex_AM_Arg_t id) {
 }
 
 void reply_handler(gex_Token_t token, gex_AM_Arg_t id) {
-  receiveds[id].val++;
+  receiveds[id]++;
 }
 
 void worker(int id) {
   size_t num_ams = 10000;
-  size_t issued = 0;
 
-  std::default_random_engine generator(rank*id + id);
-  std::uniform_int_distribution<int> distribution(0, nprocs-1);
-
-  threadBarrier.wait();
+  srand48(rank*id + id);
   if (id == 0) {
     barrier();
   }
   threadBarrier.wait();
-  auto begin = gasneti_ticks_now();
+  auto begin = std::chrono::high_resolution_clock::now();
 
   for (size_t i = 0; i < num_ams; i++) {
-    size_t remote_proc = distribution(generator);
+    size_t remote_proc = lrand48() % nprocs;
 
-    issued++;
+    issueds[id]++;
     int rv = gex_AM_RequestShort(tm, remote_proc, req_num, 0, id);
-    while (receiveds[id].val < issued) {
+    while (receiveds[id] < issueds[id]) {
       gasnet_AMPoll();
     }
   }
 
-  threadBarrier.wait();
   if (id == 0) {
     barrier();
   }
   threadBarrier.wait();
-  auto end = gasneti_ticks_now();
-  double duration_us = gasneti_ticks_to_us(end - begin);
+  auto end = std::chrono::high_resolution_clock::now();
+  double duration = std::chrono::duration<double>(end - begin).count();
 
+  double duration_us = 1e6 * duration;
   double latency_us = duration_us / num_ams;
   if (id == 0 && rank == 0) {
-    printf("%lf us/AM (%lf s total)\n", latency_us, duration_us / 1e6);
+    printf("%lf us/AM (%lf s total)\n", latency_us, duration);
   }
-} 
+}
 
 
 int main() {
   gex_Client_Init(&client, &ep, &tm, clientName, NULL, NULL, 0);
 
-    #ifndef GASNET_PAR
-      printf("Need to use a par build of GASNet-EX.\n");
-      assert(false);
-    #endif
+#ifndef GASNET_PAR
+  printf("Need to use a par build of GASNet-EX.\n");
+  assert(false);
+#endif
 
   rank = gex_System_QueryJobRank();
   nprocs = gex_System_QueryJobSize();
