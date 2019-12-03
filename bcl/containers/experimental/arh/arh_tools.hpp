@@ -16,7 +16,6 @@
 #else
 #   define ARH_Assert(Expr, Msg) ;
 #endif
-
 void __ARH_Assert(const char* expr_str, bool expr, const char* file, int line, const char* msg)
 {
   if (!expr)
