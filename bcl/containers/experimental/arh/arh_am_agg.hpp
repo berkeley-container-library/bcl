@@ -36,7 +36,7 @@ namespace ARH {
 #ifdef ARH_DEBUG
     assert(custom_agg_size > 0);
 #endif
-    agg_size = MIN(agg_size.load(), custom_agg_size);
+    agg_size = MIN(max_agg_size, custom_agg_size);
     for (size_t i = 0; i < nprocs(); ++i) {
       agg_buffers[i].init(agg_size);
     }
