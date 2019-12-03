@@ -46,7 +46,7 @@ void worker(int id) {
   size_t num_ams = 10000;
   size_t issued = 0;
 
-  std::default_random_engine generator(rank*id + id);
+  std::default_random_engine generator(rank*num_threads + id);
   std::uniform_int_distribution<int> distribution(0, nprocs-1);
 
   threadBarrier.wait();

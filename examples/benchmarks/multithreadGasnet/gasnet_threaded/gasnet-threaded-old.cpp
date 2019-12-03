@@ -42,7 +42,7 @@ void reply_handler(gex_Token_t token, gex_AM_Arg_t id) {
 void worker(int id) {
   size_t num_ams = 10000;
 
-  srand48(rank*id + id);
+  srand48(rank*num_threads + id);
   if (id == 0) {
     barrier();
   }

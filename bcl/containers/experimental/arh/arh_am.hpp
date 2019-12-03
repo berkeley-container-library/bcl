@@ -13,8 +13,8 @@ namespace ARH {
   struct ThreadRequested {
     alignas(alignof_cacheline) std::atomic<size_t> val;
   };
-  alignas(alignof_cacheline) std::vector<ThreadAcknowledged> acknowledgeds; // TODO: change this to thread-local
-  alignas(alignof_cacheline) std::vector<ThreadRequested> requesteds; // TODO: change this to thread-local
+  alignas(alignof_cacheline) std::vector<ThreadAcknowledged> acknowledgeds;
+  alignas(alignof_cacheline) std::vector<ThreadRequested> requesteds;
 
   alignas(alignof_cacheline) gex_AM_Index_t hidx_generic_rpc_ackhandler_;
   alignas(alignof_cacheline) gex_AM_Index_t hidx_generic_rpc_reqhandler_;
