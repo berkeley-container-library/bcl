@@ -6,8 +6,6 @@
 #define BCL_ARH_BASE_HPP
 
 #include "bcl/bcl.hpp"
-#include "arh_am.hpp"
-#include "arh_threadbarrier.hpp"
 #include <functional>
 #include <iostream>
 #include <thread>
@@ -23,23 +21,27 @@ namespace ARH {
   extern void init_agg(void);
   extern void flush_agg_buffer(void);
 
-  std::unordered_map<std::thread::id, size_t> thread_ids;
-  std::vector<size_t> thread_contexts;
-  size_t num_threads_per_proc = 16;
-  size_t num_workers_per_proc = 15;
-  std::atomic<bool> worker_run = true;
-  ThreadBarrier threadBarrier;
+  alignas(alignof_cacheline) std::unordered_map<std::thread::id, size_t> thread_ids;
+  struct ThreadContext {
+    alignas(alignof_cacheline) size_t val;
+  };
+  alignas(alignof_cacheline) std::vector<ThreadContext> thread_contexts;
+  alignas(alignof_cacheline) ThreadBarrier threadBarrier;
+  alignas(alignof_cacheline) std::atomic<bool> thread_run = false;
+  alignas(alignof_cacheline) std::atomic<bool> worker_exit = false;
+  alignas(alignof_cacheline) size_t num_threads_per_proc = 16;
+  alignas(alignof_cacheline) size_t num_workers_per_proc = 15;
 
   inline size_t get_thread_id() {
     return thread_ids[std::this_thread::get_id()];
   }
 
   inline void set_context(size_t mContext) {
-    thread_contexts[get_thread_id()] = mContext;
+    thread_contexts[get_thread_id()].val = mContext;
   }
 
   inline size_t get_context() {
-    return thread_contexts[get_thread_id()];
+    return thread_contexts[get_thread_id()].val;
   }
 
   inline size_t my_worker_local() {
@@ -82,12 +84,18 @@ namespace ARH {
 
   // progress thread
   void progress_handler() {
-    while (worker_run.load()) {
+    while (!thread_run) {
+      usleep(1);
+    }
+    while (!worker_exit) {
       progress();
     }
   }
 
   void worker_handler(const std::function<void(void)>& worker) {
+    while (!thread_run) {
+      usleep(1);
+    }
     barrier();
     worker();
     barrier();
@@ -97,7 +105,7 @@ namespace ARH {
       size_t custom_num_threads_per_proc = 16, size_t shared_segment_size = 256) {
     num_workers_per_proc = custom_num_workers_per_proc;
     num_threads_per_proc = custom_num_threads_per_proc;
-    thread_contexts.resize(num_threads_per_proc, 0);
+    thread_contexts.resize(num_threads_per_proc);
     threadBarrier.init(num_workers_per_proc, progress);
 
     BCL::init(shared_segment_size, true);
@@ -123,40 +131,43 @@ namespace ARH {
     std::vector<std::thread> worker_pool;
     std::vector<std::thread> progress_pool;
 
-//    int numberOfProcessors = sysconf(_SC_NPROCESSORS_ONLN);
-//    size_t cpuoffset;
-//    int my_cpu = sched_getcpu();
-//    if ((my_cpu >= 0 && my_cpu < 16) || (my_cpu >= 32 && my_cpu < 48)) {
-//      cpuoffset = 0;
-//    } else {
-//      cpuoffset = 16;
-//    }
+#ifdef ARH_THREAD_PIN
+    int numberOfProcessors = sysconf(_SC_NPROCESSORS_ONLN);
+    size_t cpuoffset;
+    int my_cpu = sched_getcpu();
+    if ((my_cpu >= 0 && my_cpu < 16) || (my_cpu >= 32 && my_cpu < 48)) {
+      cpuoffset = 0;
+    } else {
+      cpuoffset = 16;
+    }
+#endif
 
     for (size_t i = 0; i < num_workers_per_proc; ++i) {
       auto t = std::thread(worker_handler, worker);
-
-//      set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);
-
+#ifdef ARH_THREAD_PIN
+      set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);
+#endif
       thread_ids[t.get_id()] = i;
-      thread_contexts[i] = i;
+      thread_contexts[i].val = i;
       worker_pool.push_back(std::move(t));
     }
 
     for (size_t i = num_workers_per_proc; i < num_threads_per_proc; ++i) {
       auto t = std::thread(progress_handler);
-
-//      set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);
-
+#ifdef ARH_THREAD_PIN
+      set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);
+#endif
       thread_ids[t.get_id()] = i;
-      thread_contexts[i] = i;
+      thread_contexts[i].val = i;
       progress_pool.push_back(std::move(t));
     }
+    thread_run = true;
 
     for (size_t i = 0; i < num_workers_per_proc; ++i) {
       worker_pool[i].join();
     }
 
-    worker_run = false;
+    worker_exit = true;
 
     for (size_t i = 0; i < num_threads_per_proc - num_workers_per_proc; ++i) {
       progress_pool[i].join();

@@ -2,22 +2,17 @@
 #define BCL_ARH_AM_AGGREGATE_HPP
 
 #include <vector>
-#include "arh_am.hpp"
-#include "arh_agg_buffer.hpp"
-#ifdef ARH_PROFILE
-#include "arh_tools.hpp"
-#endif
 
 namespace ARH {
 #ifdef ARH_PROFILE
-  ARH::AverageTimer timer_load;
-  ARH::AverageTimer timer_buf_npop;
-  ARH::AverageTimer timer_buf_pop;
-  ARH::AverageTimer timer_gex_req;
+  alignas(alignof_cacheline) ARH::AverageTimer timer_load;
+  alignas(alignof_cacheline) ARH::AverageTimer timer_buf_npop;
+  alignas(alignof_cacheline) ARH::AverageTimer timer_buf_pop;
+  alignas(alignof_cacheline) ARH::AverageTimer timer_gex_req;
 #endif
-  std::vector<AggBuffer<rpc_t>> agg_buffers;
-  size_t max_agg_size;
-  std::atomic<size_t> agg_size;
+  alignas(alignof_cacheline) std::vector<AggBuffer<rpc_t>> agg_buffers;
+  alignas(alignof_cacheline) size_t max_agg_size;
+  alignas(alignof_cacheline) std::atomic<size_t> agg_size;
 
   void init_agg() {
     max_agg_size = MIN(
@@ -56,7 +51,6 @@ namespace ARH {
       std::vector<rpc_t> send_buf;
       agg_buffers[i].pop_nofull(send_buf);
       if (!send_buf.empty()) {
-        requested += send_buf.size();
         generic_handler_request_impl_(i, std::move(send_buf));
       }
     }
@@ -89,7 +83,6 @@ namespace ARH {
     if (status == AggBuffer<rpc_t>::status_t::SUCCESS_AND_FULL) {
       std::vector<rpc_t> send_buf;
       agg_buffers[remote_proc].pop_full(send_buf);
-      requested += send_buf.size();
 #ifdef ARH_PROFILE
       timer_buf_pop.end_and_update();
       timer_gex_req.start();
@@ -104,6 +97,7 @@ namespace ARH {
       timer_buf_npop.end_and_update();
     }
 #endif
+    requesteds[my_worker_local()].val++;
 
     return std::move(future);
   }
