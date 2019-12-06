@@ -1,5 +1,5 @@
 #ifdef GASNET_EX
-#define ARH_PROFILE
+#define ARH_DEBUG
 #include "bcl/containers/experimental/arh/arh.hpp"
 #include <cassert>
 #include "include/cxxopts.hpp"
@@ -11,20 +11,22 @@ struct ThreadObjects {
 
 ARH::WorkerObject<ThreadObjects> mObjects;
 
-void histogram_handler(int idx) {
-  mObjects.get().v[idx] += 1;
+// Number of integers to be sorted per node
+constexpr size_t n_vals = (1 << 24) * 16;
+
+// Generate random values between [0, 256M)
+constexpr size_t range = 1 << 28;
+size_t partition_size;
+
+void histogram_handler(int val) {
+  size_t bucket_start = ARH::my_worker() * partition_size;
+  mObjects.get().v[val - bucket_start] += 1;
 }
 
 void worker() {
-  // Sort 16M integers
-  constexpr size_t n_vals = 1 << 24;
-
-  // Generate random values between [0, 256M)
-  constexpr size_t range = 1 << 28;
-  size_t partition_size = (range + ARH::nworkers() - 1) / ARH::nworkers();
-
+  size_t n_ops = n_vals / ARH::nworkers_local();
   ARH::print("Sorting %lu integers among %lu workers with aggregation size %lu\n",
-          n_vals, ARH::nworkers(), ARH::get_agg_size());
+          n_vals * ARH::nprocs(), ARH::nworkers(), ARH::get_agg_size());
 
   // Set up the random engine and generate values
   std::default_random_engine generator(ARH::nworkers());
@@ -32,7 +34,7 @@ void worker() {
 
   std::vector<int> vals;
 
-  for (int i = 0; i < n_vals; i++) {
+  for (int i = 0; i < n_ops; i++) {
     vals.push_back(distribution(generator) % range);
   }
 
@@ -44,7 +46,7 @@ void worker() {
   ARH::barrier();
   ARH::tick_t start = ARH::ticks_now();
 
-  for (const auto& val : vals) {
+  for (auto& val : vals) {
     size_t target_rank = val / partition_size;
 
     auto future = ARH::rpc_agg(target_rank, histogram_handler, val);
@@ -75,13 +77,17 @@ int main(int argc, char** argv) {
   try {
     agg_size = result["size"].as<size_t>();
   } catch (...) {
-    agg_size = 0;
+    agg_size = 102;
   }
   ARH_Assert(agg_size >= 0, "");
 
   ARH::init(15, 16);
+
   mObjects.init();
-  agg_size = ARH::set_agg_size(agg_size);
+  ARH::set_agg_size(agg_size);
+
+  partition_size = (range + ARH::nworkers() - 1) / ARH::nworkers();
+
 
   ARH::run(worker);
 

@@ -92,12 +92,14 @@ namespace ARH {
     }
   }
 
-  void worker_handler(const std::function<void(void)>& worker) {
+  template <typename Fn, typename... Args>
+  void worker_handler(Fn &&fn, Args &&... args) {
     while (!thread_run) {
       usleep(1);
     }
     barrier();
-    worker();
+    std::invoke(std::forward<Fn>(fn),
+                std::forward<Args>(args)...);
     barrier();
   }
 
@@ -127,7 +129,9 @@ namespace ARH {
     }
   }
 
-  void run(const std::function<void(void)> &worker) {
+  template <typename Fn, typename... Args>
+  void run(Fn &&fn, Args &&... args) {
+    using FP = decltype(&fn); // TODO: Is there a clear way to do this?
     std::vector<std::thread> worker_pool;
     std::vector<std::thread> progress_pool;
 
@@ -143,7 +147,9 @@ namespace ARH {
 #endif
 
     for (size_t i = 0; i < num_workers_per_proc; ++i) {
-      auto t = std::thread(worker_handler, worker);
+      std::thread t(worker_handler<FP, Args...>,
+                    std::forward<Fn>(fn),
+                    std::forward<Args>(args)...);
 #ifdef ARH_THREAD_PIN
       set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);
 #endif
@@ -153,7 +159,7 @@ namespace ARH {
     }
 
     for (size_t i = num_workers_per_proc; i < num_threads_per_proc; ++i) {
-      auto t = std::thread(progress_handler);
+      std::thread t(progress_handler);
 #ifdef ARH_THREAD_PIN
       set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);
 #endif
