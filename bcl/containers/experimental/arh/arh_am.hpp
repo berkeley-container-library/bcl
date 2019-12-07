@@ -141,19 +141,6 @@ namespace ARH {
       }
     }
 
-    bool try_get(T& val) const {
-      if (!data_p->ready) {
-        return false;
-      }
-
-      // ready!
-      if constexpr(!std::is_void<T>::value) {
-        static_assert(sizeof(FutureData::payload_t) >= sizeof(T));
-        val = *reinterpret_cast<T*>(data_p->payload.data());
-      }
-      return true;
-    }
-
     [[nodiscard]] std::future_status check() const {
       if (data_p->ready) {
         return std::future_status::ready;
