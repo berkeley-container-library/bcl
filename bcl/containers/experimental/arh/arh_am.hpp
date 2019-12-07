@@ -58,8 +58,12 @@ namespace ARH {
     BufferPack<rpc_result_t> results(buf, nbytes);
 
     for (size_t i = 0; i < results.size(); ++i) {
-      results[i].future_p_->payload = results[i].data_;
-      results[i].future_p_->ready = true;
+      if (results[i].future_p_ != NULL) {
+        results[i].future_p_->payload = results[i].data_;
+        results[i].future_p_->ready = true;
+      }
+      // else {fire and forget}
+
       acknowledgeds[results[i].source_worker_local_].val += 1;
     }
   }
@@ -135,6 +139,19 @@ namespace ARH {
         static_assert(sizeof(FutureData::payload_t) >= sizeof(T));
         return *reinterpret_cast<T*>(data_p->payload.data());
       }
+    }
+
+    bool try_get(T& val) const {
+      if (!data_p->ready) {
+        return false;
+      }
+
+      // ready!
+      if constexpr(!std::is_void<T>::value) {
+        static_assert(sizeof(FutureData::payload_t) >= sizeof(T));
+        val = *reinterpret_cast<T*>(data_p->payload.data());
+      }
+      return true;
     }
 
     [[nodiscard]] std::future_status check() const {

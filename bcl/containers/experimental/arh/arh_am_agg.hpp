@@ -101,6 +101,51 @@ namespace ARH {
 
     return std::move(future);
   }
+
+  template <typename Fn, typename... Args>
+  void rpc_ff(size_t remote_worker, Fn&& fn, Args&&... args) {
+    static_assert(std::is_same<std::invoke_result_t<Fn, Args...>, void>::value, "rpc_ff must return void!");
+    assert(remote_worker < nworkers());
+
+    size_t remote_proc = remote_worker / nworkers_local();
+    u_int8_t remote_worker_local = (u_int8_t) remote_worker % nworkers_local();
+
+#ifdef ARH_PROFILE
+    timer_load.start();
+#endif
+    rpc_t my_rpc(NULL, remote_worker_local);
+    my_rpc.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
+#ifdef ARH_PROFILE
+    timer_load.end_and_update();
+    timer_buf_npop.start();
+    timer_buf_pop.start();
+#endif
+    auto status = agg_buffers[remote_proc].push(std::move(my_rpc));
+    while (status == AggBuffer<rpc_t>::status_t::FAIL) {
+      progress();
+      status = agg_buffers[remote_proc].push(std::move(my_rpc));
+    }
+    if (status == AggBuffer<rpc_t>::status_t::SUCCESS_AND_FULL) {
+      std::vector<rpc_t> send_buf;
+      agg_buffers[remote_proc].pop_full(send_buf);
+#ifdef ARH_PROFILE
+      timer_buf_pop.end_and_update();
+      timer_gex_req.start();
+#endif
+      generic_handler_request_impl_(remote_proc, std::move(send_buf));
+#ifdef ARH_PROFILE
+      timer_gex_req.end_and_update();
+#endif
+    }
+#ifdef ARH_PROFILE
+    else {
+      timer_buf_npop.end_and_update();
+    }
+#endif
+    requesteds[my_worker_local()].val++;
+
+    return;
+  }
 }
 
 #endif //BCL_ARH_AM_AGGREGATE_HPP

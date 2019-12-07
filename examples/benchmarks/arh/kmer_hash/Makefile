@@ -46,9 +46,13 @@ LDFLAGS = `upcxx-meta LIBFLAGS`
 
 all: kmer_hash kmer_hash_upcxx kmer_hash_stl
 
-kmer_hash: kmer_hash.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp
+kmer_hash_naive: kmer_hash.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp
 	@echo "C $@ $(BACKEND)"
-	@time $(CXX) kmer_hash.cpp -o kmer_hash $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
+	@time $(CXX) kmer_hash_naive.cpp -o kmer_hash_naive $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
+
+kmer_hash_agg: kmer_hash_agg.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp
+	@echo "C $@ $(BACKEND)"
+	@time $(CXX) kmer_hash_agg.cpp -o kmer_hash_agg $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
 
 test_kmer_hash: test_kmer_hash.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp
 	@echo "C $@ $(BACKEND)"
@@ -61,4 +65,4 @@ kmer_hash_stl: kmer_hash_stl.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.h
 	$(CXX) $(CFLAGS) kmer_hash_stl.cpp -o kmer_hash_stl $(UPCXXFLAGS) $(LDFLAGS)
 
 clean:
-	@rm -fv kmer_hash kmer_hash_upcxx kmer_hash_stl
+	@rm -fv kmer_hash_naive kmer_hash_agg kmer_hash_upcxx kmer_hash_stl *.dat my_solution.txt

@@ -68,13 +68,12 @@ namespace ARH {
                         }, map_ptrs[target_proc], key);
     }
 
-    Future<bool> insert_agg(Key key, Val val) {
+    void insert_ff(Key key, Val val) {
       size_t target_proc = get_target_proc(key);
-      return rpc_agg(target_proc * nworkers_local(),
-                 [](local_map_t* lmap, Key key, Val val){
-                     lmap->insert(key, val);
-                     return true; // hashmap will never be full
-                 }, map_ptrs[target_proc], key, val);
+      rpc_ff(target_proc * nworkers_local(),
+             [](local_map_t* lmap, Key key, Val val){
+                 lmap->insert(key, val);
+             }, map_ptrs[target_proc], key, val);
     }
 
     Future<Val> find_agg(Key key){
