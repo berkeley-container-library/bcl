@@ -50,7 +50,7 @@ namespace ARH {
   struct rpc_invoker;
 
   struct rpc_t {
-    static constexpr size_t max_payload_size = 8; // argument value data size
+    static constexpr size_t max_payload_size = 24; // argument value data size
     using payload_t = std::array<char, max_payload_size>;
     using rpc_result_t = result_t;
 

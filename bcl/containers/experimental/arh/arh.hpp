@@ -26,6 +26,8 @@
 #include "arh_am.hpp"
 #include "arh_am_agg.hpp"
 
+#include "arh_hash_map.hpp"
+
 namespace ARH {
 }
 

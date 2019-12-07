@@ -1,4 +1,5 @@
 #ifdef GASNET_EX
+#define ARH_DEBUG
 #include "bcl/containers/experimental/arh/arh.hpp"
 
 void worker() {
@@ -7,7 +8,7 @@ void worker() {
 
 int main(int argc, char** argv) {
   // one process per node
-  ARH::init(2, 2);
+  ARH::init(15, 16);
   ARH::run(worker);
 
   ARH::finalize();
