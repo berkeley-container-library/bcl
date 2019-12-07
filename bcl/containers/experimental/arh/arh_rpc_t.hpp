@@ -2,6 +2,7 @@
 #define ARH_RPC_T_HPP
 
 #include <array>
+#define CHECK_SIZE 0 // compiler trick: be used to check payload size
 
 namespace ARH {
   extern void init(size_t, size_t, size_t);
@@ -22,7 +23,7 @@ namespace ARH {
   struct FutureData;
 
   struct result_t {
-    static constexpr size_t max_payload_size = 8; // return value data size
+    static constexpr size_t max_payload_size = 24; // return value data size
     using payload_t = std::array<char, max_payload_size>;
 
     FutureData* future_p_; // 8 Bytes
@@ -33,6 +34,9 @@ namespace ARH {
 
     template<typename T>
     void load_result(const T &value) {
+#if CHECK_SIZE
+      char (*__sizeof_result_payload__)[sizeof( T )] = 1;
+#endif
       static_assert(sizeof(T) <= max_payload_size, "Max return val size too small");
       *reinterpret_cast<T *>(data_.data()) = value;
     }
@@ -50,7 +54,7 @@ namespace ARH {
   struct rpc_invoker;
 
   struct rpc_t {
-    static constexpr size_t max_payload_size = 24; // argument value data size
+    static constexpr size_t max_payload_size = 40; // argument value data size
     using payload_t = std::array<char, max_payload_size>;
     using rpc_result_t = result_t;
 
@@ -70,6 +74,9 @@ namespace ARH {
     template<typename Fn, typename... Args>
     void load(Fn &&fn, Args &&... args) {
       using tuple_t = std::tuple<std::remove_reference_t<Args>...>;
+#if CHECK_SIZE
+      char (*__sizeof_rpc_payload__)[sizeof( tuple_t )] = 1;
+#endif
       static_assert(sizeof(tuple_t) <= max_payload_size, "Max RPC size too small.");
 
       this->fn_ = get_pi_fnptr_(reinterpret_cast<char *>(+fn));
@@ -120,4 +127,5 @@ namespace ARH {
     }
   };
 }
+#undef CHECK_SIZE
 #endif //BCL_RPC_T_HPP

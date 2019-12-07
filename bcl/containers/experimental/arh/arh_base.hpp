@@ -121,7 +121,7 @@ namespace ARH {
 
   template <typename Fn, typename... Args>
   void run(Fn &&fn, Args &&... args) {
-    using FP = decltype(&fn); // TODO: Is there a clear way to do this?
+    using fn_t = decltype(+std::declval<std::remove_reference_t<Fn>>());
     std::vector<std::thread> worker_pool;
     std::vector<std::thread> progress_pool;
 
@@ -137,8 +137,8 @@ namespace ARH {
 #endif
 
     for (size_t i = 0; i < num_workers_per_proc; ++i) {
-      std::thread t(worker_handler<FP, Args...>,
-                    std::forward<Fn>(fn),
+      std::thread t(worker_handler<fn_t, std::remove_reference_t<Args>...>,
+                    std::forward<fn_t>(+fn),
                     std::forward<Args>(args)...);
 #ifdef ARH_THREAD_PIN
       set_affinity(t.native_handle(), (i + cpuoffset) % numberOfProcessors);

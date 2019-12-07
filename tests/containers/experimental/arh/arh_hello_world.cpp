@@ -2,14 +2,15 @@
 #define ARH_DEBUG
 #include "bcl/containers/experimental/arh/arh.hpp"
 
-void worker() {
-  std::printf("Hello, I am thread %lu/%lu!\n", ARH::my_worker(), ARH::nworkers());
+void worker(int val) {
+  std::printf("Hello, I am thread %lu/%lu! receive %d\n", ARH::my_worker(), ARH::nworkers(), val);
 }
 
 int main(int argc, char** argv) {
   // one process per node
   ARH::init(15, 16);
-  ARH::run(worker);
+  int val = 132;
+  ARH::run(worker, val);
 
   ARH::finalize();
 }

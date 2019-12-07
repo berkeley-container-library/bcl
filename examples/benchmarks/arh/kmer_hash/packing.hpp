@@ -2,7 +2,7 @@
 
 #include <cassert>
 
-#define KMER_LEN 51
+#define KMER_LEN 19
 #define PACKED_KMER_LEN ((KMER_LEN+3)/4)
 
 unsigned int packedCodeToFourMer[256];
@@ -86,10 +86,14 @@ void packKmer(const char *kmer, unsigned char *packed_kmer) {
 
 void unpackKmer(const unsigned char packed_kmer[PACKED_KMER_LEN],
   char *kmer) {
-  static std::atomic<bool> packedCodeToFourMerCoded = false;
-  if (!packedCodeToFourMerCoded) {
-    packedCodeToFourMerCoded = true;
-    init_LookupTable();
+  static std::atomic<bool> init = false;
+  static std::atomic<int> doing = 0;
+  if (!init) {
+    if (doing++ == 0) {
+      init_LookupTable();
+      init = true;
+    }
+    while (!init) {}
   }
   int i = 0, j = 0;
   for( ; i < PACKED_KMER_LEN; i++, j += 4 ) {

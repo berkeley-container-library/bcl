@@ -12,7 +12,7 @@ namespace ARH {
   >
   class HashMap {
   private:
-    using local_map_t = libcuckoo::cuckoohash_map<Key, Val>;
+    using local_map_t = libcuckoo::cuckoohash_map<Key, Val, Hash>;
     std::vector<local_map_t*> map_ptrs;
     size_t my_size;
     size_t total_size;
@@ -35,19 +35,20 @@ namespace ARH {
         broadcast(map_ptrs[i], i * nworkers_local());
       }
     }
+
     ~HashMap() {
       ARH::barrier();
       if (my_worker_local() == 0) {
         delete map_ptrs[my_proc()];
       }
     }
-    // insert a key-value pair into the hash table
-    Future<void> insert(Key key, Val val) {
+
+    Future<bool> insert(Key key, Val val) {
       size_t target_proc = get_target_proc(key);
       return rpc(target_proc * nworkers_local(),
                         [](local_map_t* lmap, Key key, Val val){
                           lmap->insert(key, val);
-//                          printf("Node %lu insert {%lu, %lu}\n", my_proc(), key, val);
+                          return true; // hashmap will never be full
                         }, map_ptrs[target_proc], key, val);
     }
 
@@ -56,15 +57,40 @@ namespace ARH {
       return rpc(target_proc * nworkers_local(),
                         [](local_map_t* lmap, Key key)
                             -> Val {
-                          Val out;
+                            Val out;
                           if (lmap->find(key, out)) {
 //                            printf("Node %lu find {%lu, %lu}\n", my_proc(), key, out);
                             return out;
                           } else {
-//                            printf("Node %lu cannot find %lu\n", my_proc(), key);
+//                            printf("Worker %lu cannot find %lu\n", my_worker(), key.hash());
                             return Val();
                           }
                         }, map_ptrs[target_proc], key);
+    }
+
+    Future<bool> insert_agg(Key key, Val val) {
+      size_t target_proc = get_target_proc(key);
+      return rpc_agg(target_proc * nworkers_local(),
+                 [](local_map_t* lmap, Key key, Val val){
+                     lmap->insert(key, val);
+                     return true; // hashmap will never be full
+                 }, map_ptrs[target_proc], key, val);
+    }
+
+    Future<Val> find_agg(Key key){
+      size_t target_proc = get_target_proc(key);
+      return rpc_agg(target_proc * nworkers_local(),
+                 [](local_map_t* lmap, Key key)
+                         -> Val {
+                     Val out;
+                     if (lmap->find(key, out)) {
+//                            printf("Node %lu find {%lu, %lu}\n", my_proc(), key, out);
+                       return out;
+                     } else {
+//                            printf("Worker %lu cannot find %lu\n", my_worker(), key.hash());
+                       return Val();
+                     }
+                 }, map_ptrs[target_proc], key);
     }
 
   };
