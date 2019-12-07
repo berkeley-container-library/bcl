@@ -1,10 +1,6 @@
 #ifndef BCL_AM_BARRIER_HPP
 #define BCL_AM_BARRIER_HPP
 
-#include <atomic>
-#include <functional>
-#include <utility>
-
 namespace ARH {
   struct ThreadBarrier {
 

@@ -5,16 +5,6 @@
 #ifndef BCL_ARH_BASE_HPP
 #define BCL_ARH_BASE_HPP
 
-#include "bcl/bcl.hpp"
-#include <functional>
-#include <iostream>
-#include <thread>
-#include <vector>
-#include <unordered_map>
-#include <atomic>
-#include <sched.h>
-#include <pthread.h>
-
 namespace ARH {
   extern void init_am(void);
   extern void flush_am(void);
