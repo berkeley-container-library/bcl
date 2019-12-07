@@ -1,7 +1,7 @@
 #ifndef ARH_HASH_MAP_HPP
 #define ARH_HASH_MAP_HPP
 
-#include "include/libcuckoo/cuckoohash_map.hh"
+#include "external/libcuckoo/cuckoohash_map.hh"
 
 namespace ARH {
 
