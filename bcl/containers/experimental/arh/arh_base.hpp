@@ -60,7 +60,9 @@ namespace ARH {
 
   inline void barrier() {
     threadBarrier.wait();
-    flush_agg_buffer();
+    if (my_worker_local() == 0) {
+      flush_agg_buffer();
+    }
     flush_am();
     if (my_worker_local() == 0) {
       BCL::barrier();

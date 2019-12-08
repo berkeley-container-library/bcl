@@ -15,6 +15,7 @@ namespace ARH {
     alignas(alignof_cacheline) std::atomic<size_t> tail;
     alignas(alignof_cacheline) std::atomic<size_t> reserved_tail;
     alignas(alignof_cacheline) size_t len;
+    alignas(alignof_cacheline) std::mutex mutex_pop;
 
   public:
     enum class status_t {
@@ -66,36 +67,31 @@ namespace ARH {
       }
     }
 
-    // not concurrently safe with other pop_all
-    bool pop_full(std::vector<T>& receiver) {
-      if (reserved_tail != len) {
-        return false; // not full
+    size_t pop_all(std::vector<T>& receiver) {
+      if (mutex_pop.try_lock()) {
+        size_t real_tail = std::min(tail.fetch_add(len), len); // prevent others from begining pushing
+        // wait until those who is pushing finish
+        while (reserved_tail != real_tail) {
+        }
+
+        receiver = std::move(buffer);
+        buffer = std::vector<T>(len);
+
+        ARH_Assert(real_tail <= len, "");
+        ARH_Assert(real_tail == reserved_tail, "");
+        for (int i = 0; i < len - real_tail; ++i) {
+          receiver.pop_back();
+        }
+
+        reserved_tail = 0;
+        tail = 0;
+
+        mutex_pop.unlock();
+        return real_tail;
+      } else {
+        // someone is poping
+        return 0;
       }
-      ARH_Assert(reserved_tail == len, "Call pop_all when buffer is not full");
-      receiver = std::move(buffer);
-      buffer = std::vector<T>(len);
-      ARH_Assert(receiver.size() == len, "receiver is not full");
-
-      reserved_tail = 0;
-      tail = 0;
-
-      return true;
-    }
-
-    // not concurrently safe at all
-    size_t pop_nofull(std::vector<T>& receiver) {
-      receiver = std::move(buffer);
-      buffer = std::vector<T>(len);
-
-      size_t tmp = reserved_tail.load();
-      for (int i = 0; i < len - tmp; ++i) {
-        receiver.pop_back();
-      }
-
-      reserved_tail = 0;
-      tail = 0;
-
-      return tmp;
     }
 
   };

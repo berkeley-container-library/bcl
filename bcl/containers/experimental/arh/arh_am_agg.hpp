@@ -15,7 +15,7 @@ namespace ARH {
   alignas(alignof_cacheline) std::atomic<size_t> agg_size;
 
   void init_agg() {
-    max_agg_size = MIN(
+    max_agg_size = std::min(
         gex_AM_MaxRequestMedium(BCL::tm,GEX_RANK_INVALID,GEX_EVENT_NOW,0,0) / sizeof(rpc_t),
         gex_AM_MaxReplyMedium  (BCL::tm,GEX_RANK_INVALID,GEX_EVENT_NOW,0,0) / sizeof(rpc_result_t)
         );
@@ -31,7 +31,7 @@ namespace ARH {
 #ifdef ARH_DEBUG
     assert(custom_agg_size > 0);
 #endif
-    agg_size = MIN(max_agg_size, custom_agg_size);
+    agg_size = std::min(max_agg_size, custom_agg_size);
     for (size_t i = 0; i < nprocs(); ++i) {
       agg_buffers[i].init(agg_size);
     }
@@ -46,13 +46,17 @@ namespace ARH {
     return agg_size.load();
   }
 
+  void flush_agg_buffer_single(size_t id) {
+    std::vector<rpc_t> send_buf;
+    size_t len = agg_buffers[id].pop_all(send_buf);
+    if (len > 0) {
+      generic_handler_request_impl_(id, std::move(send_buf));
+    }
+  }
+
   void flush_agg_buffer() {
-    for (size_t i = my_worker_local(); i < nprocs(); i += nworkers_local()) {
-      std::vector<rpc_t> send_buf;
-      agg_buffers[i].pop_nofull(send_buf);
-      if (!send_buf.empty()) {
-        generic_handler_request_impl_(i, std::move(send_buf));
-      }
+    for (size_t i = 0; i < nprocs(); i++) {
+      flush_agg_buffer_single(i);
     }
   }
 
@@ -64,39 +68,17 @@ namespace ARH {
     size_t remote_proc = remote_worker / nworkers_local();
     u_int8_t remote_worker_local = (u_int8_t) remote_worker % nworkers_local();
 
-#ifdef ARH_PROFILE
-    timer_load.start();
-#endif
     Future<std::invoke_result_t<Fn, Args...>> future;
     rpc_t my_rpc(future.get_p(), remote_worker_local);
     my_rpc.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
-#ifdef ARH_PROFILE
-    timer_load.end_and_update();
-    timer_buf_npop.start();
-    timer_buf_pop.start();
-#endif
     auto status = agg_buffers[remote_proc].push(std::move(my_rpc));
     while (status == AggBuffer<rpc_t>::status_t::FAIL) {
       progress();
       status = agg_buffers[remote_proc].push(std::move(my_rpc));
     }
     if (status == AggBuffer<rpc_t>::status_t::SUCCESS_AND_FULL) {
-      std::vector<rpc_t> send_buf;
-      agg_buffers[remote_proc].pop_full(send_buf);
-#ifdef ARH_PROFILE
-      timer_buf_pop.end_and_update();
-      timer_gex_req.start();
-#endif
-      generic_handler_request_impl_(remote_proc, std::move(send_buf));
-#ifdef ARH_PROFILE
-      timer_gex_req.end_and_update();
-#endif
+      flush_agg_buffer_single(remote_proc);
     }
-#ifdef ARH_PROFILE
-    else {
-      timer_buf_npop.end_and_update();
-    }
-#endif
     requesteds[my_worker_local()].val++;
 
     return std::move(future);
@@ -110,38 +92,16 @@ namespace ARH {
     size_t remote_proc = remote_worker / nworkers_local();
     u_int8_t remote_worker_local = (u_int8_t) remote_worker % nworkers_local();
 
-#ifdef ARH_PROFILE
-    timer_load.start();
-#endif
     rpc_t my_rpc(NULL, remote_worker_local);
     my_rpc.load(std::forward<Fn>(fn), std::forward<Args>(args)...);
-#ifdef ARH_PROFILE
-    timer_load.end_and_update();
-    timer_buf_npop.start();
-    timer_buf_pop.start();
-#endif
     auto status = agg_buffers[remote_proc].push(std::move(my_rpc));
     while (status == AggBuffer<rpc_t>::status_t::FAIL) {
       progress();
       status = agg_buffers[remote_proc].push(std::move(my_rpc));
     }
     if (status == AggBuffer<rpc_t>::status_t::SUCCESS_AND_FULL) {
-      std::vector<rpc_t> send_buf;
-      agg_buffers[remote_proc].pop_full(send_buf);
-#ifdef ARH_PROFILE
-      timer_buf_pop.end_and_update();
-      timer_gex_req.start();
-#endif
-      generic_handler_request_impl_(remote_proc, std::move(send_buf));
-#ifdef ARH_PROFILE
-      timer_gex_req.end_and_update();
-#endif
+      flush_agg_buffer_single(remote_proc);
     }
-#ifdef ARH_PROFILE
-    else {
-      timer_buf_npop.end_and_update();
-    }
-#endif
     requesteds[my_worker_local()].val++;
 
     return;

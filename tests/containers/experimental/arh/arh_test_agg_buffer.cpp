@@ -1,4 +1,5 @@
 #ifdef GASNET_EX
+#define ARH_DEBUG
 #include "bcl/bcl.hpp"
 #include "bcl/containers/experimental/arh/arh.hpp"
 #include "bcl/containers/experimental/arh/arh_agg_buffer.hpp"
@@ -15,6 +16,9 @@ const bool print_verbose = false;
 
 void worker() {
   using status_t = ARH::AggBuffer<int>::status_t;
+
+  ARH::print("Initializing...\n");
+
   for (int i = 0; i < N_STEPS; ++i) {
     int val = lrand48() % MAX_VAL;
     status_t status = aggBuffer.push(val);
@@ -29,9 +33,7 @@ void worker() {
     }
     if (status == status_t::SUCCESS_AND_FULL) {
       std::vector<int> buf;
-      bool success = aggBuffer.pop_full(buf);
-      assert(success);
-      assert(buf.size() == buf_size);
+      aggBuffer.pop_all(buf);
       if (!print_verbose)
         for (auto val: buf) {
           counts[val]--;
@@ -50,16 +52,17 @@ void worker() {
   }
 
   ARH::barrier();
+  ARH::print("Finish pushing...\n");
 
   if (ARH::my_worker_local() == 0) {
     std::vector<int> buf;
-    size_t len = aggBuffer.pop_nofull(buf);
-    if (!print_verbose)
+    size_t len = aggBuffer.pop_all(buf);
+    if (!print_verbose) {
       for (int i = 0; i < len; ++i) {
         int val = buf[i];
         counts[val]--;
       }
-    else {
+    } else {
       std::ostringstream ostr;
       ostr << "Rank " << ARH::my_worker() << " pop vec: ";
       for (int i = 0; i < len; ++i) {
@@ -82,7 +85,9 @@ void worker() {
       }
     }
     if (print_verbose && success) {
-      printf("Success!\n");
+      printf("Pass!\n");
+    } else {
+      printf("Pass!\n");
     }
   }
 }

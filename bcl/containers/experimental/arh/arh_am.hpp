@@ -7,14 +7,11 @@ namespace ARH {
   extern void progress(void);
 
   alignas(alignof_cacheline) size_t handler_num;
-  struct ThreadAcknowledged {
+  struct AlignedAtomicSize_t {
     alignas(alignof_cacheline) std::atomic<size_t> val;
   };
-  struct ThreadRequested {
-    alignas(alignof_cacheline) std::atomic<size_t> val;
-  };
-  alignas(alignof_cacheline) std::vector<ThreadAcknowledged> acknowledgeds;
-  alignas(alignof_cacheline) std::vector<ThreadRequested> requesteds;
+  alignas(alignof_cacheline) std::vector<AlignedAtomicSize_t> acknowledgeds;
+  alignas(alignof_cacheline) std::vector<AlignedAtomicSize_t> requesteds;
 
   alignas(alignof_cacheline) gex_AM_Index_t hidx_generic_rpc_ackhandler_;
   alignas(alignof_cacheline) gex_AM_Index_t hidx_generic_rpc_reqhandler_;
@@ -98,11 +95,11 @@ namespace ARH {
 
     gex_EP_RegisterHandlers(BCL::ep, htable, sizeof(htable)/sizeof(gex_AM_Entry_t));
 
-    acknowledgeds = std::vector<ThreadAcknowledged>(nworkers_local());
+    acknowledgeds = std::vector<AlignedAtomicSize_t>(nworkers_local());
     for (auto& t : acknowledgeds) {
       t.val = 0;
     }
-    requesteds = std::vector<ThreadRequested>(nworkers_local());
+    requesteds = std::vector<AlignedAtomicSize_t>(nworkers_local());
     for (auto& t : requesteds) {
       t.val = 0;
     }

@@ -61,6 +61,11 @@ void worker(size_t n_kmers) {
   auto start_read = std::chrono::high_resolution_clock::now();
 
   std::list <std::list <kmer_pair>> contigs;
+  struct task_t {
+      ARH::Future<kmer_pair> future;
+      std::list <kmer_pair> contig;
+  };
+  std::list<task_t> taskPool;
 
 #ifdef DEBUG
   if (run_type == "verbose" || run_type == "verbose_test")
@@ -69,16 +74,48 @@ void worker(size_t n_kmers) {
 
   ARH::barrier();
   for (const auto &start_kmer : start_nodes) {
-    std::list <kmer_pair> contig;
-    contig.push_back(start_kmer);
-    while (contig.back().forwardExt() != 'F') {
-      kmer_pair kmer = hashmap.find(contig.back().next_kmer()).get();
-      if (kmer == kmer_pair()) {
-        throw std::runtime_error("Error: k-mer not found in hashmap.");
-      }
-      contig.push_back(kmer);
+    task_t task;
+    task.contig.push_back(start_kmer);
+    if (start_kmer.forwardExt() != 'F') {
+      task.future = hashmap.find(start_kmer.next_kmer());
     }
-    contigs.push_back(contig);
+    taskPool.push_back(std::move(task));
+  }
+
+  while (!taskPool.empty()) {
+    bool is_active = false;
+
+    for (auto it = taskPool.begin(); it != taskPool.end();) {
+      task_t& current_task = *it;
+
+      if (current_task.future.check() == std::future_status::ready) {
+        // current task is ready
+        is_active = true;
+        kmer_pair kmer = current_task.future.get();
+        if (kmer == kmer_pair()) {
+          throw std::runtime_error("Error: k-mer not found in hashmap.");
+        }
+        current_task.contig.push_back(kmer);
+
+        if (kmer.forwardExt() != 'F') {
+          // current task hasn't completed
+          current_task.future = hashmap.find(kmer.next_kmer());
+          ++it;
+        } else {
+          // current task has completed
+          contigs.push_back(std::move(current_task.contig));
+          it = taskPool.erase(it);
+        }
+      } else {
+        // current task is not ready
+        ++it;
+      }
+    }
+
+    if (!is_active) {
+      // flush buffer
+      ARH::flush_agg_buffer();
+    }
   }
 
   ARH::barrier();
