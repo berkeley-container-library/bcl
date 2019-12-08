@@ -44,9 +44,10 @@ LDFLAGS = `upcxx-meta LIBFLAGS`
 
 ############################################################3
 
-all: kmer_hash kmer_hash_upcxx kmer_hash_stl
+TARGETS := kmer_hash_naive kmer_hash_agg kmer_hash_upcxx kmer_hash_stl
+all: $(TARGETS)
 
-kmer_hash_naive: kmer_hash.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp
+kmer_hash_naive: kmer_hash_naive.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp
 	@echo "C $@ $(BACKEND)"
 	@time $(CXX) kmer_hash_naive.cpp -o kmer_hash_naive $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
 
@@ -64,5 +65,8 @@ kmer_hash_upcxx: kmer_hash_upcxx.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kme
 kmer_hash_stl: kmer_hash_stl.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp hash_map_stl.hpp butil.hpp
 	$(CXX) $(CFLAGS) kmer_hash_stl.cpp -o kmer_hash_stl $(UPCXXFLAGS) $(LDFLAGS)
 
+clear:
+	@rm -fv *.dat my_solution.txt
+
 clean:
-	@rm -fv kmer_hash_naive kmer_hash_agg kmer_hash_upcxx kmer_hash_stl *.dat my_solution.txt
+	@rm -fv $(TARGETS) *.dat my_solution.txt

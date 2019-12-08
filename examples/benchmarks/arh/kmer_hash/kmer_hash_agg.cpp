@@ -27,7 +27,7 @@ void worker(size_t n_kmers) {
   ARH::HashMap<pkmer_t, kmer_pair, kmer_hash> hashmap(hash_table_size);
 
   if (run_type == "verbose" || run_type == "verbose_test") {
-    ARH::print("sizeof(pkmer_t): %lu, sizeof(kmer_pair): %lu.\n", sizeof(pkmer_t), sizeof(kmer_pair));
+    ARH::print("agg_size: %lu, sizeof(pkmer_t): %lu, sizeof(kmer_pair): %lu.\n", ARH::get_agg_size(), sizeof(pkmer_t), sizeof(kmer_pair));
     ARH::print("Initializing hash table of size %d for %d kmers.\n",
                  hash_table_size, n_kmers);
   }
@@ -74,12 +74,14 @@ void worker(size_t n_kmers) {
 
   ARH::barrier();
   for (const auto &start_kmer : start_nodes) {
-    task_t task;
-    task.contig.push_back(start_kmer);
     if (start_kmer.forwardExt() != 'F') {
+      task_t task;
+      task.contig.push_back(start_kmer);
       task.future = hashmap.find(start_kmer.next_kmer());
+      taskPool.push_back(std::move(task));
+    } else {
+      contigs.push_back(std::list<kmer_pair>({start_kmer}));
     }
-    taskPool.push_back(std::move(task));
   }
 
   while (!taskPool.empty()) {
@@ -109,12 +111,14 @@ void worker(size_t n_kmers) {
       } else {
         // current task is not ready
         ++it;
+        ARH::progress();
       }
     }
 
     if (!is_active) {
       // flush buffer
       ARH::flush_agg_buffer();
+      ARH::flush_am();
     }
   }
 
