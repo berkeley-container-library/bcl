@@ -19,9 +19,9 @@ struct HashMap {
   // k-mers from the hash table.
   bool insert(const kmer_pair &kmer);
   bool find(const pkmer_t &key_kmer, kmer_pair &val_kmer);
-  
+
   // Helper functions
-  
+
   // Write and read to a logical data slot in the table.
   void write_slot(uint64_t slot, const kmer_pair &kmer);
   kmer_pair read_slot(uint64_t slot);
@@ -78,8 +78,8 @@ bool HashMap::find(const pkmer_t &key_kmer, kmer_pair &val_kmer) {
   if (!success) {
     uint64_t slot = (hash + probe - 1) % total_size;
     printf("total size: %d, local size: %d, probe: %d\n", total_size, size(), probe);
-    printf("global slot: %d, slot rank: %d, local slot: %d\n", 
-          slot, slot / size(), slot % size());
+    printf("global slot: %d, slot rank: %d, local slot: %d\n",
+           slot, slot / size(), slot % size());
   }
   return success;
 }
@@ -95,27 +95,27 @@ bool HashMap::slot_used(uint64_t slot) {
 
 void HashMap::write_slot(uint64_t slot, const kmer_pair &kmer) {
   int rank = slot / size();
-  int offset = slot % size(); 
+  int offset = slot % size();
   upcxx::rput(kmer, data[rank] + offset).wait();
 }
 
 kmer_pair HashMap::read_slot(uint64_t slot) {
   int rank = slot / size();
-  int offset = slot % size(); 
+  int offset = slot % size();
   return upcxx::rget(data[rank] + offset).wait();
 }
 
 bool HashMap::request_slot(uint64_t slot) {
   int rank = slot / size();
-  int offset = slot % size(); 
+  int offset = slot % size();
   upcxx::atomic_domain<int> cx({upcxx::atomic_op::compare_exchange});
   // atomic CAS
-  bool origin = cx.compare_exchange(used[rank] + offset, 0, 1, std::memory_order_relaxed).wait(); 
+  bool origin = cx.compare_exchange(used[rank] + offset, 0, 1, std::memory_order_relaxed).wait();
   // seems to have to destroy like this
   cx.destroy(upcxx::entry_barrier::none);
   return !origin;
 }
 
 size_t HashMap::size() const noexcept {
-  return my_size; 
+  return my_size;
 }

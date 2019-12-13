@@ -7,7 +7,7 @@ namespace ARH {
 
   extern size_t my_worker_local();
 
-  struct AverageTimer {
+  struct SharedTimer {
   private:
     alignas(alignof_cacheline) unsigned long step = 0;
     alignas(alignof_cacheline) tick_t _start = 0;

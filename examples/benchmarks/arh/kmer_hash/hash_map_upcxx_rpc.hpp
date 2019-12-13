@@ -31,6 +31,7 @@ public:
     HashMap(size_t size) : local_map({}) {
         my_size = (size + upcxx::rank_n() - 1) / upcxx::rank_n();
         total_size = my_size * upcxx::rank_n();
+        local_map->reserve(my_size);
     }
     // insert a key-value pair into the hash table
     upcxx::future<> insert(const kmer_pair &kmer) {

@@ -40,7 +40,7 @@ void worker(size_t n_kmers) {
     ARH::print("Finished reading kmers.\n");
   }
 
-  auto start = ticks_now();
+  auto start = std::chrono::high_resolution_clock::now();
 
   std::vector <kmer_pair> start_nodes;
 
@@ -51,16 +51,17 @@ void worker(size_t n_kmers) {
     }
   }
 
-  auto end_insert = ticks_now();
+  auto end_insert = std::chrono::high_resolution_clock::now();
   ARH::barrier();
 
-  double insert_time = ticks_to_s(end_insert-start);
+  double insert_time = std::chrono::duration <double> (end_insert - start).count();
   if (run_type != "test") {
     ARH::print("Finished inserting in %lf\n", insert_time);
   }
   ARH::barrier();
 
-  auto start_read = ticks_now();
+  auto start_read = std::chrono::high_resolution_clock::now();
+  ARH::tick_t start_profile = ARH::ticks_now();
 
   std::list <std::list <kmer_pair>> contigs;
   struct task_t {
@@ -86,6 +87,12 @@ void worker(size_t n_kmers) {
     }
   }
 
+  size_t iter_count = 0;
+  size_t total_count = 0;
+  size_t inactive_count = 0;
+  std::ofstream fout2("profile_" + std::to_string(ARH::my_worker()) + ".dat");
+  tick_t now_profile = ticks_now();
+  fout2 << taskPool.size() << " " << ticks_to_us(now_profile-start_profile) << std::endl;
   while (!taskPool.empty()) {
     bool is_active = false;
 
@@ -109,20 +116,30 @@ void worker(size_t n_kmers) {
           // current task has completed
           contigs.push_back(std::move(current_task.contig));
           it = taskPool.erase(it);
+          if (taskPool.size() % 100 == 0) {
+            ARH::tick_t now_profile = ARH::ticks_now();
+            size_t duration_us = ARH::ticks_to_us(now_profile - start_profile);
+            fout2 << "iter_count: " << iter_count << " total_try: " << total_count << " failed_try:" << inactive_count << std::endl;
+            fout2 << taskPool.size() << " " << duration_us << std::endl;
+          }
         }
       } else {
         // current task is not ready
+        ++inactive_count;
         ++it;
         ARH::progress();
       }
+      ++total_count;
     }
 
+    ++iter_count;
     if (!is_active) {
       // flush buffer
       ARH::flush_agg_buffer();
       ARH::flush_am();
     }
   }
+  fout2 << "iter_count: " << iter_count << " total_try: " << total_count << " failed_try:" << inactive_count << std::endl;
 
   ARH::barrier();
 
@@ -132,11 +149,14 @@ void worker(size_t n_kmers) {
     printf("Pos 2 Rank %d\n", upcxx::rank_me());
 #endif
 
-  auto end = ticks_now();
+  auto end_read = std::chrono::high_resolution_clock::now();
+  ARH::barrier();
+  auto end = std::chrono::high_resolution_clock::now();
+  fout2.close();
 
-  double read = ticks_to_s(end - start_read);
-  double insert = ticks_to_s(end_insert - start);
-  double total = ticks_to_s(end - start);
+  std::chrono::duration <double> read = end_read - start_read;
+  std::chrono::duration <double> insert = end_insert - start;
+  std::chrono::duration <double> total = end - start;
 
   int numKmers = std::accumulate(contigs.begin(), contigs.end(), 0,
                                  [] (int sum, const std::list <kmer_pair> &contig) {
@@ -144,13 +164,13 @@ void worker(size_t n_kmers) {
                                  });
 
   if (run_type != "test") {
-    ARH::print("Assembled in %lf total\n", total);
+    ARH::print("Assembled in %lf total\n", total.count());
   }
 
   if (run_type == "verbose" || run_type == "verbose_test") {
     printf("Rank %d reconstructed %d contigs with %d nodes from %d start nodes."
            " (%lf read, %lf insert, %lf total)\n", ARH::my_worker(), contigs.size(),
-           numKmers, start_nodes.size(), read, insert, total);
+           numKmers, start_nodes.size(), read.count(), insert.count(), total.count());
   }
 
   if (run_type == "test" || run_type == "verbose_test") {
@@ -160,7 +180,6 @@ void worker(size_t n_kmers) {
     }
     fout.close();
   }
-
 }
 
 int main(int argc, char **argv) {
@@ -185,13 +204,7 @@ int main(int argc, char **argv) {
       std::to_string(KMER_LEN) + "-mers.  Modify packing.hpp and recompile.");
   }
 
-  if (run_type == "verbose" || run_type == "verbose_test") {
-    BCL::print("Start counting kmer number...\n");
-  }
   size_t n_kmers = line_count(kmer_fname);
-  if (run_type == "verbose" || run_type == "verbose_test") {
-    BCL::print("Finish counting kmer number: %lu\n", n_kmers);
-  }
 
   ARH::run(worker, n_kmers);
 

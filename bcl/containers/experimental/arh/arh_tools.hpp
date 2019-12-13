@@ -41,6 +41,14 @@ namespace ARH {
     return gasneti_ticks_to_ns(val);
   }
 
+  uint64_t ticks_to_us(tick_t val) {
+    return ticks_to_ns(val) / 1e3;
+  }
+
+  double ticks_to_s(tick_t val) {
+    return ticks_to_ns(val) / 1e9;
+  }
+
   // microseconds, 370ns
 //  tick_t ticks_now() {
 //    timespec temp;

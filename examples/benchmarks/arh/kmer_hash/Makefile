@@ -44,7 +44,7 @@ LDFLAGS = `upcxx-meta LIBFLAGS`
 
 ############################################################3
 
-TARGETS := kmer_hash_naive kmer_hash_agg kmer_hash_upcxx kmer_hash_stl
+TARGETS := kmer_hash_agg kmer_hash_upcxx_rpc kmer_hash_upcxx_rdma
 all: $(TARGETS)
 
 kmer_hash_naive: kmer_hash_naive.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp
@@ -55,15 +55,15 @@ kmer_hash_agg: kmer_hash_agg.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.h
 	@echo "C $@ $(BACKEND)"
 	@time $(CXX) kmer_hash_agg.cpp -o kmer_hash_agg $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
 
-test_kmer_hash: test_kmer_hash.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp
+kmer_hash_upcxx_rpc: kmer_hash_upcxx_rpc.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp hash_map_upcxx_rpc.hpp butil.hpp
+	$(CXX) $(CFLAGS) kmer_hash_upcxx_rpc.cpp -o kmer_hash_upcxx_rpc $(UPCXXFLAGS) $(LDFLAGS)
+
+kmer_hash_upcxx_rdma: kmer_hash_upcxx_rdma.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp hash_map_upcxx_rdma.hpp butil.hpp
+	$(CXX) $(CFLAGS) kmer_hash_upcxx_rdma.cpp -o kmer_hash_upcxx_rdma $(UPCXXFLAGS) $(LDFLAGS)
+
+%: %.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp
 	@echo "C $@ $(BACKEND)"
-	@time $(CXX) test_kmer_hash.cpp -o test_kmer_hash $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
-
-kmer_hash_upcxx: kmer_hash_upcxx.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp hash_map_upcxx.hpp butil.hpp
-	$(CXX) $(CFLAGS) kmer_hash_upcxx.cpp -o kmer_hash_upcxx $(UPCXXFLAGS) $(LDFLAGS)
-
-kmer_hash_stl: kmer_hash_stl.cpp kmer_t.hpp pkmer_t.hpp packing.hpp read_kmers.hpp hash_map_stl.hpp butil.hpp
-	$(CXX) $(CFLAGS) kmer_hash_stl.cpp -o kmer_hash_stl $(UPCXXFLAGS) $(LDFLAGS)
+	@time $(CXX) $< -o $@ $(CXXFLAGS) || echo "$@ $(BACKEND) BUILD FAIL"
 
 clear:
 	@rm -fv *.dat my_solution.txt

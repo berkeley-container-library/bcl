@@ -32,7 +32,7 @@ void worker(size_t n_kmers) {
                  hash_table_size, n_kmers);
   }
 
-  std::vector <kmer_pair> kmers = read_kmers(kmer_fname, ARH::nworkers(), ARH::my_worker());
+  std::vector <kmer_pair> kmers = read_kmers(kmer_fname, n_kmers, ARH::nworkers(), ARH::my_worker());
 
   if (run_type == "verbose" || run_type == "verbose_test") {
     ARH::print("Finished reading kmers.\n");

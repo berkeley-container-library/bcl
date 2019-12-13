@@ -2,12 +2,15 @@
 #include "bcl/containers/experimental/arh/arh.hpp"
 #include <cassert>
 #include "include/cxxopts.hpp"
+#include "bcl/containers/experimental/SafeChecksumQueue.hpp"
 
-int num_ops = 100000;
+const int num_ops = 100000;
+const int queue_size = 1000;
 const char* title = "broadcast";
+BCL::ChecksumQueue<int> queue(0, queue_size);
+
 void do_something(int i) {
-  int val = ARH::my_worker();
-  ARH::broadcast_node(val, i % ARH::nworkers_local());
+  queue.push(i);
 }
 
 void worker() {
