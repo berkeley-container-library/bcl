@@ -60,6 +60,8 @@ void worker(size_t n_kmers) {
   }
   ARH::barrier();
 
+//------- Read Start -------
+
   auto start_read = ticks_now();
 
   std::list <std::list <kmer_pair>> contigs;
@@ -68,11 +70,6 @@ void worker(size_t n_kmers) {
       std::list <kmer_pair> contig;
   };
   std::list<task_t> taskPool;
-
-#ifdef DEBUG
-  if (run_type == "verbose" || run_type == "verbose_test")
-    printf("Pos 1 Rank %d, sn.size = %d\n", upcxx::rank_me(), start_nodes.size());
-#endif
 
   ARH::barrier();
   for (const auto &start_kmer : start_nodes) {

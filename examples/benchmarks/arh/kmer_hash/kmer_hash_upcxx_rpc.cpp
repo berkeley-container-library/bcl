@@ -75,25 +75,72 @@ int main(int argc, char **argv) {
   }
   upcxx::barrier();
 
+  //------- Read Start -------
+
   auto start_read = std::chrono::high_resolution_clock::now();
 
   std::list <std::list <kmer_pair>> contigs;
+  struct task_t {
+    upcxx::future <kmer_pair> future;
+    std::list <kmer_pair> contig;
+  };
+  std::list<task_t> taskPool;
 
   upcxx::barrier();
+
   for (const auto &start_kmer : start_nodes) {
-    std::list <kmer_pair> contig;
-    contig.push_back(start_kmer);
-    while (contig.back().forwardExt() != 'F') {
-      kmer_pair kmer;
-      if ((kmer = hashmap.find(contig.back().next_kmer()).wait())
-           == kmer_pair()) {
-        throw std::runtime_error("Error: k-mer not found in hashmap.");
-        printf("Error in rank %d\n", upcxx::rank_me());
-      }
-      contig.push_back(kmer);
+    if (start_kmer.forwardExt() != 'F') {
+      task_t task;
+      task.contig.push_back(start_kmer);
+      task.future = hashmap.find(start_kmer.next_kmer());
+      taskPool.push_back(std::move(task));
+    } else {
+      contigs.push_back(std::list<kmer_pair>({start_kmer}));
     }
-    contigs.push_back(contig);
   }
+
+  while (!taskPool.empty()) {
+    for (auto it = taskPool.begin(); it != taskPool.end();) {
+      task_t& current_task = *it;
+
+      if (current_task.future.ready()) {
+        // current task is ready
+        kmer_pair kmer = current_task.future.wait();
+        if (kmer == kmer_pair()) {
+          throw std::runtime_error("Error: k-mer not found in hashmap.");
+        }
+        current_task.contig.push_back(kmer);
+
+        if (kmer.forwardExt() != 'F') {
+          // current task hasn't completed
+          current_task.future = hashmap.find(kmer.next_kmer());
+          ++it;
+        } else {
+          // current task has completed
+          contigs.push_back(std::move(current_task.contig));
+          it = taskPool.erase(it);
+        }
+      } else {
+        // current task is not ready
+        ++it;
+        upcxx::progress();
+      }
+    }
+  }
+//  for (const auto &start_kmer : start_nodes) {
+//    std::list <kmer_pair> contig;
+//    contig.push_back(start_kmer);
+//    while (contig.back().forwardExt() != 'F') {
+//      kmer_pair kmer;
+//      if ((kmer = hashmap.find(contig.back().next_kmer()).wait())
+//           == kmer_pair()) {
+//        throw std::runtime_error("Error: k-mer not found in hashmap.");
+//        printf("Error in rank %d\n", upcxx::rank_me());
+//      }
+//      contig.push_back(kmer);
+//    }
+//    contigs.push_back(contig);
+//  }
   upcxx::barrier();
 
   auto end_read = std::chrono::high_resolution_clock::now();
