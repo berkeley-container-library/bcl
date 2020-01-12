@@ -52,6 +52,10 @@ public:
     }
   }
 
+  bool check() {
+    return wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+  }
+
   template <class Rep, class Period>
   std::future_status wait_for(const std::chrono::duration<Rep,Period>& timeout_duration) {
     for (auto& request : requests_) {

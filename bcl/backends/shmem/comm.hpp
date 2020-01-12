@@ -140,6 +140,15 @@ T fetch_and_op(const GlobalPtr <T> ptr, const T &val, const atomic_op <T> &op) {
   return op.shmem_atomic_op(ptr, val);
 }
 
+template <typename T>
+future<T> arfetch_and_op(const GlobalPtr <T> ptr, const T &val, const atomic_op <T> &op) {
+  static_assert(std::is_same<T, int32_t>::value);
+  future<T> future;
+  int rv =  op.shmem_atomic_op(ptr, val);
+  *future.value_ = rv;
+  return std::move(future);
+}
+
 int int_compare_and_swap(const GlobalPtr <int> ptr, int old_val,
   const int new_val) {
   old_val = shmem_int_cswap(ptr.rptr(), old_val, new_val, ptr.rank);
