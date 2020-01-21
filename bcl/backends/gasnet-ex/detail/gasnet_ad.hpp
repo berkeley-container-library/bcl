@@ -9,6 +9,14 @@ namespace BCL {
 
 extern gex_TM_t tm;
 gex_AD_t ad_i32;
+gex_AD_t ad_f32;
+
+template <typename T>
+gex_AD_t& get_gex_ad();
+template <>
+gex_AD_t& get_gex_ad<int32_t>() { return ad_i32; }
+template <>
+gex_AD_t& get_gex_ad<float>() { return ad_f32; }
 
 template<typename T>
 constexpr gex_DT_t get_gex_dt();
@@ -20,6 +28,8 @@ template<>
 constexpr gex_DT_t get_gex_dt<int64_t>() { return GEX_DT_I64; }
 template<>
 constexpr gex_DT_t get_gex_dt<uint64_t>() { return GEX_DT_U64; }
+template<>
+constexpr gex_DT_t get_gex_dt<float>() { return GEX_DT_FLT; }
 
 template<typename T>
 gex_Event_t shim_gex_AD_OpNB(
@@ -59,14 +69,24 @@ gex_Event_t shim_gex_AD_OpNB<uint64_t>(
   return gex_AD_OpNB_U64(ad, p, rank, addr, op, val1, val2, flags);
 }
 
+template<>
+gex_Event_t shim_gex_AD_OpNB<float>(
+    gex_AD_t ad, float *p, size_t rank, void *addr,
+    int op, float val1, float val2, int flags
+  ) {
+  return gex_AD_OpNB_FLT(ad, p, rank, addr, op, val1, val2, flags);
+}
+
 void init_atomics() {
   gex_OP_t ops = GEX_OP_FADD | GEX_OP_FCAS | GEX_OP_GET | GEX_OP_FXOR | GEX_OP_FOR | GEX_OP_FAND;
   gex_Flags_t flags = 0;
   gex_AD_Create(&ad_i32, tm, get_gex_dt<int32_t>(), ops, flags);
+  gex_AD_Create(&ad_f32, tm, get_gex_dt<float>(), GEX_OP_FADD, flags);
 }
 
 void finalize_atomics() {
   gex_AD_Destroy(ad_i32);
+  gex_AD_Destroy(ad_f32);
 }
 
 }

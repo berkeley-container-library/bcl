@@ -106,11 +106,11 @@ inline T allreduce(const T& val, Op fn) {
 
 template <typename T>
 T fetch_and_op(const GlobalPtr <T> ptr, const T &val, const atomic_op <T> &op) {
-  static_assert(std::is_same<T, int32_t>::value);
+  static_assert(std::is_same<T, int32_t>::value || std::is_same<T, float>::value);
   T rv;
   void* dst_ptr = gasnet_resolve_address(ptr);
   // TODO: select the correct AD
-  gex_Event_t event = shim_gex_AD_OpNB<T>(ad_i32, &rv, ptr.rank, dst_ptr,
+  gex_Event_t event = shim_gex_AD_OpNB<T>(get_gex_ad<T>(), &rv, ptr.rank, dst_ptr,
                                           op.op(), val, val, 0);
   gex_Event_Wait(event);
   return rv;
@@ -122,7 +122,7 @@ future<T> arfetch_and_op(const GlobalPtr <T> ptr, const T &val, const atomic_op 
   future<T> future;
   void* dst_ptr = gasnet_resolve_address(ptr);
   // TODO: select the correct AD
-  gex_Event_t event = shim_gex_AD_OpNB<T>(ad_i32, future.value_.get(), ptr.rank, dst_ptr,
+  gex_Event_t event = shim_gex_AD_OpNB<T>(get_gex_ad<T>(), future.value_.get(), ptr.rank, dst_ptr,
                                           op.op(), val, val, 0);
   future.update(event);
   return std::move(future);
@@ -132,7 +132,7 @@ int32_t int_compare_and_swap(GlobalPtr<int32_t> ptr, int32_t old_val,
                              int32_t new_val) {
   void* dst_ptr = gasnet_resolve_address(ptr);
   int32_t rv;
-  gex_Event_t event = gex_AD_OpNB_I32(ad_i32, &rv, ptr.rank, dst_ptr,
+  gex_Event_t event = gex_AD_OpNB_I32(get_gex_ad<int32_t>(), &rv, ptr.rank, dst_ptr,
                                       GEX_OP_FCAS, old_val, new_val, 0);
 
   gex_Event_Wait(event);

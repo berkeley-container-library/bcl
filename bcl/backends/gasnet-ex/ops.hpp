@@ -94,6 +94,11 @@ struct and_<int> : public abstract_and_<int>, public abstract_int, public atomic
   gex_OP_t op() const { return GEX_OP_FAND; }
 };
 
+template <>
+struct and_<float> : public abstract_and_<float>, public abstract_float, public atomic_op<float> {
+  gex_OP_t op() const { return GEX_OP_FAND; }
+};
+
 // Define the plus operation
 template <typename T>
 struct abstract_plus : public virtual abstract_op <T> {
@@ -109,9 +114,19 @@ template <>
 struct plus <uint64_t> : public abstract_plus <uint64_t>, public abstract_uint64_t, public atomic_op <uint64_t> {};
 
 template <>
-struct plus <float> : public abstract_plus <float>, public abstract_float {};
+struct plus <float> : public abstract_plus <float>, public abstract_float, public atomic_op<float> {};
 
 template <>
 struct plus <double> : public abstract_plus <double>, public abstract_double {};
+
+template <typename T>
+struct abstract_min : public virtual abstract_op <T> {
+  gex_OP_t op() const { return GEX_OP_FMIN; }
+};
+
+template <typename T> struct min;
+
+template <>
+struct min <float> : public abstract_min<float>, public abstract_float, public atomic_op<float> {};
 
 }
