@@ -32,11 +32,19 @@ inline void barrier() {
 }
 
 inline __device__ __host__ size_t rank() {
-  return rank_;
+  #ifdef __CUDA_ARCH__
+    return rank_;
+  #else
+    return BCL::rank();
+  #endif
 }
 
 inline __device__ __host__ size_t nprocs() {
-  return nprocs_;
+  #ifdef __CUDA_ARCH__
+    return nprocs_;
+  #else
+    return BCL::rank();
+  #endif
 }
 
 inline void init(size_t shared_segment_size = 256) {

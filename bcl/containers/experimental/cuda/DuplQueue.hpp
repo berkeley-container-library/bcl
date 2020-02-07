@@ -12,6 +12,8 @@ struct DuplQueue {
   using size_type = size_t;
   using difference_type = ptrdiff_t;
 
+  DuplQueue() {}
+
   DuplQueue(size_t host, size_t capacity) :
             host_(host), capacity_(capacity) {
     std::vector<BCL::cuda::ptr<value_type>> ptrs(BCL::nprocs(), nullptr);
@@ -142,6 +144,11 @@ struct DuplQueue {
     return true;
   }
 
+  // TODO
+  //      1) Handle cases where the write is split on either side of the buffer
+  //      2) Don't do unnecessary memcpy's of tail value
+  //      2) Handle cases where there isn't enough space
+
   // REQUIRES: data is in pinned memory
   __device__ bool push(value_type* data, size_t size) {
     // TODO: bounds check
@@ -167,6 +174,8 @@ struct DuplQueue {
     atomicCAS(tail_mutex.local(), 1, 0);
     return true;
   }
+
+  // TODO: handle atomic insertions.
 
   __device__ bool local_pop(value_type& data) {
     int offset = threadIdx.x;

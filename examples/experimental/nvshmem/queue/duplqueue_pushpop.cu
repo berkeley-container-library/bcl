@@ -5,8 +5,6 @@
 
 #include <chrono>
 
-#define NUM_INSERTS 2*8*1024
-
 int main(int argc, char** argv) {
   BCL::init(16);
 
@@ -15,10 +13,12 @@ int main(int argc, char** argv) {
 
   BCL::cuda::init(8*1024);
 
-  size_t num_inserts = NUM_INSERTS;
+  size_t num_inserts = 2*1024;
   size_t insert_size = 1024;
 
-  BCL::cuda::DuplQueue<int> queue(0, num_inserts*insert_size);
+  size_t total_inserts = num_inserts*insert_size;
+
+  BCL::cuda::DuplQueue<int> queue(0, total_inserts);
 
   BCL::cuda::device_vector<int, BCL::cuda::bcl_allocator<int>> values(insert_size);
   // BCL::cuda::device_vector<int> values(insert_size);
@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
 
   double duration = std::chrono::duration<double>(end - begin).count();
 
-  double data_moved = num_inserts*insert_size*sizeof(int);
+  double data_moved = total_inserts*sizeof(int);
 
   double bw = data_moved / duration;
   double bw_gb = bw*1e-9;
@@ -52,20 +52,33 @@ int main(int argc, char** argv) {
   BCL::print("Total %lf s (%lf GB/s)\n", duration, bw_gb);
 
   if (BCL::rank() == 0) {
-    BCL::cuda::launch(num_inserts,
-                      [] __device__ (size_t idx, BCL::cuda::DuplQueue<int>& queue) {
+    std::vector<int> histogram_local(BCL::nprocs(), 0);
+    BCL::cuda::device_vector<int> histogram(BCL::nprocs());
+    histogram.assign(histogram_local.begin(), histogram_local.end());
+    BCL::cuda::launch(total_inserts,
+                      [] __device__ (size_t idx, BCL::cuda::DuplQueue<int>& queue,
+                                     BCL::cuda::device_vector<int>& histogram) {
                         int value = 12;
                         bool success = queue.local_pop(value);
-                        // printf("%lu: %d (%s)\n", idx, value, (success) ? "success" : "failure");
-                      }, queue);
+                        if (success && value >= 0 && value < BCL::cuda::nprocs()) {
+                          atomicAdd(&histogram.data()[value], 1);
+                        } else {
+                          printf("Error! Missing values in the queue (%lu)\n", idx);
+                        }
+                      }, queue, histogram);
     cudaDeviceSynchronize();
+
+    size_t total_counted = 0;
+    for (size_t i = 0; i < histogram.size(); i++) {
+      int hval = histogram[i];
+      printf("%lu: %d\n", i, hval);
+      total_counted += hval;
+    }
+    assert(total_counted == total_inserts);
   }
   BCL::cuda::barrier();
 
-  BCL::print("Here...\n");
-
-  BCL::cuda::barrier();
-  BCL::print("After barrier...\n");
+  BCL::print("Finished...\n");
 
   BCL::finalize();
   return 0;
