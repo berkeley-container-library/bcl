@@ -6,6 +6,22 @@ namespace BCL {
 
 namespace cuda {
 
+__device__ void wait_cycles(size_t cycles_to_wait) {
+  size_t start = clock64();
+  while (true) {
+    size_t now = clock64();
+    size_t waited;
+    if (now > start) {
+      waited = now - start;
+    } else {
+      waited = now + (size_t(-1) - start);
+    }
+    if (waited >= cycles_to_wait) {
+      return;
+    }
+  }
+}
+
 template <typename T>
 struct DuplQueue {
   using value_type = T;
@@ -127,8 +143,10 @@ struct DuplQueue {
     BCL::cuda::flush();
 
     if (warp_id == 0) {
-      // Get lock
-      while (atomicCAS(tail_mutex.local(), 0, 1) != 0) {}
+      // Get lock: tail_mutex 0 -> 1
+      while (atomicCAS(tail_mutex.local(), 0, 1) != 0) {
+        // wait_cycles(10);
+      }
 
       // Copy value
       int* new_tail_value_ = (int *) emalloc::emalloc(sizeof(int));
@@ -138,7 +156,7 @@ struct DuplQueue {
       BCL::cuda::memcpy(tail_ptr(), &new_tail_value, sizeof(int));
       BCL::cuda::flush();
 
-      // Unlock
+      // Unlock: tail_mutex 1 -> 0
       atomicCAS(tail_mutex.local(), 1, 0);
     }
     return true;
