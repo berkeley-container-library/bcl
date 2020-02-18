@@ -27,6 +27,7 @@ __global__ void set_device_ptr(char* smem_base_ptr, size_t rank, size_t nprocs) 
 }
 
 inline void barrier() {
+  cudaDeviceSynchronize();
   nvshmem_barrier_all();
   BCL::barrier();
 }
