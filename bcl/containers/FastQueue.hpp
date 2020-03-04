@@ -361,7 +361,7 @@ struct FastQueue {
     srand48(BCL::rank());
     for (size_t i = 0; i < n_vals; i++) {
       size_t idx = lrand48() % capacity();
-      this->begin()[idx] = i;
+      this->begin()[idx] = T();
     }
 
     for (size_t i = 0; i < n_vals; i++) {
