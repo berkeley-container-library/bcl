@@ -52,6 +52,8 @@ public:
 
   // Initialize a HashMap of at least size size.
   HashMap(size_type capacity) : capacity_(capacity), team_ptr_(new BCL::WorldTeam()) {
+    init_size_();
+
     local_capacity_ = (capacity_ + BCL::nprocs(team()) - 1) / BCL::nprocs(team());
     hash_table_.resize(BCL::nprocs(team()), nullptr);
 
@@ -73,6 +75,8 @@ public:
   }
 
   HashMap(size_type capacity, const BCL::Team& team_) : capacity_(capacity), team_ptr_(team_.clone()) {
+    init_size_();
+
     local_capacity_ = (capacity_ + BCL::nprocs(team()) - 1) / BCL::nprocs(team());
     hash_table_.resize(BCL::nprocs(team()), nullptr);
 
@@ -100,6 +104,10 @@ public:
         if (BCL::rank(team()) < hash_table_.size() && hash_table_[BCL::rank(team())] != nullptr) {
           BCL::dealloc(hash_table_[BCL::rank(team())]);
         }
+      }
+
+      if (BCL::rank() == size_.rank) {
+        BCL::dealloc(size_);
       }
     }
   }
@@ -182,6 +190,9 @@ public:
         ready_slot(slot);
       }
     } while (!success && probe < capacity());
+    if (success) {
+      BCL::fetch_and_op(size_, 1, BCL::plus<int>{});
+    }
     return success;
   }
 
@@ -296,6 +307,10 @@ public:
         success = true;
       }
     } while (!success);
+    if (success) {
+      // TODO: note that this is not thread-safe
+      (*size_.local())++;
+    }
     return success;
   }
 
@@ -423,6 +438,19 @@ public:
     return probe*probe;
   }
 
+  void init_size_(std::size_t on_rank = 0) {
+    if (BCL::rank() == on_rank) {
+      size_ = BCL::alloc<int>(1);
+      *size_ = 0;
+    }
+
+    size_ = BCL::broadcast(size_, on_rank);
+  }
+
+  size_type size() const {
+    return *size_;
+  }
+
   size_type capacity_;
   size_type local_capacity_;
 
@@ -431,6 +459,8 @@ public:
   Hash hash_fn_;
 
   std::vector <BCL::GlobalPtr <HME>> hash_table_;
+
+  BCL::GlobalPtr<int> size_ = nullptr;
 };
 
 } // end BCL
