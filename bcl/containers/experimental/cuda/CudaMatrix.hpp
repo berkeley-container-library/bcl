@@ -11,6 +11,7 @@
 
 #include <bcl/containers/detail/Blocking.hpp>
 #include <bcl/containers/experimental/cuda/sequential/device_vector.cuh>
+#include <bcl/containers/experimental/cuda/util/cuda_future.hpp>
 
 namespace BCL {
 
@@ -21,6 +22,25 @@ __global__ void apply_matrix_impl_(BCL::cuda::ptr<T> data, size_t size, Fn fn) {
   size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
   if (tid < size) {
     data.local()[tid] = fn(data.local()[tid]);
+  }
+}
+
+__global__ void dummy() {
+}
+
+template <typename T, typename Fn>
+__global__ void
+apply_matrix_2d_idx_impl_(BCL::cuda::ptr<T> data,
+                          size_t tile_shape_m, size_t tile_shape_n,
+                          size_t tile_size_m, size_t tile_size_n,
+                          size_t tile_offset_m, size_t tile_offset_n,
+                          Fn fn) {
+  size_t tidx = threadIdx.x + blockIdx.x * blockDim.x;
+  size_t tidy = threadIdx.y + blockIdx.y * blockDim.y;
+  if (tidx < tile_shape_m && tidy < tile_shape_n) {
+    // Column-major indexing, here.
+    size_t idx = tidx + tidy*tile_size_m;
+    data.local()[idx] = fn(data.local()[idx], tidx + tile_offset_m, tidy + tile_offset_n);
   }
 }
 
@@ -134,15 +154,26 @@ public:
     return tile_shape()[0] * tile_shape()[1];
   }
 
-  __device__ __host__ BCL::cuda::ptr<T> tile_ptr(matrix_dim idx) {
+  __device__ __host__ BCL::cuda::ptr<T> tile_ptr(matrix_dim idx) const {
     return ptrs_[idx[0]*grid_shape()[1] + idx[1]];
   }
 
-  __host__ auto get_tile(matrix_dim idx) {
-    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<int>> x(tile_size());
+  __host__ auto get_tile(matrix_dim idx) const {
+    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size());
     BCL::cuda::memcpy(x.data(), tile_ptr(idx), sizeof(T) * tile_size());
     BCL::cuda::flush();
     return x;
+  }
+
+  __host__ auto arget_tile(matrix_dim idx) const {
+    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size());
+    if (x.data() == nullptr) {
+      printf("%lu has nullptr x!\n", BCL::rank());
+      assert(false);
+    }
+    BCL::cuda::memcpy(x.data(), tile_ptr(idx), sizeof(T) * tile_size());
+    return cuda_future<BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>>
+                      (std::move(x), cuda_request());
   }
 
   // Apply fn, a device function, elementwise to the matrix.
@@ -151,7 +182,8 @@ public:
     for (size_t i = 0; i < grid_shape()[0]; i++) {
       for (size_t j = 0; j < grid_shape()[1]; j++) {
         if (tile_ptr({i, j}).rank_ == BCL::rank()) {
-          size_t block_size = std::min(std::size_t(1024), tile_size());
+          size_t block_dim = 1024;
+          size_t block_size = std::min(std::size_t(block_dim), tile_size());
           size_t num_blocks = (tile_size() + block_size - 1) / block_size;
           apply_matrix_impl_<<<num_blocks, block_size>>>(tile_ptr({i, j}), tile_size(), fn);
         }
@@ -159,11 +191,83 @@ public:
     }
   }
 
-  __host__ void print_info() const {
+  template <typename Fn>
+  __host__ void apply_by_index(Fn fn) {
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        if (tile_ptr({i, j}).rank_ == BCL::rank()) {
+          size_t extent_m = tile_shape()[0];
+          size_t extent_n = tile_shape()[1];
+          size_t block_dim = 32;
+          dim3 num_blocks((extent_m + block_dim - 1) / block_dim, (extent_n + block_dim - 1) / block_dim);
+          dim3 block_size(std::min(std::size_t(block_dim), extent_m), std::min(std::size_t(block_dim), extent_n));
+          apply_matrix_2d_idx_impl_<<<num_blocks, block_size>>>
+             (tile_ptr({i, j}), tile_shape({i, j})[0], tile_shape({i, j})[1],
+                                tile_shape()[0], tile_shape()[1],
+                                i*tile_shape()[0], j*tile_shape()[1],
+                                fn);
+        }
+      }
+    }
+  }
+
+  __host__ std::vector<T> get_matrix() const {
+    std::vector<T> local_matrix(shape()[0]*shape()[1]);
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        auto f = get_tile({i, j});
+        std::vector<T> local_tile(f.size());
+        cudaMemcpy(local_tile.data(), f.data(), sizeof(T)*f.size(), cudaMemcpyDeviceToHost);
+        f.destroy();
+
+        size_t offset_idx_m = tile_shape()[0]*i;
+        size_t offset_idx_n = tile_shape()[1]*j;
+        for (size_t ii = 0; ii < tile_shape({i, j})[0]; ii++) {
+          for (size_t jj = 0; jj < tile_shape({i, j})[1]; jj++) {
+            size_t li = ii + offset_idx_m;
+            size_t lj = jj + offset_idx_n;
+            local_matrix[li*shape()[1] + lj] = local_tile[index({ii, jj}, tile_shape())];
+          }
+        }
+      }
+    }
+    return local_matrix;
+  }
+
+  __host__ __device__ std::size_t index(matrix_dim idx, matrix_dim dims) const {
+    // Column-major indexing, here.
+    return idx[0] + idx[1]*dims[0];
+  }
+
+  __host__ void randomize() {
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        if (tile_ptr({i, j}).rank_ == BCL::rank()) {
+          std::vector<T> local(tile_size());
+          for (size_t k = 0; k < local.size(); k++) {
+            local[k] = (lrand48() % 101) - 50;
+          }
+          cudaMemcpy(tile_ptr({i, j}).local(), local.data(), sizeof(T)*tile_size(), cudaMemcpyHostToDevice);
+        }
+      }
+    }
+  }
+
+  __host__ void print_info(bool print_pgrid = true) const {
     printf("=== MATRIX INFO ===\n");
     printf("%lu x %lu matrix\n", shape()[0], shape()[1]);
     printf("  * Consists of %lu x %lu tiles\n", tile_shape()[0], tile_shape()[1]);
     printf("  * Arranged in a %lu x %lu grid\n", grid_shape()[0], grid_shape()[1]);
+
+    if (print_pgrid) {
+      for (size_t i = 0; i < grid_shape()[0]; i++) {
+        printf("   ");
+        for (size_t j = 0; j < grid_shape()[1]; j++) {
+          printf("%2lu ", tile_ptr({i, j}).rank_);
+        }
+        printf("\n");
+      }
+    }
   }
 
 };

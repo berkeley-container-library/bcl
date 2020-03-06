@@ -11,6 +11,11 @@ void flush();
 
 template <typename T>
 inline void copy_cross_gpu_(const BCL::cuda::ptr<T>& dst, const BCL::cuda::ptr<T>& src, size_t count) {
+  if (dst.rank_ != BCL::rank() && src.rank_ != BCL::rank()) {
+    printf("Trying to copy from %lu => %lu (I am %lu) [That's (%s -> %s)\n",
+           src.rank_, dst.rank_, BCL::rank(),
+           src.str().c_str(), dst.str().c_str());
+  }
   assert(dst.rank_ == BCL::rank() || src.rank_ == BCL::rank());
   if (dst.rank_ == BCL::rank()) {
     nvshmem_getmem(dst.local(), src.rptr(), sizeof(T)*count, src.rank_);
@@ -28,8 +33,16 @@ inline __host__ __device__ void read(const BCL::cuda::ptr<T>& src, T* dst, size_
   #else
     if (src.rank_ == BCL::rank()) {
       cudaMemcpy(dst, src.rptr(), sizeof(T)*count, cudaMemcpyDeviceToHost);
+    } else if (__is_valid_cuda_gptr(dst)) {
+      BCL::cuda::ptr<T> local_ptr = __to_cuda_gptr(dst);
+
+      copy_cross_gpu_(local_ptr, src, count);
     } else {
       BCL::cuda::ptr<T> local_ptr = BCL::cuda::alloc<T>(count);
+
+      if (local_ptr == nullptr) {
+        throw std::runtime_error("BCL GPU Write: out of meomry!");
+      }
 
       copy_cross_gpu_(local_ptr, src, count);
       BCL::cuda::flush();

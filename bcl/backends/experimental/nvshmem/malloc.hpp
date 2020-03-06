@@ -10,6 +10,42 @@ namespace BCL {
 
 namespace cuda {
 
+template <typename T>
+inline bool __is_valid_cuda_gptr(T* ptr) {
+  if (ptr == nullptr) {
+    return true;
+  }
+
+  if (ptr < BCL::cuda::smem_base_ptr) {
+    return false;
+  }
+
+  int64_t offset = sizeof(T)*(ptr - reinterpret_cast<T*>(BCL::cuda::smem_base_ptr));
+
+  if (offset < BCL::cuda::shared_segment_size) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+template <typename T>
+inline BCL::cuda::ptr<T> __to_cuda_gptr(T* ptr) {
+  // TODO: Hrmmm... what to do for local(NULL) -> Global()?
+  if (ptr == nullptr) {
+    return nullptr;
+  }
+
+  size_t offset = sizeof(T)*(ptr - reinterpret_cast<T*>(BCL::cuda::smem_base_ptr));
+
+  if ((char *) ptr < BCL::cuda::smem_base_ptr || offset >= BCL::cuda::shared_segment_size) {
+    // XXX: alternative would be returning nullptr
+    throw std::runtime_error("BCL::__to_cuda_gptr(): given pointer is outside shared segment.");
+  }
+
+  return BCL::cuda::ptr<T>(BCL::rank(), offset);
+}
+
 struct fchunk_t {
   size_t ptr_ = 0;
   size_t size_ = 0;

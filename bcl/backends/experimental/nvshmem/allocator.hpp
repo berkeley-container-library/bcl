@@ -45,23 +45,6 @@ public:
 };
 
 template <typename T>
-inline BCL::cuda::ptr<T> __to_global_ptr(T* ptr) {
-  // TODO: Hrmmm... what to do for local(NULL) -> Global()?
-  if (ptr == nullptr) {
-    return nullptr;
-  }
-
-  size_t offset = sizeof(T)*(ptr - reinterpret_cast<T*>(BCL::cuda::smem_base_ptr));
-
-  if ((char *) ptr < BCL::cuda::smem_base_ptr || offset >= BCL::cuda::shared_segment_size) {
-    // XXX: alternative would be returning nullptr
-    throw std::runtime_error("BCL::__to_global_ptr(): given pointer is outside shared segment.");
-  }
-
-  return BCL::cuda::ptr<T>(BCL::rank(), offset);
-}
-
-template <typename T>
 class bcl_allocator {
 public:
   using value_type = T;
@@ -83,7 +66,7 @@ public:
   }
 
   void deallocate(pointer ptr, size_type n = 0) {
-    auto gptr = __to_global_ptr<value_type>(ptr);
+    auto gptr = __to_cuda_gptr<value_type>(ptr);
     BCL::cuda::dealloc<value_type>(gptr);
   }
 
