@@ -166,12 +166,19 @@ public:
   }
 
   __host__ auto arget_tile(matrix_dim idx) const {
-    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size());
+    using no_init = typename BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>::no_init;
+    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size(), no_init{});
     if (x.data() == nullptr) {
       printf("%lu has nullptr x!\n", BCL::rank());
       assert(false);
     }
+    auto begin = std::chrono::high_resolution_clock::now();
     BCL::cuda::memcpy(x.data(), tile_ptr(idx), sizeof(T) * tile_size());
+    auto end = std::chrono::high_resolution_clock::now();
+    double duration = std::chrono::duration<double>(end - begin).count();
+    if (BCL::rank() == 0) {
+      printf("memcpy: %lf\n", duration);
+    }
     return cuda_future<BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>>
                       (std::move(x), cuda_request());
   }

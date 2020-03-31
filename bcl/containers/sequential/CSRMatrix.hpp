@@ -21,27 +21,20 @@
 #include <unordered_map>
 
 #include <bcl/bcl.hpp>
-#include <bcl/containers/detail/mkl/mkl_error_handle.hpp>
-#include <bcl/containers/detail/mkl/spmatrix.hpp>
 #include "matrix_io.hpp"
-
-#include <mtspgemmlib/utility.h>
-#include <mtspgemmlib/CSC.h>
-#include <mtspgemmlib/CSR.h>
-#include <mtspgemmlib/multiply.h>
-#include <mtspgemmlib/heap_mult.h>
-#include <mtspgemmlib/hash_mult_hw.h>
-
-#include <mkl.h>
 
 namespace BCL {
 
-template <typename T, typename index_type>
-struct SparseAccumulator;
+enum FileFormat {
+  MatrixMarket,
+  MatrixMarketZeroIndexed,
+  Binary,
+  Unknown
+};
 
 template <
           typename T,
-          typename index_t = MKL_INT,
+          typename index_t = int,
           typename Allocator = std::allocator<T>
           >
 struct CSRMatrix {
@@ -141,19 +134,6 @@ struct CSRMatrix {
     }
   }
 
-  template <typename Permuter>
-  CSRMatrix permute(const Permuter& permuter) const {
-    assert(m_ == n_);
-    BCL::SparseAccumulator<T, index_type> acc;
-
-    for (size_t i = 0 ; i < m_; i++) {
-      for (size_t j = row_ptr_[i]; j < row_ptr_[i+1]; j++) {
-        acc.accumulate({permuter[i], permuter[col_ind_[j]]}, vals_[j]);
-      }
-    }
-    return acc.get_matrix(m_, n_);
-  }
-
   // Return a CSRMatrix representing the submatrix at coordinates [imin, imax), [jmin, jmax)
   CSRMatrix get_slice_impl_(size_type imin, size_type imax, size_type jmin,
                             size_type jmax) {
@@ -228,234 +208,6 @@ struct CSRMatrix {
         map[std::make_tuple(i, col_ind_[j])] = vals_[j];
       }
     }
-  }
-
-  CSRMatrix(sparse_matrix_t mat_descr) {
-    sparse_index_base_t indexing;
-    MKL_INT rows, cols;
-    MKL_INT *rows_start, *rows_end, *col_ind;
-    T* vals;
-    auto status = mkl_sparse_s_export_csr(mat_descr, &indexing, &rows, &cols,
-                            &rows_start, &rows_end, &col_ind, &vals);
-
-    mkl_error_handle(status, "Export C");
-
-    size_t ind = (indexing == SPARSE_INDEX_BASE_ZERO) ? 0 : 1;
-    m_ = rows;
-    n_ = cols;
-
-    row_ptr_.resize(m_+1);
-
-    nnz_ = 0;
-    for (size_t i = 0; i < rows; i++) {
-      row_ptr_[i] = rows_start[i-ind]-ind;
-      row_ptr_[i+1] = rows_end[i-ind]-ind;
-      for (MKL_INT j = rows_start[i-ind]-ind; j < rows_end[i-ind]-ind; j++) {
-        col_ind_.push_back(col_ind[j-ind]-ind);
-        vals_.push_back(vals[j-ind]-ind);
-        nnz_++;
-      }
-    }
-  }
-
-  template <
-            typename Mult = std::multiplies<value_type>,
-            typename Plus = std::plus<value_type>
-            >
-  CSRMatrix dot(CSRMatrix& b) {
-    CSRMatrix& a = *this;
-
-    if (a.nnz_ == 0 || b.nnz_ == 0) {
-      return CSRMatrix(a.m_, b.n_);
-    }
-
-    // do a*b
-
-    CSR<index_type, T> a_mat, b_mat, c_mat;
-
-
-    a_mat.rows = a.m_;
-    a_mat.cols = a.n_;
-    a_mat.nnz = a.nnz_;
-    a_mat.rowptr = a.row_ptr_.data();
-    a_mat.colids = a.col_ind_.data();
-    a_mat.values = a.vals_.data();
-    a_mat.zerobased = true;
-
-    b_mat.rows = b.m_;
-    b_mat.cols = b.n_;
-    b_mat.nnz = b.nnz_;
-    b_mat.rowptr = b.row_ptr_.data();
-    b_mat.colids = b.col_ind_.data();
-    b_mat.values = b.vals_.data();
-    b_mat.zerobased = true;
-
-    HashSpGEMM<false, true>(a_mat, b_mat, c_mat, Mult(), Plus());
-
-    CSRMatrix c(c_mat.rows, c_mat.cols, c_mat.nnz);
-
-    c.row_ptr_.assign(c_mat.rowptr, c_mat.rowptr + c.row_ptr_.size());
-    c.col_ind_.assign(c_mat.colids, c_mat.colids + c.col_ind_.size());
-    c.vals_.assign(c_mat.values, c_mat.values + c.vals_.size());
-
-    a_mat.nnz = 0;
-    a_mat.rows = 0;
-    a_mat.rowptr = nullptr;
-    a_mat.colids = nullptr;
-    a_mat.values = nullptr;
-    b_mat.nnz = 0;
-    b_mat.rows = 0;
-    b_mat.rowptr = nullptr;
-    b_mat.colids = nullptr;
-    b_mat.values = nullptr;
-
-    return c;
-
-    /*
-    sparse_matrix_t a_descr, b_descr;
-    sparse_matrix_t c_descr = NULL;
-
-    using a_type = typename std::remove_reference<decltype(a)>::type;
-    using b_type = typename std::remove_reference<decltype(b)>::type;
-    static_assert(std::is_same<typename a_type::index_type, MKL_INT>::value);
-    static_assert(std::is_same<typename b_type::index_type, MKL_INT>::value);
-
-    auto status = mkl_sparse_s_create_csr(&a_descr, SPARSE_INDEX_BASE_ZERO, a.m_, a.n_,
-                                          a.row_ptr_.data(), a.row_ptr_.data()+1,
-                                          a.col_ind_.data(), a.vals_.data());
-    mkl_error_handle(status, "Creating A");
-    status = mkl_sparse_s_create_csr(&b_descr, SPARSE_INDEX_BASE_ZERO, b.m_, b.n_,
-                                     b.row_ptr_.data(), b.row_ptr_.data()+1,
-                                     b.col_ind_.data(), b.vals_.data());
-    mkl_error_handle(status, "Creating B");
-
-    status = mkl_sparse_spmm(SPARSE_OPERATION_NON_TRANSPOSE, a_descr, b_descr, &c_descr);
-    mkl_error_handle(status, "SpMM");
-
-    auto c = CSRMatrix(c_descr);
-
-    mkl_sparse_destroy(a_descr);
-    mkl_sparse_destroy(b_descr);
-    mkl_sparse_destroy(c_descr);
-
-    return CSRMatrix(c);
-    */
-  }
-
-  CSRMatrix dot_mkl(CSRMatrix& b) {
-    CSRMatrix& a = *this;
-
-    if (a.nnz_ == 0 || b.nnz_ == 0) {
-      return CSRMatrix(a.m_, b.n_);
-    }
-
-    // do a*b
-
-    sparse_matrix_t a_descr, b_descr;
-    sparse_matrix_t c_descr = NULL;
-
-    using a_type = typename std::remove_reference<decltype(a)>::type;
-    using b_type = typename std::remove_reference<decltype(b)>::type;
-    static_assert(std::is_same<typename a_type::index_type, MKL_INT>::value);
-    static_assert(std::is_same<typename b_type::index_type, MKL_INT>::value);
-
-    auto status = mkl_sparse_s_create_csr(&a_descr, SPARSE_INDEX_BASE_ZERO, a.m_, a.n_,
-                                          a.row_ptr_.data(), a.row_ptr_.data()+1,
-                                          a.col_ind_.data(), a.vals_.data());
-    mkl_error_handle(status, "Creating A");
-    status = mkl_sparse_s_create_csr(&b_descr, SPARSE_INDEX_BASE_ZERO, b.m_, b.n_,
-                                     b.row_ptr_.data(), b.row_ptr_.data()+1,
-                                     b.col_ind_.data(), b.vals_.data());
-    mkl_error_handle(status, "Creating B");
-
-    status = mkl_sparse_spmm(SPARSE_OPERATION_NON_TRANSPOSE, a_descr, b_descr, &c_descr);
-    mkl_error_handle(status, "SpMM");
-
-    auto c = CSRMatrix(c_descr);
-
-    mkl_sparse_destroy(a_descr);
-    mkl_sparse_destroy(b_descr);
-    mkl_sparse_destroy(c_descr);
-
-    return CSRMatrix(c);
-  }
-
-  BCL::mkl::spmatrix<value_type> dot_mkl_raw(CSRMatrix& b) {
-    CSRMatrix& a = *this;
-
-    if (a.nnz_ == 0 || b.nnz_ == 0) {
-      return BCL::mkl::spmatrix<value_type>(a.m_, b.n_);
-    }
-
-    // do a*b
-    sparse_matrix_t a_descr, b_descr;
-    BCL::mkl::spmatrix<value_type> c(a.m_, b.n_);
-
-    auto status = mkl_sparse_s_create_csr(&a_descr, SPARSE_INDEX_BASE_ZERO, a.m_, a.n_,
-                                          a.row_ptr_.data(), a.row_ptr_.data()+1,
-                                          a.col_ind_.data(), a.vals_.data());
-    mkl_error_handle(status, "Creating A");
-    status = mkl_sparse_s_create_csr(&b_descr, SPARSE_INDEX_BASE_ZERO, b.m_, b.n_,
-                                          b.row_ptr_.data(), b.row_ptr_.data()+1,
-                                          b.col_ind_.data(), b.vals_.data());
-    mkl_error_handle(status, "Creating B");
-
-    status = mkl_sparse_spmm(SPARSE_OPERATION_NON_TRANSPOSE, a_descr, b_descr, &c.matrix_);
-    mkl_error_handle(status, "SpMM");
-
-    c.has_matrix_ = true;
-
-    mkl_sparse_destroy(a_descr);
-    mkl_sparse_destroy(b_descr);
-
-    return c;
-  }
-
-  template <typename A>
-  CSRMatrix operator+(CSRMatrix<T, index_type, A>& b) {
-    CSRMatrix& a = *this;
-
-    if (a.nnz_ == 0 && b.nnz_ == 0) {
-      return CSRMatrix(a.m_, b.n_);
-    } else if (a.nnz_ == 0) {
-      CSRMatrix b_ret(1, 1);
-      b_ret = b;
-      return b_ret;
-    } else if (b.nnz_ == 0) {
-      return a;
-    }
-
-    assert(a.m_ == b.m_);
-    assert(a.n_ == b.n_);
-
-    // do a*b
-    sparse_matrix_t a_descr, b_descr;
-    sparse_matrix_t c_descr = NULL;
-
-    using a_type = typename std::remove_reference<decltype(a)>::type;
-    using b_type = typename std::remove_reference<decltype(b)>::type;
-    static_assert(std::is_same<typename a_type::index_type, MKL_INT>::value);
-    static_assert(std::is_same<typename b_type::index_type, MKL_INT>::value);
-
-    auto status = mkl_sparse_s_create_csr(&a_descr, SPARSE_INDEX_BASE_ZERO, a.m_, a.n_,
-                                          a.row_ptr_.data(), a.row_ptr_.data()+1,
-                                          a.col_ind_.data(), a.vals_.data());
-    mkl_error_handle(status, "Creating A");
-    status = mkl_sparse_s_create_csr(&b_descr, SPARSE_INDEX_BASE_ZERO, b.m_, b.n_,
-                                          b.row_ptr_.data(), b.row_ptr_.data()+1,
-                                          b.col_ind_.data(), b.vals_.data());
-    mkl_error_handle(status, "Creating B");
-
-    status = mkl_sparse_s_add(SPARSE_OPERATION_NON_TRANSPOSE, a_descr, 1.0, b_descr, &c_descr);
-    mkl_error_handle(status, "SpAdd");
-
-    auto c = CSRMatrix(c_descr);
-
-    mkl_sparse_destroy(a_descr);
-    mkl_sparse_destroy(b_descr);
-    mkl_sparse_destroy(c_descr);
-
-    return CSRMatrix(c);
   }
 
   // TODO: this should be relatively efficient, but

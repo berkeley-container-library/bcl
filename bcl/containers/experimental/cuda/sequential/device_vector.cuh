@@ -38,6 +38,8 @@ template <typename T,
 class device_vector {
 public:
 
+  struct no_init {};
+
   using value_type = T;
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
@@ -75,6 +77,13 @@ public:
     std::vector<value_type> v(count, value);
 
     cudaMemcpy(d_ptr_, v.data(), sizeof(value_type)*v.size(), cudaMemcpyHostToDevice);
+  }
+
+  explicit device_vector(size_type count,
+                         no_init) {
+    capacity_ = count;
+    size_ = count;
+    d_ptr_ = allocator_type{}.allocate(count);
   }
 
   void resize(size_type count) {

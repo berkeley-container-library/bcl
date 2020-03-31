@@ -134,26 +134,39 @@ void cblas_gemm(const CBLAS_LAYOUT Layout,
 
 
 
+double duration_issue;
+double duration_sync;
+double duration_compute;
+double duration_barrier;
 
 template <typename T>
 void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>& c) {
   for (size_t i = 0; i < c.grid_shape()[0]; i++) {
     for (size_t j = 0; j < c.grid_shape()[1]; j++) {
       if (BCL::rank() == c.tile_ptr({i, j}).rank_) {
-        size_t k_offset = j;
+        size_t k_offset = i + j;
+        auto begin = std::chrono::high_resolution_clock::now();
         auto buf_a = a.arget_tile({i, k_offset % a.grid_shape()[1]});
         auto buf_b = b.arget_tile({k_offset % a.grid_shape()[1], j});
+        auto end = std::chrono::high_resolution_clock::now();
+        duration_issue += std::chrono::duration<double>(end - begin).count();
         for (size_t k_ = 0; k_ < a.grid_shape()[1]; k_++) {
           size_t k = (k_ + k_offset) % a.grid_shape()[1];
 
+          auto begin = std::chrono::high_resolution_clock::now();
           auto a_local = buf_a.get();
           auto b_local = buf_b.get();
+          auto end = std::chrono::high_resolution_clock::now();
+          duration_sync += std::chrono::duration<double>(end - begin).count();
 
           T* c_ptr = c.tile_ptr({i, j}).local();
 
           if (k_+1 < a.grid_shape()[1]) {
+            begin = std::chrono::high_resolution_clock::now();
             buf_a = a.arget_tile({i, (k+1) % a.grid_shape()[1]});
             buf_b = b.arget_tile({(k+1) % a.grid_shape()[1], j});
+            end = std::chrono::high_resolution_clock::now();
+            duration_issue += std::chrono::duration<double>(end - begin).count();
           }
 
           cublasOperation_t transa = CUBLAS_OP_N;
@@ -161,6 +174,7 @@ void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>
 
           T alpha = 1.0;
           T beta = 1.0;
+          begin = std::chrono::high_resolution_clock::now();
           cublasGemmWrapper(cublas_handle, transa, transb,
                             c.tile_shape({i, j})[0], // m
                             c.tile_shape({i, j})[1], // n
@@ -171,6 +185,8 @@ void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>
                             &beta,
                             c_ptr, c.tile_shape()[0]);
           cudaDeviceSynchronize();
+          end = std::chrono::high_resolution_clock::now();
+          duration_compute += std::chrono::duration<double>(end - begin).count();
 
           a_local.destroy();
           b_local.destroy();
@@ -178,7 +194,10 @@ void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>
       }
     }
   }
+  auto begin = std::chrono::high_resolution_clock::now();
   BCL::cuda::barrier();
+  auto end = std::chrono::high_resolution_clock::now();
+  duration_barrier = std::chrono::duration<double>(end - begin).count();
 }
 
 int main(int argc, char** argv) {
@@ -193,6 +212,11 @@ int main(int argc, char** argv) {
   size_t dim = std::atol(argv[1]);
 
   using matmul_type = float;
+
+  duration_issue = 0;
+  duration_sync = 0;
+  duration_compute = 0;
+  duration_barrier = 0;
 
   BCL::print("Choosing blocks...\n");
   auto blocks = BCL::block_matmul(dim, dim, dim);
@@ -251,8 +275,21 @@ int main(int argc, char** argv) {
   double gflops = n_gflops / duration;
 
   BCL::print("Done in %lf s (%lf GFLOPs)\n", duration, gflops);
-  BCL::print("%lf TFLOPs/GPU (%lf of peak)\n",
+  BCL::print("%lf TFLOPs/GPU (%lf%% of peak)\n",
              1e-3*(gflops / BCL::nprocs()), (100*(1e-3*(gflops / BCL::nprocs())) / 15.7));
+
+  duration_issue = BCL::allreduce(duration_issue, std::plus<double>{});
+  duration_sync = BCL::allreduce(duration_sync, std::plus<double>{});
+  duration_compute = BCL::allreduce(duration_compute, std::plus<double>{});
+  duration_barrier = BCL::allreduce(duration_barrier, std::plus<double>{});
+
+  if (BCL::rank() == 0) {
+    printf("duration_issue %lf\n", duration_issue / BCL::nprocs());
+    printf("duration_sync %lf\n", duration_sync / BCL::nprocs());
+    printf("duration_compute %lf\n", duration_compute / BCL::nprocs());
+    printf("duration_barrier %lf\n", duration_barrier / BCL::nprocs());
+  }
+
   if (BCL::rank() == 0 && test_result) {
     printf("Pulling matrices...\n");
     fflush(stdout);

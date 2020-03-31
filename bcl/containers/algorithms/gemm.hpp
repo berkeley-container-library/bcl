@@ -46,7 +46,7 @@ void gemm_notrans_impl_(const BCL::DExpr<E>& a, const BCL::DExpr<V>& b, BCL::DMa
     for (size_t j = 0; j < c.grid_shape()[1]; j++) {
       if (c.tile_ptr(i, j).is_local()) {
 
-        size_t k_offset = j;
+        size_t k_offset = i + j;
         auto buf_a = a.arget_tile(i, k_offset % a.grid_shape()[1]);
         auto buf_b = b.arget_tile(k_offset % a.grid_shape()[1], j);
         BCL::GlobalPtr<T> my_c = c.tile_ptr(i, j);
@@ -112,7 +112,7 @@ void slicing_gemm(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatr
 
         size_t k_size = (a.shape()[1] + k_steps - 1) / k_steps;
 
-        size_t k_offset = j;
+        size_t k_offset = i + j;
 
         size_t k = k_offset % k_steps;
         size_t k_min = k_size*k;
