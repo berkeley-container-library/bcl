@@ -172,15 +172,28 @@ public:
       printf("%lu has nullptr x!\n", BCL::rank());
       assert(false);
     }
-    auto begin = std::chrono::high_resolution_clock::now();
-    BCL::cuda::memcpy(x.data(), tile_ptr(idx), sizeof(T) * tile_size());
-    auto end = std::chrono::high_resolution_clock::now();
-    double duration = std::chrono::duration<double>(end - begin).count();
-    if (BCL::rank() == 0) {
-      printf("memcpy: %lf\n", duration);
-    }
+    // BCL::cuda::memcpy(x.data(), tile_ptr(idx), sizeof(T) * tile_size());
+    nvshmem_getmem_nbi(x.data(), tile_ptr(idx).rptr(), sizeof(T)*tile_size(),
+                       tile_ptr(idx).rank_);
     return cuda_future<BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>>
                       (std::move(x), cuda_request());
+  }
+
+  __host__ auto arget_tile_exp(matrix_dim idx) const {
+    using no_init = typename BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>::no_init;
+    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size(), no_init{});
+    if (x.data() == nullptr) {
+      printf("%lu has nullptr x!\n", BCL::rank());
+      assert(false);
+    }
+    std::thread memcpy_thread([](auto dst, auto src, auto n) {
+      BCL::cuda::memcpy(dst, src, n);
+    }, x.data(), tile_ptr(idx), sizeof(T) * tile_size());
+    using request_type = cuda_thread_request<decltype(memcpy_thread)>;
+    return cuda_future<BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>, request_type>
+                      (std::move(x),
+                       cuda_thread_request<decltype(memcpy_thread)>
+                                                    (std::move(memcpy_thread)));
   }
 
   // Apply fn, a device function, elementwise to the matrix.

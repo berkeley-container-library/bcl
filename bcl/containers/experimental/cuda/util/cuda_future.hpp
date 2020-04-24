@@ -19,32 +19,61 @@ public:
   }
 };
 
-template <typename T>
+template <typename Thread>
+class cuda_thread_request {
+public:
+  using thread_type = Thread;
+
+  cuda_thread_request(thread_type&& thread) : thread_(std::move(thread)) {}
+
+  void wait() {
+    thread_.join();
+    BCL::cuda::flush();
+  }
+
+  bool check() const {
+    return true;
+  }
+
+  thread_type thread_;
+};
+
+template <typename T, typename Request = cuda_request>
 class cuda_future {
-  std::vector<cuda_request> requests_;
+  using request_type = Request;
+  std::vector<request_type> requests_;
 
 public:
   std::unique_ptr<T> value_;
 
   cuda_future() : value_(new T()) {}
 
-  cuda_future(T&& value, const cuda_request& request)
+  /*
+  cuda_future(T&& value, const request_type& request)
          : value_(new T(std::move(value))), requests_({request}) {}
 
-  cuda_future(T&& value, const std::vector<cuda_request>& requests)
+  cuda_future(T&& value, const std::vector<request_type>& requests)
          : value_(new T(std::move(value))), requests_(requests) {}
 
-  cuda_future(T&& value, std::vector<cuda_request>&& requests)
+  cuda_future(T&& value, std::vector<request_type>&& requests)
          : value_(new T(std::move(value))), requests_(std::move(requests)) {}
 
-  cuda_future(const T& value, const cuda_request& request)
+  cuda_future(const T& value, const request_type& request)
          : value_(new T(value)), requests_({request}) {}
+         */
 
-  void update(const cuda_request& request) {
-    requests_.push_back(request);
+  cuda_future(T&& value, request_type&& request)
+         : value_(new T(std::move(value))) {
+    requests_.push_back(std::move(request));
   }
 
-  void update(cuda_request&& request) {
+         /*
+  void update(const request_type& request) {
+    requests_.push_back(request);
+  }
+  */
+
+  void update(request_type&& request) {
     requests_.push_back(std::move(request));
   }
 
