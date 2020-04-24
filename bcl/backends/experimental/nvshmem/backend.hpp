@@ -49,7 +49,7 @@ inline __device__ __host__ size_t nprocs() {
 }
 
 inline void init(size_t shared_segment_size = 256) {
-  BCL::cuda::shared_segment_size = 1024*1024*shared_segment_size;
+  BCL::cuda::shared_segment_size = 1000*1000*shared_segment_size;
 
   nvshmemx_init_attr_t attr;
   attr.mpi_comm = &BCL::comm;
