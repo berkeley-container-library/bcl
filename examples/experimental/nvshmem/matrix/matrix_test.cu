@@ -141,13 +141,21 @@ double duration_barrier;
 
 template <typename T>
 void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>& c) {
+  using timer_type = decltype(std::chrono::high_resolution_clock::now());
+  timer_type fetch_begin, fetch_end;
   for (size_t i = 0; i < c.grid_shape()[0]; i++) {
     for (size_t j = 0; j < c.grid_shape()[1]; j++) {
       if (BCL::rank() == c.tile_ptr({i, j}).rank_) {
         size_t k_offset = i + j;
         auto begin = std::chrono::high_resolution_clock::now();
+        fetch_begin = begin;
         auto buf_a = a.arget_tile({i, k_offset % a.grid_shape()[1]});
         auto buf_b = b.arget_tile({k_offset % a.grid_shape()[1], j});
+        /*
+        printf("RANK(%lu) first get is from (%lu, %lu)\n", BCL::rank(),
+                            a.tile_ptr({i, k_offset % a.grid_shape()[1]}).rank_,
+                            b.tile_ptr({k_offset % a.grid_shape()[1], j}));
+                            */
         auto end = std::chrono::high_resolution_clock::now();
         duration_issue += std::chrono::duration<double>(end - begin).count();
         for (size_t k_ = 0; k_ < a.grid_shape()[1]; k_++) {
@@ -157,12 +165,24 @@ void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>
           auto a_local = buf_a.get();
           auto b_local = buf_b.get();
           auto end = std::chrono::high_resolution_clock::now();
+          fetch_end = end;
           duration_sync += std::chrono::duration<double>(end - begin).count();
+
+          
+          double words_fetched = sizeof(T)*(a.tile_size() + b.tile_size());
+          words_fetched *= 1e-9;
+          double gbps = words_fetched / std::chrono::duration<double>(fetch_end - fetch_begin).count();
+          /*
+          printf("RANK(%lu) %lu'th sync is %lf (%lf GB/s, %s)\n", BCL::rank(), k_,
+                 std::chrono::duration<double>(end - begin).count(),
+                 gbps, (gbps < 4.17) ? "SLOW" : "FAST");
+                 */
 
           T* c_ptr = c.tile_ptr({i, j}).local();
 
           if (k_+1 < a.grid_shape()[1]) {
             begin = std::chrono::high_resolution_clock::now();
+            fetch_begin = begin;
             buf_a = a.arget_tile({i, (k+1) % a.grid_shape()[1]});
             buf_b = b.arget_tile({(k+1) % a.grid_shape()[1], j});
             end = std::chrono::high_resolution_clock::now();
@@ -187,6 +207,12 @@ void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>
           cudaDeviceSynchronize();
           end = std::chrono::high_resolution_clock::now();
           duration_compute += std::chrono::duration<double>(end - begin).count();
+          double gflops = num_gflops(c.tile_shape({i, j})[0], c.tile_shape({i, j})[1], a.tile_shape({i, k})[1])
+                          / std::chrono::duration<double>(end - begin).count();
+                          /*
+          printf("RANK(%lu) Local matmul %lf GFLOPs (%lf of peak)\n",
+                 BCL::rank(), gflops, (100*(1e-3*gflops / 15.7)));
+                 */
 
           a_local.destroy();
           b_local.destroy();
@@ -269,6 +295,12 @@ int main(int argc, char** argv) {
   BCL::cuda::barrier();
   auto end = std::chrono::high_resolution_clock::now();
   double duration = std::chrono::duration<double>(end - begin).count();
+
+  fflush(stdout);
+  BCL::barrier();
+  fflush(stdout);
+  sleep(1);
+  BCL::barrier();
 
   double n_gflops = num_gflops(c.shape()[0], c.shape()[1], a.shape()[1]);
 

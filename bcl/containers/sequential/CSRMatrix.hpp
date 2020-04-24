@@ -25,13 +25,6 @@
 
 namespace BCL {
 
-enum FileFormat {
-  MatrixMarket,
-  MatrixMarketZeroIndexed,
-  Binary,
-  Unknown
-};
-
 template <
           typename T,
           typename index_t = int,
@@ -228,7 +221,11 @@ struct CSRMatrix {
 
     std::sort(values.begin(), values.end(),
               [](const auto& a, const auto& b) -> bool {
-                return std::get<0>(a) < std::get<0>(b);
+                if (std::get<0>(a) != std::get<0>(b)) {
+                  return std::get<0>(a) < std::get<0>(b);
+                } else {
+                  return std::get<1>(a) < std::get<1>(b);
+                }
               });
 
     return values;

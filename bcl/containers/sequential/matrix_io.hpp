@@ -38,6 +38,7 @@ struct matrix_shape {
 };
 
 matrix_shape matrix_market_info(const std::string& fname, bool one_indexed = true);
+matrix_shape binary_info(const std::string& fname);
 
 matrix_shape matrix_info(const std::string& fname,
                          BCL::FileFormat format = BCL::FileFormat::Unknown) {
@@ -49,6 +50,8 @@ matrix_shape matrix_info(const std::string& fname,
     return matrix_market_info(fname);
   } else if (format == FileFormat::MatrixMarketZeroIndexed) {
     return matrix_market_info(fname, false);
+  } else if (format == FileFormat::Binary) {
+    return binary_info(fname);
   } else {
     throw std::runtime_error("matrix_info: Could not detect file format for \""
                              + fname + "\"");
@@ -86,6 +89,20 @@ matrix_shape matrix_market_info(const std::string& fname, bool one_indexed) {
 
   f.close();
 
+  return matrix_shape{{m, n}, nnz};
+}
+
+matrix_shape binary_info(const std::string& fname) {
+  FILE* f = fopen(fname.c_str(), "r");
+  size_t m, n, nnz;
+  assert(f != NULL);
+  size_t items_read = fread(&m, sizeof(size_t), 1, f);
+  assert(items_read == 1);
+  items_read = fread(&n, sizeof(size_t), 1, f);
+  assert(items_read == 1);
+  items_read = fread(&nnz, sizeof(size_t), 1, f);
+  assert(items_read == 1);
+  fclose(f);
   return matrix_shape{{m, n}, nnz};
 }
 
