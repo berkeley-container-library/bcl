@@ -16,7 +16,7 @@ inline bool __is_valid_cuda_gptr(T* ptr) {
     return true;
   }
 
-  if (ptr < BCL::cuda::smem_base_ptr) {
+  if ((char *) ptr < BCL::cuda::smem_base_ptr) {
     return false;
   }
 

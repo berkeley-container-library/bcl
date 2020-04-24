@@ -7,7 +7,7 @@ namespace BCL {
 
 namespace cuda {
 
-void flush();
+__host__ __device__ void flush();
 
 template <typename T>
 inline void copy_cross_gpu_(const BCL::cuda::ptr<T>& dst, const BCL::cuda::ptr<T>& src, size_t count) {

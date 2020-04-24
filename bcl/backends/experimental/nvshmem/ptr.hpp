@@ -17,7 +17,7 @@ struct ptr {
   __host__ __device__ ptr(uint64_t rank = 0, uint64_t ptr = 0)
                          : rank_(rank), ptr_(ptr) {}
 
-  __host__ __device__ ptr(const ptr<T>& other) = default;
+  ptr(const ptr<T>& other) = default;
   ptr<T>& operator=(const ptr<T>& other) = default;
 
   __host__ __device__ ptr(const std::nullptr_t) {
