@@ -229,7 +229,7 @@ void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>
 int main(int argc, char** argv) {
   BCL::init(16);
 
-  BCL::cuda::init(8192);
+  BCL::cuda::init(8000);
 
   cublasCreate(&cublas_handle);
 
