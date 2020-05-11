@@ -165,6 +165,13 @@ public:
     return x;
   }
 
+  template <typename Allocator>
+  __host__ void get_tile_no_alloc_(matrix_dim idx,
+                         BCL::cuda::device_vector<T, Allocator>& vec) const {
+    nvshmem_getmem_nbi(vec.data(), tile_ptr(idx).rptr(), sizeof(T)*tile_size(),
+                       tile_ptr(idx).rank_);
+  }
+
   __host__ auto arget_tile(matrix_dim idx) const {
     using no_init = typename BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>::no_init;
     BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size(), no_init{});

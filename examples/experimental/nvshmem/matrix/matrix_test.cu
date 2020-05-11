@@ -24,42 +24,6 @@ void print_vector(const std::vector<T>& vec, size_t m, size_t n) {
   }
 }
 
-template <typename T>
-void dgemm_simple(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>& c) {
-  for (size_t i = 0; i < c.grid_shape()[0]; i++) {
-    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
-      if (BCL::rank() == c.tile_ptr({i, j}).rank_) {
-        for (size_t k = 0; k < a.grid_shape()[1]; k++) {
-          auto a_local = a.get_tile({i, k});
-          auto b_local = b.get_tile({k, j});
-
-          T* c_ptr = c.tile_ptr({i, j}).local();
-
-          cublasOperation_t transa = CUBLAS_OP_N;
-          cublasOperation_t transb = CUBLAS_OP_N;
-
-          T alpha = 1.0;
-          T beta = 1.0;
-          cublasDgemm(cublas_handle, transa, transb,
-                      c.tile_shape({i, j})[0], // m
-                      c.tile_shape({i, j})[1], // n
-                      a.tile_shape({i, k})[1], // k
-                      &alpha,
-                      a_local.data(), a.tile_shape()[0],
-                      b_local.data(), b.tile_shape()[0],
-                      &beta,
-                      c_ptr, c.tile_shape()[0]);
-          cudaDeviceSynchronize();
-
-          a_local.destroy();
-          b_local.destroy();
-        }
-      }
-    }
-  }
-  BCL::cuda::barrier();
-}
-
 cublasStatus_t cublasGemmWrapper(cublasHandle_t handle,
                                  cublasOperation_t transa, cublasOperation_t transb,
                                  int m, int n, int k,
@@ -133,6 +97,63 @@ void cblas_gemm(const CBLAS_LAYOUT Layout,
 }
 
 
+template <typename T>
+void gemm_simple(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>& c) {
+  for (size_t i = 0; i < c.grid_shape()[0]; i++) {
+    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
+      if (BCL::rank() == c.tile_ptr({i, j}).rank_) {
+        size_t k_offset = i + j;
+        for (size_t k_ = 0; k_ < a.grid_shape()[1]; k_++) {
+          size_t k = (k_ + k_offset) % a.grid_shape()[1];
+
+          using vector_type = BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>;
+          vector_type a_local(a.tile_size());
+          vector_type b_local(b.tile_size());
+
+          auto begin = std::chrono::high_resolution_clock::now();
+          a.get_tile_no_alloc_({i, k}, a_local);
+          b.get_tile_no_alloc_({k, j}, b_local);
+          BCL::cuda::flush();
+          auto end = std::chrono::high_resolution_clock::now();
+          double duration = std::chrono::duration<double>(end - begin).count();
+
+          double words_fetched = sizeof(T)*(a.tile_size() + b.tile_size());
+          words_fetched *= 1e-9;
+          double gbps = words_fetched / std::chrono::duration<double>(end - begin).count();
+          printf("RANK(%lu) %lu'th sync is %lf (%lf GB/s, %s)\n", BCL::rank(), k_,
+                 std::chrono::duration<double>(end - begin).count(),
+                 gbps, (gbps < 4.17) ? "SLOW" : "FAST");
+
+          T* c_ptr = c.tile_ptr({i, j}).local();
+
+          cublasOperation_t transa = CUBLAS_OP_N;
+          cublasOperation_t transb = CUBLAS_OP_N;
+
+          T alpha = 1.0;
+          T beta = 1.0;
+          begin = std::chrono::high_resolution_clock::now();
+          cublasGemmWrapper(cublas_handle, transa, transb,
+                      c.tile_shape({i, j})[0], // m
+                      c.tile_shape({i, j})[1], // n
+                      a.tile_shape({i, k})[1], // k
+                      &alpha,
+                      a_local.data(), a.tile_shape()[0],
+                      b_local.data(), b.tile_shape()[0],
+                      &beta,
+                      c_ptr, c.tile_shape()[0]);
+          cudaDeviceSynchronize();
+          end = std::chrono::high_resolution_clock::now();
+          duration = std::chrono::duration<double>(end - begin).count();
+
+          a_local.destroy();
+          b_local.destroy();
+          BCL::barrier();
+        }
+      }
+    }
+  }
+  BCL::cuda::barrier();
+}
 
 double duration_issue;
 double duration_sync;
@@ -172,11 +193,9 @@ void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>
           double words_fetched = sizeof(T)*(a.tile_size() + b.tile_size());
           words_fetched *= 1e-9;
           double gbps = words_fetched / std::chrono::duration<double>(fetch_end - fetch_begin).count();
-          /*
           printf("RANK(%lu) %lu'th sync is %lf (%lf GB/s, %s)\n", BCL::rank(), k_,
                  std::chrono::duration<double>(end - begin).count(),
                  gbps, (gbps < 4.17) ? "SLOW" : "FAST");
-                 */
 
           T* c_ptr = c.tile_ptr({i, j}).local();
 
@@ -209,10 +228,8 @@ void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>
           duration_compute += std::chrono::duration<double>(end - begin).count();
           double gflops = num_gflops(c.tile_shape({i, j})[0], c.tile_shape({i, j})[1], a.tile_shape({i, k})[1])
                           / std::chrono::duration<double>(end - begin).count();
-                          /*
           printf("RANK(%lu) Local matmul %lf GFLOPs (%lf of peak)\n",
                  BCL::rank(), gflops, (100*(1e-3*gflops / 15.7)));
-                 */
 
           a_local.destroy();
           b_local.destroy();
@@ -229,7 +246,7 @@ void gemm(BCL::cuda::Matrix<T>& a, BCL::cuda::Matrix<T>& b, BCL::cuda::Matrix<T>
 int main(int argc, char** argv) {
   BCL::init(16);
 
-  BCL::cuda::init(8000);
+  BCL::cuda::init();
 
   cublasCreate(&cublas_handle);
 
@@ -290,7 +307,7 @@ int main(int argc, char** argv) {
   auto begin = std::chrono::high_resolution_clock::now();
   BCL::cuda::barrier();
 
-  gemm(a, b, c);
+  gemm_simple(a, b, c);
 
   BCL::cuda::barrier();
   auto end = std::chrono::high_resolution_clock::now();
