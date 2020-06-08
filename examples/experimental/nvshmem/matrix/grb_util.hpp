@@ -34,8 +34,11 @@ void destroy_grb(graphblas::Matrix<T>* x, const std::string lbl = "hey") {
   }
 }
 
+// Rebind Allocator<U> as type T
+template <typename Allocator, typename T>
+using rebind_allocator_t = typename Allocator::rebind<T>::other;
 
-template <typename T>
+template <typename T, typename Allocator>
 graphblas::Matrix<T>* sum_tiles(graphblas::Matrix<T>* a, graphblas::Matrix<T>* b) {
   // XXX: Do an element-wise add using cuSparse
   //      'A' here is local_c, and 'B' here is result_c
@@ -108,7 +111,8 @@ graphblas::Matrix<T>* sum_tiles(graphblas::Matrix<T>* a, graphblas::Matrix<T>* b
   nnzTotalDevHostPtr = &c_nnz;
 
   graphblas::Index* row_ptr_c;
-  CUDA_CALL(cudaMalloc((void**) &row_ptr_c, sizeof(graphblas::Index)*(m+1)));
+  row_ptr_c = rebind_allocator_t<Allocator, graphblas::Index>{}.allocate(m+1);
+  // CUDA_CALL(cudaMalloc((void**) &row_ptr_c, sizeof(graphblas::Index)*(m+1)));
   if (row_ptr_c == nullptr) {
     throw std::runtime_error("Couldn't allocate C.");
   }
@@ -145,8 +149,10 @@ graphblas::Matrix<T>* sum_tiles(graphblas::Matrix<T>* a, graphblas::Matrix<T>* b
   T beta = 1.0;
   graphblas::Index* col_ind_c;
   T* values_c;
-  CUDA_CALL(cudaMalloc((void**) &col_ind_c, sizeof(graphblas::Index)*c_nnz));
-  CUDA_CALL(cudaMalloc((void**) &values_c, sizeof(T)*c_nnz));
+  col_ind_c = rebind_allocator_t<Allocator, graphblas::Index>{}.allocate(c_nnz);
+  // CUDA_CALL(cudaMalloc((void**) &col_ind_c, sizeof(graphblas::Index)*c_nnz));
+  values_c = rebind_allocator_t<Allocator, T>{}.allocate(c_nnz);
+  // CUDA_CALL(cudaMalloc((void**) &values_c, sizeof(T)*c_nnz));
   if (col_ind_c == nullptr || values_c == nullptr) {
     throw std::runtime_error("sum_tiles(): out of memory.");
   }
@@ -179,44 +185,42 @@ graphblas::Matrix<T>* sum_tiles(graphblas::Matrix<T>* a, graphblas::Matrix<T>* b
   return new_local_c;
 }
 
-template <typename T>
-void free_tiles(std::vector<graphblas::Matrix<T>*> imp) {
-  // TODO: free the tiles.
-}
-
 // TODO: switch to tree algorithm
-template <typename T>
-graphblas::Matrix<T>* sum_tiles(std::vector<graphblas::Matrix<T>*> imp) {
+template <typename T, typename Allocator = BCL::cuda::cuda_allocator<T>>
+graphblas::Matrix<T>* sum_tiles(std::vector<graphblas::Matrix<T>*>& imp) {
   if (imp.size() == 0) {
     return nullptr;
   }
   graphblas::Matrix<T>* sum = imp[0];
   for (size_t i = 1; i < imp.size(); i++) {
-    graphblas::Matrix<T>* result = sum_tiles(sum, imp[i]);
+    graphblas::Matrix<T>* result = sum_tiles<T, Allocator>(sum, imp[i]);
     std::swap(sum, result);
     // TODO: delete result;
-    // destroy_grb(result);
+    destroy_grb(imp[i]);
+    destroy_grb(result);
   }
   return sum;
 }
 
-template <typename T>
+template <typename T, typename Allocator>
 graphblas::Matrix<T>* sum_tiles_yuxin(std::vector<graphblas::Matrix<T>*> imp) {
   if (imp.size() == 0) {
     return nullptr;
   }
 
+  using index_type = graphblas::Index;
+
   graphblas::Index m, n;
   imp[0]->nrows(&m);
   imp[0]->ncols(&n);
 
-  ::cuda::SparseSPAAccumulator<T> acc;
+  ::cuda::SparseSPAAccumulator<T, index_type, Allocator> acc;
 
   for (auto mat : imp) {
     // convert mat into Yuxin's BCL::cuda::CSRMatrix
     graphblas::Index nnz;
     mat->nvals(&nnz);
-    ::cuda::CSRMatrix<T, graphblas::Index> cmat(m, n, nnz,
+    ::cuda::CSRMatrix<T, index_type, Allocator> cmat(m, n, nnz,
                                                 mat->matrix_.sparse_.d_csrVal_,
                                                 mat->matrix_.sparse_.d_csrRowPtr_,
                                                 mat->matrix_.sparse_.d_csrColInd_);
@@ -224,7 +228,11 @@ graphblas::Matrix<T>* sum_tiles_yuxin(std::vector<graphblas::Matrix<T>*> imp) {
   }
   acc.sort_mats();
   acc.get_lbs();
-  auto result_mat = acc.get_matrix(m, n);
+  // Assume a 1 GB memory limit for accumualtor.
+  size_t max_mem = 1*1000*1000*1000;
+  size_t max_mem_row = std::min<size_t>(m, max_mem/((sizeof(graphblas::Index)+sizeof(T))*n));
+  size_t block_size = 512;
+  auto result_mat = acc.get_matrix(m, n, max_mem_row, block_size);
 
   graphblas::Matrix<T>* grb_result = new graphblas::Matrix<T>(result_mat.m_, result_mat.n_);
   grb_result->build(result_mat.row_ptr_, result_mat.col_ind_, result_mat.vals_,
@@ -257,6 +265,23 @@ auto get_coo(const std::vector<T>& values,
               });
 
     return coo_values;
+}
+
+template <typename T, typename index_type>
+auto remove_zeros(const std::vector<std::pair<std::pair<index_type, index_type>, T>>& coo_values) {
+    using coord_type = std::pair<index_type, index_type>;
+    using tuple_type = std::pair<coord_type, T>;
+    using coo_t = std::vector<tuple_type>;
+
+    coo_t new_coo;
+
+    for (const auto& nz : coo_values) {
+      auto val = std::get<1>(nz);
+      if (val != 0.0) {
+        new_coo.push_back(nz);
+      }
+    }
+    return new_coo;
 }
 
 template <typename T>

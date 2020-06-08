@@ -7,6 +7,8 @@
 
 #include <bcl/containers/experimental/cuda/CudaSPMatrix.hpp>
 
+#include <unordered_map>
+
 #include "cusparse_util.hpp"
 #include "spgemm.hpp"
 
@@ -26,15 +28,22 @@ graphblas::Matrix<T> read_matrix(const std::string& fname) {
   return a;
 }
 
+template <typename T, typename U>
+struct PairHash {
+  std::size_t operator()(const std::pair<T, U>& value) const noexcept {
+    return std::hash<T>{}(value.first) ^ std::hash<U>{}(value.second);
+  }
+};
+
 int main(int argc, char** argv) {
   BCL::init(16);
-  BCL::cuda::init(4000);
+  BCL::cuda::init();
 
   using index_type = graphblas::Index;
 
   using T = float;
 
-  bool verify_result = true;
+  bool verify_result = false;
 
   std::string fname = std::string(argv[1]);
 
@@ -62,6 +71,8 @@ int main(int argc, char** argv) {
     c.print_info();
   }
 
+  // printf("A taking %lf GB, B %lf GB\n", 1.0e-9*a.my_mem(), 1.0e-9*b.my_mem());
+
   assert(a.grid_shape()[1] == b.grid_shape()[0]);
 
   graphblas::Descriptor desc;
@@ -77,7 +88,8 @@ int main(int argc, char** argv) {
 
   BCL::barrier();
   auto begin = std::chrono::high_resolution_clock::now();
-  BCL::cuda::gemm(a, b, c, desc);
+  using allocator_type = BCL::cuda::bcl_allocator<T>;
+  BCL::cuda::gemm<T, graphblas::Index, allocator_type>(a, b, c, desc);
   auto end = std::chrono::high_resolution_clock::now();
   double duration = std::chrono::duration<double>(end - begin).count();
 
@@ -120,11 +132,11 @@ int main(int argc, char** argv) {
     }
 
     cudaMemcpy(d_a_vals, mat.vals_.data(), sizeof(T)*mat.vals_.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_a_rowptr, mat.row_ptr_.data(), sizeof(T)*mat.row_ptr_.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_a_colind, mat.col_ind_.data(), sizeof(T)*mat.col_ind_.size(), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a_rowptr, mat.row_ptr_.data(), sizeof(graphblas::Index)*mat.row_ptr_.size(), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a_colind, mat.col_ind_.data(), sizeof(graphblas::Index)*mat.col_ind_.size(), cudaMemcpyHostToDevice);
     cudaMemcpy(d_b_vals, mat.vals_.data(), sizeof(T)*mat.vals_.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b_rowptr, mat.row_ptr_.data(), sizeof(T)*mat.row_ptr_.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b_colind, mat.col_ind_.data(), sizeof(T)*mat.col_ind_.size(), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b_rowptr, mat.row_ptr_.data(), sizeof(graphblas::Index)*mat.row_ptr_.size(), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b_colind, mat.col_ind_.data(), sizeof(graphblas::Index)*mat.col_ind_.size(), cudaMemcpyHostToDevice);
 
     graphblas::Matrix<T> s_a(mat.m_, mat.n_);
     graphblas::Matrix<T> s_b(mat.m_, mat.n_);
@@ -138,9 +150,11 @@ int main(int argc, char** argv) {
     graphblas::mxm<T, T, T, T>(&s_c, GrB_NULL,
                                GrB_NULL, graphblas::PlusMultipliesSemiring<T>(),
                                &s_a, &s_b, &desc);
+    cudaDeviceSynchronize();
 
     fprintf(stderr, "Getting COO...\n");
     auto local_c = c.get().get_coo();
+    local_c = BCL::cuda::remove_zeros(local_c);
 
     fprintf(stderr, "Extracting tuples...\n");
     index_type nnz;
@@ -155,10 +169,67 @@ int main(int argc, char** argv) {
 
     auto s_c_coo = BCL::cuda::get_coo(vals, row_idx, col_idx);
 
-    fprintf(stderr, "s_c_coo.size (%lu), local_c.size (%lu)\n", s_c_coo.size(), local_c.size());
+    fprintf(stderr, "local_computation (%lu nnz), distributed result (%lu nnz)\n", s_c_coo.size(), local_c.size());
 
-    assert(s_c_coo.size() == local_c.size());
+    if (s_c_coo.size() != local_c.size()) {
+      fprintf(stderr, "ERROR: number of nonzeros does not match.\n");
+    }
 
+/*
+    using coord_type = std::pair<index_type, index_type>;
+    std::unordered_map<coord_type, T, PairHash<index_type, index_type>> serial_set;
+    std::unordered_map<coord_type, T, PairHash<index_type, index_type>> distr_set;
+
+    fprintf(stderr, "Building serial set.\n");
+    auto begin = std::chrono::high_resolution_clock::now();
+    for (const auto& nz : s_c_coo) {
+      auto idx = std::get<0>(nz);
+      auto val = std::get<1>(nz);
+      serial_set[idx] = val;
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    double duration = std::chrono::duration<double>(end - begin).count();
+    fprintf(stderr, "Took %lf s\n", duration);
+
+    fprintf(stderr, "Building distributed set.\n");
+    begin = std::chrono::high_resolution_clock::now();
+    for (const auto& nz : local_c) {
+      auto idx = std::get<0>(nz);
+      auto val = std::get<1>(nz);
+      distr_set[idx] = val;
+    }
+    end = std::chrono::high_resolution_clock::now();
+    duration = std::chrono::duration<double>(end - begin).count();
+    fprintf(stderr, "Took %lf s\n", duration);
+
+    fprintf(stderr, "Looking through serial set to see if distributed set matches.\n");
+    T eps = 1.0e-5;
+    for (const auto& nz : s_c_coo) {
+      auto idx = std::get<0>(nz);
+      auto val = std::get<1>(nz);
+
+      if (distr_set.find(idx) == distr_set.end()) {
+        fprintf(stderr, "Serial result contains (%lu, %lu, %f) not in distributed result.\n",
+                idx.first, idx.second, val);
+      } else if (std::abs(val - distr_set[idx]) > eps) {
+        fprintf(stderr, "Distributed result (%lu, %lu, %f) != serial result (%lu, %lu, %f)\n",
+                idx.first, idx.second, distr_set[idx],
+                idx.first, idx.second, val);
+      }
+    }
+
+    fprintf(stderr, "Looking through distributed set to see if distributed set matches.\n");
+    for (const auto& nz : local_c) {
+      auto idx = std::get<0>(nz);
+      auto val = std::get<1>(nz);
+
+      if (serial_set.find(idx) == serial_set.end()) {
+        fprintf(stderr, "Distributed result contains (%lu, %lu, %f) not in serial result.\n",
+                idx.first, idx.second, val);
+      }
+    }
+
+*/
     T eps = 1.0e-5;
     for (size_t i = 0; i < s_c_coo.size(); i++) {
       auto idx_a = std::get<0>(s_c_coo[i]);

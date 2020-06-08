@@ -48,9 +48,7 @@ inline __device__ __host__ size_t nprocs() {
   #endif
 }
 
-inline void init(size_t shared_segment_size = 256) {
-  BCL::cuda::shared_segment_size = 1000*1000*shared_segment_size;
-
+inline void init() {
   nvshmemx_init_attr_t attr;
   attr.mpi_comm = &BCL::comm;
 
@@ -65,7 +63,16 @@ inline void init(size_t shared_segment_size = 256) {
   cudaSetDevice(BCL::rank() % device_count);
   BCL::barrier();
 
-  BCL::cuda::smem_base_ptr = (char *) nvshmem_malloc(BCL::cuda::shared_segment_size);
+  size_t max_memory_gb = 16;
+
+  for (size_t i = max_memory_gb; i >= 1; i--) {
+    size_t gb = 1000*1000*1000;
+    BCL::cuda::smem_base_ptr = (char *) nvshmem_malloc(i*gb);
+    if (smem_base_ptr != nullptr) {
+      BCL::cuda::shared_segment_size = i*gb;
+      break;
+    }
+  }
 
   if (smem_base_ptr == nullptr) {
     throw std::runtime_error("BCL: nvshmem backend could not allocate shared memory segment.");

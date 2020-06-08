@@ -292,7 +292,9 @@ public:
       throw std::runtime_error("Cuda::SPMatrix ran out of memory");
     }
 
-    BCL::cuda::memcpy(d_vals_ptr, vals_ptr, sizeof(T)*nnz);
+    if (nnz > 0) {
+      BCL::cuda::memcpy(d_vals_ptr, vals_ptr, sizeof(T)*nnz);
+    }
     BCL::cuda::memcpy(d_row_ptr, row_ptr, sizeof(index_type)*(m+1));
     BCL::cuda::memcpy(d_col_ind, col_ind, sizeof(index_type)*nnz);
 
@@ -323,7 +325,9 @@ public:
       throw std::runtime_error("Cuda::SPMatrix ran out of memory");
     }
 
-    BCL::cuda::memcpy(d_vals_ptr, vals_ptr, sizeof(T)*nnz);
+    if (nnz > 0) {
+      BCL::cuda::memcpy(d_vals_ptr, vals_ptr, sizeof(T)*nnz);
+    }
     BCL::cuda::memcpy(d_row_ptr, row_ptr, sizeof(index_type)*(m+1));
     BCL::cuda::memcpy(d_col_ind, col_ind, sizeof(index_type)*nnz);
 
@@ -357,7 +361,9 @@ public:
                                  auto d_row_ptr, auto row_ptr,
                                  auto d_col_ind, auto col_ind,
                                  auto nnz, auto m) {
-                                BCL::cuda::memcpy(d_vals_ptr, vals_ptr, sizeof(T)*nnz);
+                                if (nnz > 0) {
+                                  BCL::cuda::memcpy(d_vals_ptr, vals_ptr, sizeof(T)*nnz);
+                                }
                                 BCL::cuda::memcpy(d_row_ptr, row_ptr, sizeof(index_type)*(m+1));
                                 BCL::cuda::memcpy(d_col_ind, col_ind, sizeof(index_type)*nnz);
                               }, d_vals_ptr, vals_ptr,
@@ -392,9 +398,13 @@ public:
     std::vector<index_type> l_col_ind(nnz);
     std::vector<index_type> l_row_ptr(m+1);
 
-    BCL::cuda::memcpy(l_vals.data(), vals_ptr, sizeof(T)*nnz);
+    if (nnz > 0) {
+      BCL::cuda::memcpy(l_vals.data(), vals_ptr, sizeof(T)*nnz);
+    }
     BCL::cuda::memcpy(l_row_ptr.data(), row_ptr, sizeof(index_type)*(m+1));
-    BCL::cuda::memcpy(l_col_ind.data(), col_ind, sizeof(index_type)*nnz);
+    if (nnz > 0) {
+      BCL::cuda::memcpy(l_col_ind.data(), col_ind, sizeof(index_type)*nnz);
+    }
 
     BCL::cuda::flush();
 
@@ -470,17 +480,39 @@ public:
 
     for (size_t i = 0; i < grid_shape()[0]; i++) {
       for (size_t j = 0; j < grid_shape()[1]; j++) {
-        auto local_tile = get_tile_cpu({i, j});
+        // TODO: This if statement shouldn't be required
+        if (nnzs_[i*grid_shape()[1] + j] > 0) {
+          auto local_tile = get_tile_cpu({i, j});
 
-        size_t offset_i = i*tile_shape()[0];
-        size_t offset_j = j*tile_shape()[1];
+          size_t offset_i = i*tile_shape()[0];
+          size_t offset_j = j*tile_shape()[1];
 
-        acc.accumulate(std::move(local_tile), {offset_i, offset_j});
+          acc.accumulate(std::move(local_tile), {offset_i, offset_j});
+        }
       }
     }
 
     auto mat = acc.get_matrix(shape()[0], shape()[1]);
     return mat;
+  }
+
+  // Return the amount of memory in bytes used on this process
+  __host__ size_t my_mem() {
+    size_t n_bytes = 0;
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        if (tile_rank({i, j}) == BCL::rank()) {
+          size_t vals_idx = i*grid_shape()[1] + j;
+          // col_ind
+          n_bytes += nnzs_[vals_idx]*sizeof(index_type);
+          // vals
+          n_bytes += nnzs_[vals_idx]*sizeof(T);
+          // row_ptr
+          n_bytes += (tile_shape({i, j})[0]+1)*sizeof(index_type);
+        }
+      }
+    }
+    return n_bytes;
   }
 
 };

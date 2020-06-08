@@ -12,6 +12,11 @@ public:
   using const_pointer = const T*;
   using reference = T&;
   using const_reference = const T&;
+  using is_always_equal = std::true_type;
+
+  template <class U> struct rebind {
+    typedef cuda_allocator<U> other;
+  };
 
   cuda_allocator() = default;
   cuda_allocator(const cuda_allocator&) = default;
@@ -19,7 +24,11 @@ public:
   pointer allocate(size_type n) {
     T* ptr;
     cudaMalloc(&ptr, n*sizeof(value_type));
-    return ptr;
+    if (ptr == nullptr) {
+      throw std::bad_alloc();
+    } else {
+      return ptr;
+    }
   }
 
   void deallocate(pointer ptr, size_type n = 0) {
@@ -53,6 +62,11 @@ public:
   using const_pointer = const T*;
   using reference = T&;
   using const_reference = const T&;
+  using is_always_equal = std::true_type;
+
+  template <class U> struct rebind {
+    typedef bcl_allocator<U> other;
+  };
 
   bcl_allocator() = default;
   bcl_allocator(const bcl_allocator&) = default;

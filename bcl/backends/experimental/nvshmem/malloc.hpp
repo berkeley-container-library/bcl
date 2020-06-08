@@ -56,6 +56,7 @@ struct fchunk_t {
 
 size_t shared_segment_size;
 char* smem_base_ptr = nullptr;
+void print_free_list(FILE* f);
 
 constexpr size_t CUDA_SMALLEST_MEM_UNIT = 1024;
 
@@ -90,6 +91,27 @@ ptr<T> alloc(size_t size) {
   } else {
     // There is no chunk.  Advance the heap pointer.
     if (heap_ptr + size > shared_segment_size) {
+      size_t freelist_size = 0;
+      for (const auto& val : free_chunks) {
+        freelist_size += val.second.size_;
+      }
+      fprintf(stderr, "RANK(%lu) failed Alloc(%lf GB) Heap(%lf GB) Freelist(%lf GB)\n",
+              BCL::rank(), size / 1000.0 / 1000.0 / 1000.0,
+              (shared_segment_size - heap_ptr) / 1000.0 / 1000.0 / 1000.0,
+              freelist_size / 1000.0 / 1000.0 / 1000.0);
+      if (size > freelist_size) {
+        fprintf(stderr, "RANK(%lu) truly OOM.\n", BCL::rank());
+      } else {
+        fprintf(stderr, "RANK(%lu) is FOM.\n", BCL::rank());
+        if (BCL::rank() == 487) {
+          print_free_list(stderr);
+        }
+        std::string fname = std::string("memory_state_") + std::to_string(BCL::rank()) + ".txt";
+        FILE* f = fopen(fname.c_str(), "w");
+        print_free_list(f);
+        fclose(f);
+        fprintf(stderr, "RANK(%lu) wrote freelist.\n", BCL::rank());
+      }
       return nullptr;
     }
     chunk = fchunk_t(heap_ptr, size);
@@ -98,6 +120,8 @@ ptr<T> alloc(size_t size) {
   allocd_chunks.insert(std::make_pair(chunk.ptr_, chunk));
   return ptr<T> (BCL::rank(), chunk.ptr_);
 }
+
+void compress_free_list();
 
 template <typename T>
 void dealloc(ptr<T> alloc) {
@@ -116,7 +140,46 @@ void dealloc(ptr<T> alloc) {
   fchunk_t chunk = allocd_chunks[alloc.ptr_];
   allocd_chunks.erase(chunk.ptr_);
   free_chunks.insert(std::make_pair(chunk.ptr_, chunk));
+  /*
+  fprintf(stderr, "RANK(%lu) free'ing chunk of size %lu at pos %lu\n",
+          BCL::rank(), chunk.size_, chunk.ptr_);
+          */
+  compress_free_list();
   return;
+}
+
+void compress_free_list() {
+  for (auto iter = free_chunks.begin(); iter != free_chunks.end(); ) {
+    auto next_chunk = iter;
+    next_chunk++;
+    if (next_chunk != free_chunks.end()) {
+      if (next_chunk->second.ptr_ == iter->second.ptr_ + iter->second.size_) {
+        iter->second.size_ += next_chunk->second.size_;
+        free_chunks.erase(next_chunk);
+        continue;
+      }
+    }
+    iter++;
+  }
+}
+
+#include <cassert>
+
+void print_free_list(FILE* f) {
+  std::map<size_t, fchunk_t> all_chunks;
+
+  all_chunks.insert(free_chunks.begin(), free_chunks.end());
+  all_chunks.insert(allocd_chunks.begin(), allocd_chunks.end());
+
+  fprintf(f, "==== RANK(%lu)'s memory space ====\n", BCL::rank());
+  for (const auto& i : all_chunks) {
+    bool is_free_list = (free_chunks.find(i.first) != free_chunks.end());
+    bool is_used_list = (allocd_chunks.find(i.first) != allocd_chunks.end());
+    assert(is_free_list || is_used_list && (!(is_free_list && is_used_list)));
+    fprintf(f, "   R(%lu) (%lu, %lu) %s\n",
+            BCL::rank(),
+            i.first, i.second.size_, (is_free_list) ? "FREE" : "USED");
+  }
 }
 
 } // end cuda
