@@ -93,6 +93,7 @@ struct CSRMatrix {
   void read_MatrixMarket(const std::string& fname, bool one_indexed = true);
   void read_Binary(const std::string& fname);
   void write_Binary(const std::string& fname);
+  void write_MatrixMarket(const std::string& fname);
 
   CSRMatrix(size_type m, size_type n, size_type nnz, std::vector<T, Allocator>&& vals,
             std::vector<index_type, IAllocator>&& row_ptr,
@@ -459,6 +460,24 @@ void CSRMatrix<T, index_type, Allocator>::write_Binary(const std::string& fname)
   fwrite(vals_.data(), sizeof(T), vals_.size(), f);
   fwrite(col_ind_.data(), sizeof(index_type), col_ind_.size(), f);
   fwrite(row_ptr_.data(), sizeof(index_type), row_ptr_.size(), f);
+
+  fclose(f);
+}
+
+template <typename T, typename index_type, typename Allocator>
+void CSRMatrix<T, index_type, Allocator>::write_MatrixMarket(const std::string& fname) {
+  fprintf(stderr, "Opening up %s for writing.\n", fname.c_str());
+  FILE* f = fopen(fname.c_str(), "w");
+  assert(f != NULL);
+
+  fprintf(f, "%%%%MatrixMarket matrix coordinate integer general\n");
+  fprintf(f, "%lu %lu %lu\n", m_, n_, nnz_);
+
+  for (size_type i = 0; i < m_; i++) {
+    for (index_type j = row_ptr_[i]; j < row_ptr_[i+1]; j++) {
+      fprintf(f, "%d %d %f\n", i+1, col_ind_[j]+1, vals_[j]);
+    }
+  }
 
   fclose(f);
 }
