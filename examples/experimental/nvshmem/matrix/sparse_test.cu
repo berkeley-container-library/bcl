@@ -1,9 +1,9 @@
 
-
 #include <bcl/bcl.hpp>
 #include <bcl/backends/experimental/nvshmem/backend.hpp>
 #include <bcl/containers/experimental/cuda/CudaMatrix.hpp>
 #include <bcl/containers/experimental/cuda/launch_kernel.cuh>
+#include <thrust/sort.h>
 
 #include <bcl/containers/experimental/cuda/CudaSPMatrix.hpp>
 
@@ -78,6 +78,33 @@ int main(int argc, char** argv) {
   graphblas::Descriptor desc;
   desc.descriptor_.debug_ = false;
 
+  using allocator_type = BCL::cuda::bcl_allocator<T>;
+  // BCL::cuda::dry_gemm<T, graphblas::Index, allocator_type>(a, b, c, desc);
+  // BCL::cuda::gemm_single_proc<T, graphblas::Index, allocator_type>(a, b, c, desc);
+
+/*
+  if (BCL::rank() == 0) {
+    auto a_large = a.get_tile_cpu({1, 0});
+    auto b_large = b.get_tile_cpu({0, 1});
+
+    std::string prefix = "/gpfs/alpine/bif115/scratch/b2v/data/selected_matrices/";
+    a_large.write_MatrixMarket(prefix + "a_large.mtx");
+    b_large.write_MatrixMarket(prefix + "b_large.mtx");
+
+    auto a_medium = a.get_tile_cpu({4, 0});
+    auto b_medium = b.get_tile_cpu({0, 4});
+
+    a_medium.write_MatrixMarket(prefix + "a_medium.mtx");
+    b_medium.write_MatrixMarket(prefix + "b_medium.mtx");
+
+    auto a_small = a.get_tile_cpu({20, 0});
+    auto b_small = b.get_tile_cpu({0, 0});
+
+    a_small.write_MatrixMarket(prefix + "a_small.mtx");
+    b_small.write_MatrixMarket(prefix + "b_small.mtx");
+  }
+  */
+
   BCL::cuda::duration_issue = 0;
   BCL::cuda::duration_sync = 0;
   BCL::cuda::duration_compute = 0;
@@ -88,10 +115,21 @@ int main(int argc, char** argv) {
 
   BCL::barrier();
   auto begin = std::chrono::high_resolution_clock::now();
-  using allocator_type = BCL::cuda::bcl_allocator<T>;
   BCL::cuda::gemm<T, graphblas::Index, allocator_type>(a, b, c, desc);
   auto end = std::chrono::high_resolution_clock::now();
   double duration = std::chrono::duration<double>(end - begin).count();
+
+  double max_issue = BCL::allreduce(BCL::cuda::duration_issue, BCL::max<double>{});
+  double max_sync = BCL::allreduce(BCL::cuda::duration_sync, BCL::max<double>{});
+  double max_compute = BCL::allreduce(BCL::cuda::duration_compute, BCL::max<double>{});
+  double max_accumulate = BCL::allreduce(BCL::cuda::duration_accumulate, BCL::max<double>{});
+  double max_barrier = BCL::allreduce(BCL::cuda::duration_barrier, BCL::max<double>{});
+
+  double min_issue = BCL::allreduce(BCL::cuda::duration_issue, BCL::min<double>{});
+  double min_sync = BCL::allreduce(BCL::cuda::duration_sync, BCL::min<double>{});
+  double min_compute = BCL::allreduce(BCL::cuda::duration_compute, BCL::min<double>{});
+  double min_accumulate = BCL::allreduce(BCL::cuda::duration_accumulate, BCL::min<double>{});
+  double min_barrier = BCL::allreduce(BCL::cuda::duration_barrier, BCL::min<double>{});
 
   BCL::cuda::duration_issue = BCL::allreduce(BCL::cuda::duration_issue, std::plus<double>{});
   BCL::cuda::duration_sync = BCL::allreduce(BCL::cuda::duration_sync, std::plus<double>{});
@@ -99,12 +137,31 @@ int main(int argc, char** argv) {
   BCL::cuda::duration_accumulate = BCL::allreduce(BCL::cuda::duration_accumulate, std::plus<double>{});
   BCL::cuda::duration_barrier = BCL::allreduce(BCL::cuda::duration_barrier, std::plus<double>{});
 
+  BCL::barrier();
+  fflush(stdout);
+  BCL::barrier();
+  fprintf(stderr, "RANK(%lu) A has %lu nnz, B has %lu nnz, C has %lu nnz\n",
+          BCL::rank(), a.my_nnzs(), b.my_nnzs(), c.my_nnzs());
+  BCL::barrier();
+  fflush(stderr);
+  BCL::barrier();
+
   if (BCL::rank() == 0) {
-    printf("duration_issue %lf\n", BCL::cuda::duration_issue / BCL::nprocs());
-    printf("duration_sync %lf\n", BCL::cuda::duration_sync / BCL::nprocs());
-    printf("duration_compute %lf\n", BCL::cuda::duration_compute / BCL::nprocs());
-    printf("duration_accumulate %lf\n", BCL::cuda::duration_accumulate / BCL::nprocs());
-    printf("duration_barrier %lf\n", BCL::cuda::duration_barrier / BCL::nprocs());
+    printf("duration_issue %lf (%lf -> %lf)\n",
+           BCL::cuda::duration_issue / BCL::nprocs(),
+           min_issue, max_issue);
+    printf("duration_sync %lf (%lf -> %lf)\n",
+           BCL::cuda::duration_sync / BCL::nprocs(),
+           min_sync, max_sync);
+    printf("duration_compute %lf (%lf -> %lf)\n",
+           BCL::cuda::duration_compute / BCL::nprocs(),
+           min_compute, max_compute);
+    printf("duration_accumulate %lf (%lf -> %lf)\n",
+           BCL::cuda::duration_accumulate / BCL::nprocs(),
+           min_accumulate, max_accumulate);
+    printf("duration_barrier %lf (%lf -> %lf)\n",
+           BCL::cuda::duration_barrier / BCL::nprocs(),
+           min_barrier, max_barrier);
   }
 
   BCL::barrier();

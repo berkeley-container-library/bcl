@@ -4,11 +4,36 @@
 
 namespace BCL {
 
+template <typename T>
+struct max {
+  T operator()(const T& a, const T& b) const {
+    if (a < b) {
+      return b;
+    } else {
+      return a;
+    }
+  }
+};
+
+template <typename T>
+struct min {
+  T operator()(const T& a, const T& b) const {
+    if (a < b) {
+      return a;
+    } else {
+      return b;
+    }
+  }
+};
+
 namespace cuda {
 
 // TODO: Actually free matrix contents.
 template <typename T>
 void destroy_grb(graphblas::Matrix<T>* x, const std::string lbl = "hey") {
+  if (x == nullptr) {
+    return;
+  }
   auto& m = x->matrix_.sparse_;
   if (m.h_csrRowPtr_) free(m.h_csrRowPtr_);
   if (m.h_csrColInd_) free(m.h_csrColInd_);
@@ -16,6 +41,11 @@ void destroy_grb(graphblas::Matrix<T>* x, const std::string lbl = "hey") {
   if (BCL::cuda::__is_valid_cuda_gptr(m.d_csrRowPtr_)) {
     BCL::cuda::dealloc(BCL::cuda::__to_cuda_gptr(m.d_csrRowPtr_));
   } else {
+    /*
+    fprintf(stderr, "0x%p is not a valid BCL pointer, checking value for %s (valid segment is 0x%p -> 0x%p\n",
+            m.d_csrRowPtr_, lbl.c_str(), BCL::cuda::smem_base_ptr, BCL::cuda::smem_base_ptr + BCL::cuda::shared_segment_size);
+            */
+    CUDA_CALL(cudaPeekAtLastError());
     if (m.d_csrRowPtr_) CUDA_CALL(cudaFree(m.d_csrRowPtr_));
   }
   if (BCL::cuda::__is_valid_cuda_gptr(m.d_csrColInd_)) {
