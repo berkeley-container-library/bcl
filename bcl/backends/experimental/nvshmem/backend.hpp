@@ -85,8 +85,14 @@ inline void init() {
   set_device_ptr<<<1, 1>>>(smem_base_ptr, BCL::rank(), BCL::nprocs());
   cudaDeviceSynchronize();
 
-  double total = BCL::cuda::shared_segment_size*0.1;
-  init_gpu_side_allocator(total);
+  // double total = BCL::cuda::shared_segment_size*0.1;
+  // init_gpu_side_allocator(total);
+
+  // XXX: This is a hack to integrate the heap pointer with the free list.
+
+  auto ptr = BCL::cuda::alloc<char>(
+    CUDA_SMALLEST_MEM_UNIT*((shared_segment_size - CUDA_SMALLEST_MEM_UNIT) / CUDA_SMALLEST_MEM_UNIT));
+  BCL::cuda::dealloc(ptr);
 
   BCL::cuda::barrier();
 }

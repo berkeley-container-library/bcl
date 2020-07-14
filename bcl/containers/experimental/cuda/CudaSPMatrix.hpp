@@ -4,6 +4,7 @@
 #define GRB_USE_CUDA
 #define private public
 
+
 #include <bcl/bcl.hpp>
 #include <vector>
 #include <stdexcept>
@@ -302,6 +303,19 @@ public:
     graphblas::Matrix<T>* local_mat = new graphblas::Matrix<T>(m, n);
     local_mat->build(d_row_ptr.local(), d_col_ind.local(), d_vals_ptr.local(), nnz);
     return local_mat;
+  }
+
+  __host__ size_t my_nnzs() {
+    size_t total_nnzs = 0;
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        if (tile_rank({i, j}) == BCL::rank()) {
+          size_t vals_idx = i*grid_shape()[1] + j;
+          total_nnzs += nnzs_[vals_idx];
+        }
+      }
+    }
+    return total_nnzs;
   }
 
   __host__ auto arget_tile(matrix_dim idx) {
