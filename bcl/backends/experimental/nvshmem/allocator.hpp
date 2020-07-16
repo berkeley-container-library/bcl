@@ -2,6 +2,20 @@
 
 namespace BCL {
 namespace cuda {
+  
+// Rebind Allocator<U> as type T
+template <typename Allocator, typename T>
+using rebind_allocator_t = typename Allocator::rebind<T>::other;
+
+template <typename T, typename Allocator>
+T* allocate_with(size_t size) {
+  return rebind_allocator_t<Allocator, T>{}.allocate(size);
+}
+
+template <typename T, typename Allocator>
+void deallocate_with(T* ptr) {
+  return rebind_allocator_t<Allocator, T>{}.deallocate(ptr);
+}
 
 template <typename T>
 class cuda_allocator {
@@ -23,8 +37,8 @@ public:
 
   pointer allocate(size_type n) {
     T* ptr;
-    cudaMalloc(&ptr, n*sizeof(value_type));
-    if (ptr == nullptr) {
+    cudaError_t error = cudaMalloc(&ptr, n*sizeof(value_type));
+    if (error != CUDA_SUCCESS || ptr == nullptr) {
       throw std::bad_alloc();
     } else {
       return ptr;
@@ -32,7 +46,9 @@ public:
   }
 
   void deallocate(pointer ptr, size_type n = 0) {
-    cudaFree(ptr);
+    if (ptr != nullptr) {
+      cudaFree(ptr);
+    }
   }
 
   template<typename... Args>

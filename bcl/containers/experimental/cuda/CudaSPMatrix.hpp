@@ -20,6 +20,7 @@
 #include <bcl/containers/sequential/CSRMatrix.hpp>
 #include <bcl/containers/sequential/SparseHashAccumulator.hpp>
 
+#include <bcl/containers/experimental/cuda/sequential/CudaCSRMatrix.hpp>
 #include <graphblas/graphblas.hpp>
 
 namespace BCL {
@@ -272,7 +273,7 @@ public:
     }
   }
 
-  __host__ graphblas::Matrix<T>* get_tile(matrix_dim idx) {
+  __host__ auto get_tile(matrix_dim idx) {
     size_t i = idx[0];
     size_t j = idx[1];
     size_t m = tile_shape(idx)[0];
@@ -281,28 +282,20 @@ public:
     size_t vals_idx = i*grid_shape()[1] + j;
     size_t nnz = nnzs_[vals_idx];
 
+    CudaCSRMatrix<T, index_type, BCL::cuda::bcl_allocator<T>> matrix({m, n}, nnz);
+
     auto vals_ptr = vals_[vals_idx];
     auto row_ptr = row_ptr_[vals_idx];
     auto col_ind = col_ind_[vals_idx];
 
-    auto d_vals_ptr = BCL::cuda::alloc<T>(nnz);
-    auto d_row_ptr = BCL::cuda::alloc<index_type>(m+1);
-    auto d_col_ind = BCL::cuda::alloc<index_type>(nnz);
-
-    if (d_vals_ptr == nullptr || d_row_ptr == nullptr || d_col_ind == nullptr) {
-      throw std::runtime_error("Cuda::SPMatrix ran out of memory");
-    }
-
     if (nnz > 0) {
-      BCL::cuda::memcpy(d_vals_ptr, vals_ptr, sizeof(T)*nnz);
+      BCL::cuda::memcpy(matrix.values_data(), vals_ptr, sizeof(T)*nnz);
     }
-    BCL::cuda::memcpy(d_row_ptr, row_ptr, sizeof(index_type)*(m+1));
-    BCL::cuda::memcpy(d_col_ind, col_ind, sizeof(index_type)*nnz);
+    BCL::cuda::memcpy(matrix.rowptr_data(), row_ptr, sizeof(index_type)*(m+1));
+    BCL::cuda::memcpy(matrix.colind_data(), col_ind, sizeof(index_type)*nnz);
 
     BCL::cuda::flush();
-    graphblas::Matrix<T>* local_mat = new graphblas::Matrix<T>(m, n);
-    local_mat->build(d_row_ptr.local(), d_col_ind.local(), d_vals_ptr.local(), nnz);
-    return local_mat;
+    return matrix;
   }
 
   __host__ size_t my_nnzs() {
@@ -331,13 +324,12 @@ public:
     auto row_ptr = row_ptr_[vals_idx];
     auto col_ind = col_ind_[vals_idx];
 
-    auto d_vals_ptr = BCL::cuda::alloc<T>(nnz);
-    auto d_row_ptr = BCL::cuda::alloc<index_type>(m+1);
-    auto d_col_ind = BCL::cuda::alloc<index_type>(nnz);
+    CudaCSRMatrix<T, index_type, BCL::cuda::bcl_allocator<T>> matrix({m, n}, nnz);
+    using csr_type = decltype(matrix);
 
-    if (d_vals_ptr == nullptr || d_row_ptr == nullptr || d_col_ind == nullptr) {
-      throw std::runtime_error("Cuda::SPMatrix ran out of memory");
-    }
+    auto d_vals_ptr = matrix.values_data();
+    auto d_row_ptr = matrix.rowptr_data();
+    auto d_col_ind = matrix.colind_data();
 
     if (nnz > 0) {
       BCL::cuda::memcpy(d_vals_ptr, vals_ptr, sizeof(T)*nnz);
@@ -345,9 +337,7 @@ public:
     BCL::cuda::memcpy(d_row_ptr, row_ptr, sizeof(index_type)*(m+1));
     BCL::cuda::memcpy(d_col_ind, col_ind, sizeof(index_type)*nnz);
 
-    graphblas::Matrix<T>* local_mat = new graphblas::Matrix<T>(m, n);
-    local_mat->build(d_row_ptr.local(), d_col_ind.local(), d_vals_ptr.local(), nnz);
-    return cuda_future<graphblas::Matrix<T>*>(std::move(local_mat), cuda_request());
+    return cuda_future<csr_type>(std::move(matrix), cuda_request());
   }
 
   __host__ auto arget_tile_exp(matrix_dim idx) {
@@ -428,17 +418,17 @@ public:
                                      std::move(l_col_ind));
   }
 
-  __host__ void assign_tile(matrix_dim idx, graphblas::Matrix<T>* mat_) {
-    graphblas::Matrix<T>& mat = *mat_;
+  template <typename Allocator>
+  __host__ void assign_tile(matrix_dim idx, CudaCSRMatrix<T, index_type, Allocator>& mat) {
     size_t i = idx[0];
     size_t j = idx[1];
     assert(vals_[j + i*grid_shape()[1]].is_local());
 
-    size_t nnz = mat.matrix_.sparse_.nvals_;
-    size_t nrows = mat.matrix_.sparse_.nrows_;
-    T* vals_ptr = mat.matrix_.sparse_.d_csrVal_;
-    index_type* row_ptr_ptr = mat.matrix_.sparse_.d_csrRowPtr_;
-    index_type* col_ind_ptr = mat.matrix_.sparse_.d_csrColInd_;
+    size_t nnz = mat.nnz();
+    size_t nrows = mat.shape()[0];
+    T* vals_ptr = mat.values_data();
+    index_type* row_ptr_ptr = mat.rowptr_data();
+    index_type* col_ind_ptr = mat.colind_data();
 
     BCL::cuda::ptr<T> vals = BCL::cuda::alloc<T>(std::max<size_t>(1, nnz));
     BCL::cuda::ptr<index_type> col_ind = BCL::cuda::alloc<index_type>(std::max<size_t>(1, nnz));
@@ -455,7 +445,7 @@ public:
     std::swap(vals, vals_[j + i*grid_shape()[1]]);
     std::swap(col_ind, col_ind_[j + i*grid_shape()[1]]);
     std::swap(row_ptr, row_ptr_[j + i*grid_shape()[1]]);
-    nnzs_[j + i*grid_shape()[1]] = mat.matrix_.sparse_.nvals_;
+    nnzs_[j + i*grid_shape()[1]] = mat.nnz();
 
     BCL::cuda::dealloc<T>(vals);
     BCL::cuda::dealloc<index_type>(col_ind);

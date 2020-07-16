@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
 
   using T = float;
 
-  bool verify_result = false;
+  bool verify_result = true;
 
   std::string fname = std::string(argv[1]);
 
@@ -61,6 +61,8 @@ int main(int argc, char** argv) {
   BCL::cuda::SPMatrix<T, graphblas::Index> b(fname, std::move(blocks[1]));
   BCL::cuda::SPMatrix<T, graphblas::Index> c(m, n, std::move(blocks[2]));
 
+  BCL::cuda::grb_desc_ = new graphblas::Descriptor();
+
   BCL::print("Info:\n");
   if (BCL::rank() == 0) {
     printf("A:\n");
@@ -75,35 +77,7 @@ int main(int argc, char** argv) {
 
   assert(a.grid_shape()[1] == b.grid_shape()[0]);
 
-  graphblas::Descriptor desc;
-  desc.descriptor_.debug_ = false;
-
   using allocator_type = BCL::cuda::bcl_allocator<T>;
-  // BCL::cuda::dry_gemm<T, graphblas::Index, allocator_type>(a, b, c, desc);
-  // BCL::cuda::gemm_single_proc<T, graphblas::Index, allocator_type>(a, b, c, desc);
-
-/*
-  if (BCL::rank() == 0) {
-    auto a_large = a.get_tile_cpu({1, 0});
-    auto b_large = b.get_tile_cpu({0, 1});
-
-    std::string prefix = "/gpfs/alpine/bif115/scratch/b2v/data/selected_matrices/";
-    a_large.write_MatrixMarket(prefix + "a_large.mtx");
-    b_large.write_MatrixMarket(prefix + "b_large.mtx");
-
-    auto a_medium = a.get_tile_cpu({4, 0});
-    auto b_medium = b.get_tile_cpu({0, 4});
-
-    a_medium.write_MatrixMarket(prefix + "a_medium.mtx");
-    b_medium.write_MatrixMarket(prefix + "b_medium.mtx");
-
-    auto a_small = a.get_tile_cpu({20, 0});
-    auto b_small = b.get_tile_cpu({0, 0});
-
-    a_small.write_MatrixMarket(prefix + "a_small.mtx");
-    b_small.write_MatrixMarket(prefix + "b_small.mtx");
-  }
-  */
 
   BCL::cuda::duration_issue = 0;
   BCL::cuda::duration_sync = 0;
@@ -115,7 +89,7 @@ int main(int argc, char** argv) {
 
   BCL::barrier();
   auto begin = std::chrono::high_resolution_clock::now();
-  BCL::cuda::gemm<T, graphblas::Index, allocator_type>(a, b, c, desc);
+  BCL::cuda::gemm<T, graphblas::Index, allocator_type>(a, b, c);
   auto end = std::chrono::high_resolution_clock::now();
   double duration = std::chrono::duration<double>(end - begin).count();
 
@@ -206,7 +180,7 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Multiplying matrix...\n");
     graphblas::mxm<T, T, T, T>(&s_c, GrB_NULL,
                                GrB_NULL, graphblas::PlusMultipliesSemiring<T>(),
-                               &s_a, &s_b, &desc);
+                               &s_a, &s_b, BCL::cuda::grb_desc_);
     cudaDeviceSynchronize();
 
     fprintf(stderr, "Getting COO...\n");
