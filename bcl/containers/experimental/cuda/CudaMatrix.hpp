@@ -17,6 +17,12 @@ namespace BCL {
 
 namespace cuda {
 
+template <typename T, typename Allocator>
+struct CudaMatrix;
+
+template <typename T>
+struct CudaMatrixView;
+
 template <typename T, typename Fn>
 __global__ void apply_matrix_impl_(BCL::cuda::ptr<T> data, size_t size, Fn fn) {
   size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -43,6 +49,12 @@ apply_matrix_2d_idx_impl_(BCL::cuda::ptr<T> data,
     data.local()[idx] = fn(data.local()[idx], tidx + tile_offset_m, tidy + tile_offset_n);
   }
 }
+
+template <typename T, typename Allocator = BCL::cuda::bcl_allocator<T>>
+struct CudaMatrix;
+
+template <typename T>
+struct CudaMatrixView;
 
 template <typename T>
 class Matrix {
@@ -158,11 +170,24 @@ public:
     return ptrs_[idx[0]*grid_shape()[1] + idx[1]];
   }
 
+  __host__ size_t tile_rank(matrix_dim idx) const {
+    size_t i = idx[0];
+    size_t j = idx[1];
+    size_t vals_idx = i*grid_shape()[1] + j;
+    return ptrs_[vals_idx].rank_;
+  }
+
   __host__ auto get_tile(matrix_dim idx) const {
     BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size());
     BCL::cuda::memcpy(x.data(), tile_ptr(idx), sizeof(T) * tile_size());
     BCL::cuda::flush();
     return x;
+  }
+
+  __host__ auto get_local_tile(matrix_dim idx) const {
+    T* data = tile_ptr(idx).local();
+    return CudaMatrixView<T>({tile_shape(idx)[0], tile_shape(idx)[1]}, data,
+                             tile_shape()[0]);
   }
 
   template <typename Allocator>
@@ -187,17 +212,19 @@ public:
   }
 
   __host__ auto arget_tile_exp(matrix_dim idx) const {
-    using no_init = typename BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>::no_init;
-    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size(), no_init{});
-    if (x.data() == nullptr) {
-      printf("%lu has nullptr x!\n", BCL::rank());
+    auto data = BCL::cuda::alloc<T>(tile_size());
+    if (data == nullptr) {
+      printf("(%lu has nullptr x!\n", BCL::rank());
       assert(false);
     }
+    CudaMatrix<T, BCL::cuda::bcl_allocator<T>> x({tile_shape(idx)[0], tile_shape(idx)[1]},
+                                                 data.local(), tile_shape()[0]);
+
     std::thread memcpy_thread([](auto dst, auto src, auto n) {
       BCL::cuda::memcpy(dst, src, n);
-    }, x.data(), tile_ptr(idx), sizeof(T) * tile_size());
+    }, data, tile_ptr(idx), sizeof(T) * tile_size());
     using request_type = cuda_thread_request<decltype(memcpy_thread)>;
-    return cuda_future<BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>, request_type>
+    return cuda_future<CudaMatrix<T, BCL::cuda::bcl_allocator<T>>, request_type>
                       (std::move(x),
                        cuda_thread_request<decltype(memcpy_thread)>
                                                     (std::move(memcpy_thread)));
@@ -216,6 +243,12 @@ public:
         }
       }
     }
+  }
+
+  __host__ Matrix& operator=(T value) {
+    auto assign_value = [=] __device__ (T current_val) { return value; };
+    apply(assign_value);
+    return *this;
   }
 
   template <typename Fn>
@@ -297,6 +330,164 @@ public:
     }
   }
 
+};
+
+
+// Column major GPU matrix
+template <typename T, typename Allocator>
+struct CudaMatrix {
+  struct matrix_dim;
+
+  CudaMatrix(matrix_dim shape, size_t ld = 0) : m_(shape[0]), n_(shape[1]), ld_(ld) {
+    if (ld_ == 0) {
+      ld_ = m();
+    }
+    data_ = allocate_with<T, Allocator>(size());
+  }
+
+  CudaMatrix(matrix_dim shape, T* data, size_t ld = 0) : m_(shape[0]),
+             n_(shape[1]), data_(data), ld_(ld)
+  {
+    if (ld_ == 0) {
+      ld_ = m();
+    }
+  }
+
+  CudaMatrix() = delete;
+  CudaMatrix(const CudaMatrix&) = delete;
+  CudaMatrix& operator=(const CudaMatrix&) = delete;
+
+  CudaMatrix(CudaMatrix&& other) {
+    move(std::move(other));
+  }
+
+  CudaMatrix& operator=(CudaMatrix&& other) {
+    move(std::move(other));
+    return *this;
+  }
+
+  void move(CudaMatrix&& other) {
+    data_ = other.data_;
+    m_ = other.m_;
+    n_ = other.n_;
+    ld_ = other.ld_;
+    other.data_ = nullptr;
+    other.m_ = 0;
+    other.n_ = 0;
+    other.ld_ = 0;
+  }
+
+  ~CudaMatrix() {
+    deallocate_with<T, Allocator>(data_);
+  }
+
+  size_t m() const {
+    return m_;
+  }
+
+  size_t n() const {
+    return n_;
+  }
+
+  // Physical size of leading dimension
+  size_t ld() const {
+    return ld_;
+  }
+
+  // Logical shape of matrix
+  matrix_dim shape() const {
+    return {m(), n()};
+  }
+
+  // Size of matrix data in number of elements
+  size_t size() const {
+    return ld()*n();
+  }
+
+  T* data() {
+    return data_;
+  }
+
+  T* data_;
+  size_t m_;
+  size_t n_;
+  size_t ld_;
+
+  struct matrix_dim {
+    size_t m, n;
+    __device__ __host__ size_t operator[](size_t dim_num) {
+      if (dim_num == 0) {
+        return m;
+      } else {
+        return n;
+      }
+    }
+  };
+};
+
+// Column-major GPU view
+template <typename T>
+struct CudaMatrixView {
+  struct matrix_dim;
+
+  CudaMatrixView(matrix_dim shape, T* data, size_t ld = 0) : m_(shape[0]),
+                 n_(shape[1]), data_(data), ld_(ld)
+  {
+    if (ld_ == 0) {
+      ld_ = m();
+    }
+  }
+
+  CudaMatrixView() = default;
+  ~CudaMatrixView() = default;
+
+  CudaMatrixView(const CudaMatrixView&) = default;
+  CudaMatrixView& operator=(const CudaMatrixView&) = default;
+  CudaMatrixView(CudaMatrixView&& other) = default;
+  CudaMatrixView& operator=(CudaMatrixView&& other) = default;
+
+  size_t m() const {
+    return m_;
+  }
+
+  size_t n() const {
+    return n_;
+  }
+
+  // Physical size of leading dimension
+  size_t ld() const {
+    return ld_;
+  }
+
+  // Logical shape of matrix
+  matrix_dim shape() const {
+    return {m(), n()};
+  }
+
+  // Size of matrix data in number of elements
+  size_t size() const {
+    return ld()*n();
+  }
+
+  T* data() {
+    return data_;
+  }
+
+  T* data_ = nullptr;
+  size_t m_ = 0;
+  size_t n_ = 0;
+  size_t ld_ = 0;
+
+  struct matrix_dim {
+    size_t m, n;
+    __device__ __host__ size_t operator[](size_t dim_num) {
+      if (dim_num == 0) {
+        return m;
+      } else {
+        return n;
+      }
+    }
+  };
 };
 
 } // end cuda
