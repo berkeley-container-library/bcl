@@ -219,7 +219,7 @@ struct BlockCustom : public Block {
       tile_shape_[0] = (m + grid_shape_[0] - 1) / grid_shape_[0];
     }
     if (tile_shape_[1] == BCL::Tile::div) {
-      tile_shape_[1] = (m + grid_shape_[1] - 1) / grid_shape_[1];
+      tile_shape_[1] = (n + grid_shape_[1] - 1) / grid_shape_[1];
     }
   }
 
