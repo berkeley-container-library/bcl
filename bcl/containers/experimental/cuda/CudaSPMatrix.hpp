@@ -377,9 +377,10 @@ public:
 
     using request_type = cuda_thread_request<decltype(memcpy_thread)>;
 
-    graphblas::Matrix<T>* local_mat = new graphblas::Matrix<T>(m, n);
-    local_mat->build(d_row_ptr.local(), d_col_ind.local(), d_vals_ptr.local(), nnz);
-    return cuda_future<graphblas::Matrix<T>*, request_type>
+    using csr_type = CudaCSRMatrix<T, index_type, BCL::cuda::bcl_allocator<T>>;
+
+    csr_type local_mat({m, n}, nnz, d_vals_ptr.local(), d_row_ptr.local(), d_col_ind.local());
+    return cuda_future<csr_type, request_type>
                       (std::move(local_mat),
                        cuda_thread_request<decltype(memcpy_thread)>
                                             (std::move(memcpy_thread)));
