@@ -470,11 +470,19 @@ spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
   }
 }
 
-template <typename T, typename index_type, typename Allocator>
-void spmm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
-                   CudaMatrix<T, Allocator>& b,
-                   CudaMatrixView<T>& c)
+template <typename AMatrixType, typename BMatrixType, typename CMatrixType>
+void spmm_cusparse(AMatrixType& a,
+                   BMatrixType& b,
+                   CMatrixType& c)
 {
+  using Allocator = typename AMatrixType::allocator_type;
+  if (a.nnz() == 0) {
+    return;
+  }
+  static_assert(std::is_same<typename AMatrixType::value_type, float>::value);
+  static_assert(std::is_same<typename BMatrixType::value_type, float>::value);
+  static_assert(std::is_same<typename CMatrixType::value_type, float>::value);
+  static_assert(std::is_same<typename AMatrixType::index_type, int32_t>::value);
   cusparseHandle_t handle;
   cusparseStatus_t status = cusparseCreate(&handle);
   BCL::cuda::throw_cusparse(status);
@@ -537,6 +545,17 @@ void spmm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
   cusparseDestroySpMat(a_cusparse);
   cusparseDestroyDnMat(b_cusparse);
   cusparseDestroyDnMat(c_cusparse);
+}
+
+// TODO: Put this in another file
+
+template <typename T, typename index_type, typename Allocator>
+CudaCSRMatrix<T, index_type, Allocator> to_gpu(CSRMatrix<T, index_type>& mat) {
+  CudaCSRMatrix<T, index_type, Allocator> mat_gpu({mat.m(), mat.n()}, mat.nnz());
+  cudaMemcpy(mat_gpu.values_data(), mat.values_data(), sizeof(T)*mat.nnz(), cudaMemcpyHostToDevice);
+  cudaMemcpy(mat_gpu.rowptr_data(), mat.rowptr_data(), sizeof(index_type)*(mat.m()+1), cudaMemcpyHostToDevice);
+  cudaMemcpy(mat_gpu.colind_data(), mat.colind_data(), sizeof(index_type)*mat.nnz(), cudaMemcpyHostToDevice);
+  return mat_gpu;
 }
 
 } // end cuda	

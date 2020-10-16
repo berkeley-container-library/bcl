@@ -14,6 +14,8 @@ double duration_sync;
 double duration_compute;
 double duration_accumulate;
 double duration_barrier;
+double duration_issue_reduction;
+double duration_sync_reduction;
 
 template <typename T, typename index_type>
 bool is_sorted(graphblas::Matrix<T>* a);
@@ -195,7 +197,7 @@ void gemm(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<T>& b,
           }
 
           begin = std::chrono::high_resolution_clock::now();
-          spmm_cusparse<T, index_type, Allocator>(local_a, local_b, local_c);
+          spmm_cusparse(local_a, local_b, local_c);
           end = std::chrono::high_resolution_clock::now();
           duration_compute += std::chrono::duration<double>(end - begin).count();
         }
@@ -209,58 +211,211 @@ void gemm(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<T>& b,
   duration_barrier += std::chrono::duration<double>(end - begin).count();
 }
 
+void check_requests(std::vector<MPI_Request>& requests) {
+  for (size_t i = 0; i < requests.size(); ) {
+    int flag;
+    MPI_Test(&requests[i], &flag, MPI_STATUS_IGNORE);
+    if (flag) {
+      requests.erase(requests.begin()+i);
+    } else {
+      i++;
+    }
+  }
+}
+
 template <typename T, typename index_type,
           typename Allocator = BCL::cuda::bcl_allocator<T>>
-void gemm_bowns(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<T>& b,
-                BCL::cuda::Matrix<T>& c) {
+void gemm_bowns_simple(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<T>& b,
+                       BCL::cuda::Matrix<T>& c) {
   assert(a.grid_shape()[0] == c.grid_shape()[0]);
   assert(b.grid_shape()[1] == c.grid_shape()[1]);
   assert(a.grid_shape()[1] == b.grid_shape()[0]);
 
   std::vector<BCL::cuda::CudaMatrix<T, Allocator>> c_mats;
-  std::vector<MPI_Request> requests;
 
-  for (size_t i = 0; i < a.grid_shape()[0]; i++) {
-    c_mats.emplace_back(BCL::cuda::CudaMatrix<T, Allocator>(
-                        {c.tile_shape()[0], c.tile_shape()[1]}));
-    c_mats[i] = 0;
+  for (size_t i = 0; i < c.grid_shape()[0]; i++) {
+    /*
+    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
+      if (c.tile_rank({i, j}) == BCL::rank()) {
+        */
+        c_mats.emplace_back(BCL::cuda::CudaMatrix<T, Allocator>(
+                            {c.tile_shape()[0], c.tile_shape()[1]}));
+        c_mats[i] = 0;
+      // }
+    // }
   }
+
+  // std::vector<MPI_Request> requests;
+  std::vector<MPI_Request> requests(c.grid_shape()[0], MPI_REQUEST_NULL);
 
   for (size_t k = 0; k < a.grid_shape()[1]; k++) {
     for (size_t j = 0; j < c.grid_shape()[1]; j++) {
       if (b.tile_rank({k, j}) == BCL::rank()) {
         size_t i_offset = k + j;
+        // size_t i_offset = 0;
         for (size_t i_ = 0; i_ < a.grid_shape()[0]; i_++) {
           size_t i = (i_ + i_offset) % a.grid_shape()[0];
 
           auto local_a = a.arget_tile_exp({i, k}).get();
           auto local_b = b.get_local_tile({k, j});
-          // BCL::cuda::CudaMatrix<T, Allocator> local_c({c.tile_shape()[0], c.tile_shape()[1]});
-          // local_c = 0;
           auto& local_c = c_mats[i];
 
-          auto begin = std::chrono::high_resolution_clock::now();
-          spmm_cusparse<T, index_type, Allocator>(local_a, local_b, local_c);
-          auto end = std::chrono::high_resolution_clock::now();
-          duration_compute += std::chrono::duration<double>(end - begin).count();
+          local_c.m_ = local_a.shape()[0];
+          local_c.n_ = local_b.shape()[1];
+          spmm_cusparse(local_a, local_b, local_c);
 
           // MPI reduce with local_c on column j of B to process c.tile_rank({i, j})
           // Do I need to add a tag?
-          MPI_Request request;
-          BCL::backend::MPICommWrapper comm(b.row_teams_[j]);
-          MPI_Ireduce(local_c.data(), local_c.data(), local_c.size()*sizeof(T),
-                      MPI_FLOAT, MPI_SUM, c.tile_rank({i, j}), comm.comm(), &request);
-          requests.push_back(request);
+          if (true || (i == 0 && j == 0)) {
+            std::string threads = "";
+            for (size_t ii = 0; ii < b.column_teams_[j].nprocs(); ii++) {
+              threads += std::to_string(b.column_teams_[j].to_world(ii)) + ", ";
+            }
+            MPI_Request request;
+            BCL::backend::MPICommWrapper& comm = b.column_teams_mpi_[j][i];
+            /*
+            fprintf(stderr, "(%lu) Calling Ireduce with data %p, size %lu, MPI_FLOAT, MPI_SUM, comm (%s) -> %lu\n",
+                             BCL::rank(), local_c.data(), local_c.size(),
+                             threads.c_str(),
+                             c.tile_rank({i, j}));
+                             */
+            T* rcv_ptr;
+            if (BCL::rank() == c.tile_rank({i, j})) {
+              auto local_c = c.get_local_tile({i, j});
+              rcv_ptr = local_c.data();
+            }
+            int rv = MPI_Ireduce(local_c.data(), rcv_ptr, local_c.size(),
+                                 MPI_FLOAT, MPI_SUM, b.column_teams_[j].resolve(c.tile_rank({i, j})), comm.comm(), &request);
+            /*
+            int rv = MPI_Reduce(local_c.data(), rcv_ptr, local_c.size(),
+                                MPI_FLOAT, MPI_SUM, c.tile_rank({i, j}), comm.comm());
+                                */
+            assert(rv == MPI_SUCCESS);
+            // fprintf(stderr, "(%lu) Finished Ireduce\n", BCL::rank());
+            requests[i] = request;
+          }
         }
       }
     }
   }
-  auto begin = std::chrono::high_resolution_clock::now();
+  // BCL::print("About to request...\n");
+  MPI_Waitall(requests.size(), requests.data(), MPI_STATUS_IGNORE);
+  /*
   for (auto& request : requests) {
     MPI_Wait(&request, MPI_STATUS_IGNORE);
   }
+  */
   BCL::cuda::barrier();
+}
+
+template <typename T, typename index_type,
+          typename Allocator = BCL::cuda::bcl_allocator<T>>
+void gemm_bowns(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<T>& b,
+                       BCL::cuda::Matrix<T>& c) {
+  assert(a.grid_shape()[0] == c.grid_shape()[0]);
+  assert(b.grid_shape()[1] == c.grid_shape()[1]);
+  assert(a.grid_shape()[1] == b.grid_shape()[0]);
+
+  std::vector<BCL::cuda::CudaMatrix<T, Allocator>> c_mats;
+
+  for (size_t i = 0; i < c.grid_shape()[0]; i++) {
+    /*
+    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
+      if (c.tile_rank({i, j}) == BCL::rank()) {
+        */
+        c_mats.emplace_back(BCL::cuda::CudaMatrix<T, Allocator>(
+                            {c.tile_shape()[0], c.tile_shape()[1]}));
+        c_mats[i] = 0;
+      // }
+    // }
+  }
+
+  // std::vector<MPI_Request> requests;
+  std::vector<MPI_Request> requests(c.grid_shape()[0], MPI_REQUEST_NULL);
+
+  for (size_t k = 0; k < a.grid_shape()[1]; k++) {
+    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
+      if (b.tile_rank({k, j}) == BCL::rank()) {
+        size_t i_offset = k + j;
+        // size_t i_offset = 0;
+        auto begin = std::chrono::high_resolution_clock::now();
+        auto buf_a = a.arget_tile_exp({i_offset % a.grid_shape()[0], k});
+        auto end = std::chrono::high_resolution_clock::now();
+        duration_issue += std::chrono::duration<double>(end - begin).count();
+        for (size_t i_ = 0; i_ < a.grid_shape()[0]; i_++) {
+          size_t i = (i_ + i_offset) % a.grid_shape()[0];
+
+          begin = std::chrono::high_resolution_clock::now();
+          auto local_a = buf_a.get();
+          auto local_b = b.get_local_tile({k, j});
+          auto& local_c = c_mats[i];
+          end = std::chrono::high_resolution_clock::now();
+          duration_sync += std::chrono::duration<double>(end - begin).count();
+
+          if (i_ + 1 < a.grid_shape()[0]) {
+            begin = std::chrono::high_resolution_clock::now();
+            buf_a = a.arget_tile_exp({(i+1) % a.grid_shape()[0], k});
+            end = std::chrono::high_resolution_clock::now();
+            duration_issue += std::chrono::duration<double>(end - begin).count();
+          }
+
+          begin = std::chrono::high_resolution_clock::now();
+          local_c.m_ = local_a.shape()[0];
+          local_c.n_ = local_b.shape()[1];
+          spmm_cusparse(local_a, local_b, local_c);
+          end = std::chrono::high_resolution_clock::now();
+          duration_compute += std::chrono::duration<double>(end - begin).count();
+
+          // MPI reduce with local_c on column j of B to process c.tile_rank({i, j})
+          // Do I need to add a tag?
+          if (true || (i == 0 && j == 0)) {
+            begin = std::chrono::high_resolution_clock::now();
+            std::string threads = "";
+            for (size_t ii = 0; ii < b.column_teams_[j].nprocs(); ii++) {
+              threads += std::to_string(b.column_teams_[j].to_world(ii)) + ", ";
+            }
+            MPI_Request request;
+            BCL::backend::MPICommWrapper& comm = b.column_teams_mpi_[j][i];
+            /*
+            fprintf(stderr, "(%lu) Calling Ireduce with data %p, size %lu, MPI_FLOAT, MPI_SUM, comm (%s) -> %lu\n",
+                             BCL::rank(), local_c.data(), local_c.size(),
+                             threads.c_str(),
+                             c.tile_rank({i, j}));
+                             */
+            T* rcv_ptr;
+            if (BCL::rank() == c.tile_rank({i, j})) {
+              auto local_c = c.get_local_tile({i, j});
+              rcv_ptr = local_c.data();
+            }
+            int rv = MPI_Ireduce(local_c.data(), rcv_ptr, local_c.size(),
+                                 MPI_FLOAT, MPI_SUM, b.column_teams_[j].resolve(c.tile_rank({i, j})), comm.comm(), &request);
+            /*
+            int rv = MPI_Reduce(local_c.data(), rcv_ptr, local_c.size(),
+                                MPI_FLOAT, MPI_SUM, c.tile_rank({i, j}), comm.comm());
+                                */
+            assert(rv == MPI_SUCCESS);
+            // fprintf(stderr, "(%lu) Finished Ireduce\n", BCL::rank());
+            requests[i] = request;
+            end = std::chrono::high_resolution_clock::now();
+            duration_issue_reduction += std::chrono::duration<double>(end - begin).count();
+          }
+        }
+      }
+    }
+  }
+  // BCL::print("About to request...\n");
+  auto begin = std::chrono::high_resolution_clock::now();
+  MPI_Waitall(requests.size(), requests.data(), MPI_STATUS_IGNORE);
   auto end = std::chrono::high_resolution_clock::now();
+  duration_sync_reduction += std::chrono::duration<double>(end - begin).count();
+  /*
+  for (auto& request : requests) {
+    MPI_Wait(&request, MPI_STATUS_IGNORE);
+  }
+  */
+  begin = std::chrono::high_resolution_clock::now();
+  BCL::cuda::barrier();
+  end = std::chrono::high_resolution_clock::now();
   duration_barrier += std::chrono::duration<double>(end - begin).count();
 }
 
