@@ -101,17 +101,17 @@ public:
           auto slc = mat.get_slice_impl_(i*tile_size_m_, (i+1)*tile_size_m_,
                                          j*tile_size_n_, (j+1)*tile_size_n_);
           nnz = slc.nnz_;
-          values = BCL::cuda::alloc<T>(slc.vals_.size());
+          values = BCL::cuda::alloc<T>(std::max(size_t(1), slc.vals_.size()));
           if (values != nullptr) {
             cudaMemcpy(values.local(), slc.vals_.data(), sizeof(T)*slc.vals_.size(),
                        cudaMemcpyHostToDevice);
           }
-          col_ind = BCL::cuda::alloc<index_type>(slc.col_ind_.size());
+          col_ind = BCL::cuda::alloc<index_type>(std::max(size_t(1), slc.col_ind_.size()));
           if (col_ind != nullptr) {
             cudaMemcpy(col_ind.local(), slc.col_ind_.data(), sizeof(index_type)*slc.col_ind_.size(),
                        cudaMemcpyHostToDevice);
           }
-          row_ptr = BCL::cuda::alloc<index_type>(slc.row_ptr_.size());
+          row_ptr = BCL::cuda::alloc<index_type>(std::max(size_t(1), slc.row_ptr_.size()));
           if (row_ptr != nullptr) {
             cudaMemcpy(row_ptr.local(), slc.row_ptr_.data(), sizeof(index_type)*slc.row_ptr_.size(),
                        cudaMemcpyHostToDevice);
@@ -122,13 +122,46 @@ public:
         col_ind = BCL::broadcast(col_ind, proc);
         row_ptr = BCL::broadcast(row_ptr, proc);
         if (values == nullptr || col_ind == nullptr || row_ptr == nullptr) {
-          throw std::runtime_error("SPMatrix: ran out of memory!");
+          throw std::runtime_error("SPMatrix: ran out of memory! (init)");
         }
         nnzs_.push_back(nnz);
         vals_.push_back(values);
         col_ind_.push_back(col_ind);
         row_ptr_.push_back(row_ptr);
       }
+    }
+  }
+
+  std::vector<BCL::UserTeam> column_teams_;
+  std::vector<BCL::UserTeam> row_teams_;
+
+  void init_teams() {
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      std::vector<size_t> row_procs;
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        row_procs.push_back(tile_rank({i, j}));
+      }
+      /*
+      if (BCL::rank() == 0) {
+        printf("Row team %lu: ", i);
+        print_vec(row_procs);
+      }
+      */
+      row_teams_.push_back(BCL::UserTeam(row_procs));
+    }
+
+    for (size_t j = 0; j < grid_shape()[1]; j++) {
+      std::vector<size_t> column_procs;
+      for (size_t i = 0; i < grid_shape()[0]; i++) {
+        column_procs.push_back(tile_rank({i, j}));
+      }
+      /*
+      if (BCL::rank() == 0) {
+        printf("Column team %lu: ", j);
+        print_vec(column_procs);
+      }
+      */
+      column_teams_.push_back(BCL::UserTeam(column_procs));
     }
   }
 
@@ -199,7 +232,7 @@ public:
         col_ind = BCL::broadcast(col_ind, proc);
         row_ptr = BCL::broadcast(row_ptr, proc);
         if (values == nullptr || col_ind == nullptr || row_ptr == nullptr) {
-          throw std::runtime_error("SPMatrix: ran out of memory!");
+          throw std::runtime_error("SPMatrix: ran out of memory! (init)");
         }
         nnzs_.push_back(nnz);
         vals_.push_back(values);
@@ -357,8 +390,12 @@ public:
     auto d_row_ptr = BCL::cuda::alloc<index_type>(m+1);
     auto d_col_ind = BCL::cuda::alloc<index_type>(nnz);
 
-    if (d_vals_ptr == nullptr || d_row_ptr == nullptr || d_col_ind == nullptr) {
-      throw std::runtime_error("Cuda::SPMatrix ran out of memory");
+    if ((d_vals_ptr == nullptr || d_col_ind == nullptr) && nnz > 0) {
+      throw std::runtime_error("Cuda::SPMatrix ran out of memory (vals or col)");
+    }
+
+    if (d_row_ptr == nullptr) {
+      throw std::runtime_error("Cuda::SPMatrix ran out of memory (rowptr)");
     }
 
     std::thread memcpy_thread([](auto d_vals_ptr, auto vals_ptr,

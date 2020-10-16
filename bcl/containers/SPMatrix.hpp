@@ -58,11 +58,12 @@ public:
   }
 };
 
-template <typename T, typename index_type = int>
+template <typename T, typename I = int>
 class SPMatrix {
 public:
 
   using size_type = size_t;
+  using index_type = index_t;
 
   // NOTE: vals_[i], col_ind_[i] are of size nnz_[i];
   std::vector<BCL::GlobalPtr<T>> vals_;

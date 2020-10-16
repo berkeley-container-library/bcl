@@ -118,6 +118,59 @@ public:
     BCL::barrier();
   }
 
+  std::vector<BCL::UserTeam> column_teams_;
+  std::vector<BCL::UserTeam> row_teams_;
+
+  void init_teams() {
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      std::vector<size_t> row_procs;
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        row_procs.push_back(tile_rank({i, j}));
+      }
+      /*
+      if (BCL::rank() == 0) {
+        printf("Row team %lu: ", i);
+        print_vec(row_procs);
+      }
+      */
+      row_teams_.push_back(BCL::UserTeam(row_procs));
+    }
+
+    for (size_t j = 0; j < grid_shape()[1]; j++) {
+      std::vector<size_t> column_procs;
+      for (size_t i = 0; i < grid_shape()[0]; i++) {
+        column_procs.push_back(tile_rank({i, j}));
+      }
+      /*
+      if (BCL::rank() == 0) {
+        printf("Column team %lu: ", j);
+        print_vec(column_procs);
+      }
+      */
+      column_teams_.push_back(BCL::UserTeam(column_procs));
+    }
+  }
+
+  std::vector<std::vector<BCL::backend::MPICommWrapper>> column_teams_mpi_;
+  std::vector<std::vector<BCL::backend::MPICommWrapper>> row_teams_mpi_;
+
+  void init_comms(size_t i_block) {
+    for (size_t i = 0; i < column_teams_.size(); i++) {
+      column_teams_mpi_.push_back(std::vector<BCL::backend::MPICommWrapper>());
+      for (size_t j = 0; j < i_block; j++) {
+        BCL::backend::MPICommWrapper comm(column_teams_[i]);
+        column_teams_mpi_[i].emplace_back(std::move(comm));
+      }
+    }
+    for (size_t i = 0; i < row_teams_.size(); i++) {
+      row_teams_mpi_.push_back(std::vector<BCL::backend::MPICommWrapper>());
+      for (size_t j = 0; j < i_block; j++) {
+        BCL::backend::MPICommWrapper comm(row_teams_[i]);
+        row_teams_mpi_[i].emplace_back(std::move(comm));
+      }
+    }
+  }
+
   Matrix(size_t m, size_t n, Block&& blocking = BCL::BlockOpt())
           : m_(m), n_(n)
   {
@@ -286,7 +339,8 @@ public:
           for (size_t jj = 0; jj < tile_shape({i, j})[1]; jj++) {
             size_t li = ii + offset_idx_m;
             size_t lj = jj + offset_idx_n;
-            local_matrix[li*shape()[1] + lj] = local_tile[index({ii, jj}, tile_shape())];
+            // local_matrix[li*shape()[1] + lj] = local_tile[index({ii, jj}, tile_shape())];
+            local_matrix[li + lj*shape()[0]] = local_tile[index({ii, jj}, tile_shape())];
           }
         }
       }
@@ -332,10 +386,20 @@ public:
 
 };
 
+template <typename T>
+__global__ void cudamatrix_copy_impl_(T* data, size_t size, T value) {
+  size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+
+  if (tid < size) {
+    data[tid] = value;
+  }
+}
 
 // Column major GPU matrix
 template <typename T, typename Allocator>
 struct CudaMatrix {
+  using value_type = T;
+
   struct matrix_dim;
 
   CudaMatrix(matrix_dim shape, size_t ld = 0) : m_(shape[0]), n_(shape[1]), ld_(ld) {
@@ -364,6 +428,14 @@ struct CudaMatrix {
   CudaMatrix& operator=(CudaMatrix&& other) {
     move(std::move(other));
     return *this;
+  }
+
+  operator CudaMatrixView<T>() {
+    return CudaMatrixView<T>({shape()[0], shape()[1]}, data(), ld());
+  }
+
+  CudaMatrixView<T> view() {
+    return CudaMatrixView<T>({shape()[0], shape()[1]}, data(), ld());
   }
 
   void move(CudaMatrix&& other) {
@@ -408,6 +480,15 @@ struct CudaMatrix {
     return data_;
   }
 
+  CudaMatrix& operator=(T value) {
+    size_t block_dim = 1024;
+    size_t block_size = std::min(std::size_t(block_dim), size());
+    size_t num_blocks = (size() + block_size - 1) / block_size;
+    cudamatrix_copy_impl_<<<num_blocks, block_size>>>(data(), size(), value);
+    cudaDeviceSynchronize();
+    return *this;
+  }
+
   T* data_;
   size_t m_;
   size_t n_;
@@ -428,6 +509,8 @@ struct CudaMatrix {
 // Column-major GPU view
 template <typename T>
 struct CudaMatrixView {
+  using value_type = T;
+  
   struct matrix_dim;
 
   CudaMatrixView(matrix_dim shape, T* data, size_t ld = 0) : m_(shape[0]),
