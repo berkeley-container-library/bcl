@@ -67,6 +67,9 @@ size_t heap_ptr = CUDA_SMALLEST_MEM_UNIT;
 
 template <typename T>
 ptr<T> alloc(size_t size) {
+  if (size == 0) {
+    return nullptr;
+  }
   size = sizeof(T) * size;
   size = CUDA_SMALLEST_MEM_UNIT * ((size + CUDA_SMALLEST_MEM_UNIT - 1) / CUDA_SMALLEST_MEM_UNIT);
 
@@ -130,7 +133,7 @@ void dealloc(ptr<T> alloc) {
   }
 
   if (allocd_chunks.find(alloc.ptr_) == allocd_chunks.end()) {
-    throw std::runtime_error("BCL malloc(): attempted to free unallocated chunk");
+    throw std::runtime_error("BCL malloc(): attempted to free unallocated chunk " + alloc.str());
   }
 
   if (alloc.rank_ != BCL::rank()) {

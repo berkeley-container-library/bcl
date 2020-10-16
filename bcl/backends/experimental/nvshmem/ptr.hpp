@@ -69,6 +69,9 @@ struct ptr {
   // Users should not use this unless they're writing
   // custom SHMEM.
   __host__ __device__ T *rptr() const {
+    if (*this == nullptr) {
+      return nullptr;
+    }
     #ifdef  __CUDA_ARCH__
       return (T *) (((char *) BCL::cuda::device_smem_base_ptr) + ptr_);
     #else
