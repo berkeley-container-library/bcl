@@ -18,7 +18,16 @@ inline void copy_cross_gpu_(const BCL::cuda::ptr<T>& dst, const BCL::cuda::ptr<T
   }
   assert(dst.rank_ == BCL::rank() || src.rank_ == BCL::rank());
   if (dst.rank_ == BCL::rank()) {
-    nvshmem_getmem(dst.local(), src.rptr(), sizeof(T)*count, src.rank_);
+    size_t chunk_size_bytes = size_t(512)*1024*size_t(1024);
+    size_t chunk_size = chunk_size_bytes / sizeof(T);
+    if (count > chunk_size) {
+      for (size_t offset = 0; offset < count; offset += chunk_size) {
+        size_t size = std::min(chunk_size, count - offset);
+        nvshmem_getmem(dst.local() + offset, src.rptr() + offset, sizeof(T)*size, src.rank_);
+      }
+    } else {
+      nvshmem_getmem(dst.local(), src.rptr(), sizeof(T)*count, src.rank_);
+    }
   } else if (src.rank_ == BCL::rank()) {
     nvshmem_putmem(dst.rptr(), src.local(), sizeof(T)*count, dst.rank_);
   } else {

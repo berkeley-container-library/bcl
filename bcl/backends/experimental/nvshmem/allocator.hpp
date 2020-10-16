@@ -36,6 +36,9 @@ public:
   cuda_allocator(const cuda_allocator&) = default;
 
   pointer allocate(size_type n) {
+    if (n == 0) {
+      return nullptr;
+    }
     T* ptr;
     cudaError_t error = cudaMalloc(&ptr, n*sizeof(value_type));
     if (error != CUDA_SUCCESS || ptr == nullptr) {
@@ -88,6 +91,9 @@ public:
   bcl_allocator(const bcl_allocator&) = default;
 
   pointer allocate(size_type n) {
+    if (n == 0) {
+      return nullptr;
+    }
     auto lptr_ = BCL::cuda::alloc<value_type>(n);
     if (lptr_ == nullptr) {
       throw std::bad_alloc();
@@ -96,8 +102,10 @@ public:
   }
 
   void deallocate(pointer ptr, size_type n = 0) {
-    auto gptr = __to_cuda_gptr<value_type>(ptr);
-    BCL::cuda::dealloc<value_type>(gptr);
+    if (ptr != nullptr) {
+      auto gptr = __to_cuda_gptr<value_type>(ptr);
+      BCL::cuda::dealloc<value_type>(gptr);
+    }
   }
 
   template<typename... Args>
