@@ -55,6 +55,8 @@ struct CircularQueue {
   int head_buf = 0;
   int tail_buf = 0;
 
+  using backoff_type = Backoff<decltype(BCL::double_backoff)>;
+
   void print(const bool print_elements = false) {
     printf("Ring Buffer Queue, size %d, capacity %d, hosted on %d\n", size(),
       capacity(), host());
@@ -199,7 +201,7 @@ struct CircularQueue {
     if (new_tail - head_buf > capacity()) {
       // head_buf = BCL::rget(reserved_head);
       if (synchronized) {
-        Backoff backoff;
+        backoff_type backoff;
         while (new_tail - head_buf > capacity()) {
           head_buf = BCL::fetch_and_op<int>(reserved_head, 0, BCL::plus<int>{});
           if (new_tail - head_buf > capacity()) {
@@ -217,7 +219,7 @@ struct CircularQueue {
     data[old_tail % capacity()] = val;
     BCL::flush();
     int rv;
-    Backoff backoff;
+    backoff_type backoff;
     do {
       rv = BCL::compare_and_swap<int>(reserved_tail, old_tail, new_tail);
       if (rv != old_tail) {
@@ -332,7 +334,7 @@ struct CircularQueue {
     if (new_tail - head_buf > capacity()) {
       // head_buf = BCL::rget(reserved_head);
       if (synchronized) {
-        Backoff backoff;
+        backoff_type backoff;
         while (new_tail - head_buf > capacity()) {
           head_buf = BCL::fetch_and_op<int>(reserved_head, 0, BCL::plus<int>{});
           if (new_tail - head_buf > capacity()) {
@@ -360,7 +362,7 @@ struct CircularQueue {
     }
     BCL::flush();
     int rv;
-    Backoff backoff;
+    backoff_type backoff;
     do {
       /*
       fprintf(stderr, "(%lu) in CAS loop. reserved_tail %lu -> %lu\n", BCL::rank(),
@@ -426,7 +428,7 @@ struct CircularQueue {
     } else {
       backoff_value = 100;
     }
-    Backoff backoff(1, backoff_value);
+    backoff_type backoff(1, backoff_value);
     do {
       rv = BCL::compare_and_swap<int>(reserved_head, old_head, old_head + 1);
       if (rv != old_head) {
@@ -488,7 +490,7 @@ struct CircularQueue {
       // BCL::flush() (implicit)
 
       int rv;
-      Backoff backoff;
+      backoff_type backoff;
       do {
         rv = BCL::compare_and_swap<int>(reserved_head, old_head, old_head + n_to_pop);
         if (rv != old_head) {

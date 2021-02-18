@@ -99,7 +99,7 @@ namespace BCL {
   //       std::is_trivially_copyable<T>, but missing from
   //       icc.
   template <typename T>
-  struct serialize <T, 0, BCL::enable_if_t<std::is_trivial<T>::value>> :
+  struct serialize <T, 0, BCL::enable_if_t<std::is_trivially_copyable<T>::value>> :
     public identity_serialize<T>{};
 
   template <typename T>

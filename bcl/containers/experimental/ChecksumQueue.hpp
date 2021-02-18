@@ -23,7 +23,7 @@ struct hashedData {
 template <
   typename T,
   typename Hash = std::hash<T>,
-  typename TSerialize = BCL::serialize <hashedData<T>>
+  typename TSerialize = BCL::identity_serialize <hashedData<T>>
   >
 struct ChecksumQueue {
   BCL::Array <hashedData<T>, TSerialize> data;
@@ -33,6 +33,8 @@ struct ChecksumQueue {
   using value_type = T;
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
+
+  using backoff_type = Backoff<decltype(BCL::double_backoff)>;
 
   using hasher = Hash;
 
@@ -184,7 +186,7 @@ struct ChecksumQueue {
     int old_tail = BCL::fetch_and_op<int>(tail, 1, BCL::plus<int>{});
     if (old_tail >= capacity() + head_buf - reserve_end) {
       head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
-      Backoff backoff;
+      backoff_type backoff;
       while (old_tail >= capacity() + head_buf - reserve_end) {
         backoff.backoff();
         head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
@@ -212,7 +214,7 @@ struct ChecksumQueue {
     //printf("Pushing %d elements; tail at %d/%d.\n", vals.size(), old_tail, head_buf);
     if (new_tail > capacity() + head_buf - reserve_end) {
       head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
-      Backoff backoff;
+      backoff_type backoff;
       while (new_tail > capacity() + head_buf - reserve_end) {
         backoff.backoff();
         head_buf = BCL::fetch_and_op<int>(head, 0, BCL::plus<int>{});
@@ -317,7 +319,7 @@ struct ChecksumQueue {
     if (old_head >= tail_buf) {
       tail_buf = BCL::fetch_and_op<int>(tail, 0, BCL::plus<int>{});
       if (wait_on_underrun) {
-        Backoff backoff;
+        backoff_type backoff;
         while (old_head >= tail_buf) {
           //printf("Couldn't pop; not enough space; waiting (h: %d, t: %d)\n", old_head, tail_buf);
           backoff.backoff();
@@ -332,7 +334,7 @@ struct ChecksumQueue {
       }
     }
 
-    Backoff backoff;
+    backoff_type backoff;
     //It is necessary to retry pops until they work. Consider the case:
     //push push pop pop (in this order, almost simultaneous, by different machines)
     //where the first push executes slowly, so the first pop reads bad data,
@@ -392,7 +394,7 @@ struct ChecksumQueue {
     std::vector<hashedData<T>> hvals;
     vals.resize(n_pop);
     hvals.resize(n_pop);
-    Backoff backoff;
+    backoff_type backoff;
     //Retry pops until they work, but only re-request the bad data.
     size_t s_err = n_pop;
     size_t h_err = 0;

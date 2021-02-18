@@ -1,4 +1,5 @@
 
+#include <mpi.h>
 #include <bcl/bcl.hpp>
 #include <bcl/backends/experimental/nvshmem/backend.hpp>
 #include <bcl/containers/experimental/cuda/CudaMatrix.hpp>
@@ -55,7 +56,11 @@ int main(int argc, char** argv) {
     b.print_info();
     printf("C:\n");
     c.print_info();
+    fflush(stdout);
   }
+
+  // b.init_teams();
+  // b.init_comms(c.grid_shape()[0]);
 
   // printf("A taking %lf GB, B %lf GB\n", 1.0e-9*a.my_mem(), 1.0e-9*b.my_mem());
 
@@ -63,9 +68,9 @@ int main(int argc, char** argv) {
 
   using allocator_type = BCL::cuda::bcl_allocator<T>;
 
+  BCL::print("Starting matmul...\n");
   auto begin = std::chrono::high_resolution_clock::now();
-  BCL::cuda::gemm(a, b, c);
-  BCL::cuda::barrier();
+  BCL::cuda::gemm_bowns_onesided<T, graphblas::Index, allocator_type>(a, b, c);
   auto end = std::chrono::high_resolution_clock::now();
 
   double duration = std::chrono::duration<double>(end - begin).count();
@@ -75,18 +80,24 @@ int main(int argc, char** argv) {
   double max_compute = BCL::allreduce(BCL::cuda::duration_compute, BCL::max<double>{});
   double max_accumulate = BCL::allreduce(BCL::cuda::duration_accumulate, BCL::max<double>{});
   double max_barrier = BCL::allreduce(BCL::cuda::duration_barrier, BCL::max<double>{});
+  double max_issue_reduction = BCL::allreduce(BCL::cuda::duration_issue_reduction, BCL::max<double>{});
+  double max_sync_reduction = BCL::allreduce(BCL::cuda::duration_sync_reduction, BCL::max<double>{});
 
   double min_issue = BCL::allreduce(BCL::cuda::duration_issue, BCL::min<double>{});
   double min_sync = BCL::allreduce(BCL::cuda::duration_sync, BCL::min<double>{});
   double min_compute = BCL::allreduce(BCL::cuda::duration_compute, BCL::min<double>{});
   double min_accumulate = BCL::allreduce(BCL::cuda::duration_accumulate, BCL::min<double>{});
   double min_barrier = BCL::allreduce(BCL::cuda::duration_barrier, BCL::min<double>{});
+  double min_issue_reduction = BCL::allreduce(BCL::cuda::duration_issue_reduction, BCL::min<double>{});
+  double min_sync_reduction = BCL::allreduce(BCL::cuda::duration_sync_reduction, BCL::min<double>{});
 
   BCL::cuda::duration_issue = BCL::allreduce(BCL::cuda::duration_issue, std::plus<double>{});
   BCL::cuda::duration_sync = BCL::allreduce(BCL::cuda::duration_sync, std::plus<double>{});
   BCL::cuda::duration_compute = BCL::allreduce(BCL::cuda::duration_compute, std::plus<double>{});
   BCL::cuda::duration_accumulate = BCL::allreduce(BCL::cuda::duration_accumulate, std::plus<double>{});
   BCL::cuda::duration_barrier = BCL::allreduce(BCL::cuda::duration_barrier, std::plus<double>{});
+  BCL::cuda::duration_issue_reduction = BCL::allreduce(BCL::cuda::duration_issue_reduction, std::plus<double>{});
+  BCL::cuda::duration_sync_reduction = BCL::allreduce(BCL::cuda::duration_sync_reduction, std::plus<double>{});
 
   BCL::print("SpMM took %lf s\n", duration);
 
@@ -106,6 +117,12 @@ int main(int argc, char** argv) {
     printf("duration_barrier %lf (%lf -> %lf)\n",
            BCL::cuda::duration_barrier / BCL::nprocs(),
            min_barrier, max_barrier);
+    printf("duration_issue_reduction %lf (%lf -> %lf)\n",
+           BCL::cuda::duration_issue_reduction / BCL::nprocs(),
+           min_issue_reduction, max_issue_reduction);
+    printf("duration_sync_reduction %lf (%lf -> %lf)\n",
+           BCL::cuda::duration_sync_reduction / BCL::nprocs(),
+           min_sync_reduction, max_sync_reduction);
   }
 
   BCL::barrier();

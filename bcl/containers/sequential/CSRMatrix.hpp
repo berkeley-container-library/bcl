@@ -52,6 +52,30 @@ struct CSRMatrix {
   CSRMatrix& operator=(CSRMatrix&& m) = default;
   CSRMatrix& operator=(const CSRMatrix& m) = default;
 
+  size_type m() const {
+    return m_;
+  }
+
+  size_type n() const {
+    return n_;
+  }
+
+  size_type nnz() const {
+    return nnz_;
+  }
+
+  T* values_data() {
+    return vals_.data();
+  }
+
+  index_type* rowptr_data() {
+    return row_ptr_.data();
+  }
+
+  index_type* colind_data() {
+    return col_ind_.data();
+  }
+
   template <typename A>
   CSRMatrix& operator=(const CSRMatrix<T, index_t, A>& other) {
     m_ = other.m_;

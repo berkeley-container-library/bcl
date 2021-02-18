@@ -5,6 +5,9 @@
 #include "cusparse_util.hpp"
 #include "grb_util.hpp"
 
+#include <bcl/containers/CircularQueue.hpp>
+#include <bcl/containers/experimental/ChecksumQueue.hpp>
+
 namespace BCL {
 
 namespace cuda {
@@ -311,7 +314,7 @@ void gemm_bowns_simple(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<
 template <typename T, typename index_type,
           typename Allocator = BCL::cuda::bcl_allocator<T>>
 void gemm_bowns(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<T>& b,
-                       BCL::cuda::Matrix<T>& c) {
+                BCL::cuda::Matrix<T>& c) {
   assert(a.grid_shape()[0] == c.grid_shape()[0]);
   assert(b.grid_shape()[1] == c.grid_shape()[1]);
   assert(a.grid_shape()[1] == b.grid_shape()[0]);
@@ -416,6 +419,247 @@ void gemm_bowns(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<T>& b,
   begin = std::chrono::high_resolution_clock::now();
   BCL::cuda::barrier();
   end = std::chrono::high_resolution_clock::now();
+  duration_barrier += std::chrono::duration<double>(end - begin).count();
+}
+
+template <typename T>
+struct CudaMatrix_ptr {
+  BCL::cuda::ptr<T> values;
+  size_t m;
+  size_t n;
+  size_t ld;
+  size_t i;
+  size_t j;
+};
+
+
+template <typename T, typename index_type,
+          typename Allocator = BCL::cuda::bcl_allocator<T>>
+void gemm_bowns_onesided(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<T>& b,
+                         BCL::cuda::Matrix<T>& c) {
+  assert(a.grid_shape()[0] == c.grid_shape()[0]);
+  assert(b.grid_shape()[1] == c.grid_shape()[1]);
+  assert(a.grid_shape()[1] == b.grid_shape()[0]);
+
+  using queue_type = BCL::ChecksumQueue<CudaMatrix_ptr<T>, BCL::djb2_hash<CudaMatrix_ptr<T>>>;
+  std::vector<queue_type> queues;
+
+  for (size_t i = 0; i < BCL::nprocs(); i++) {
+    queues.emplace_back(queue_type(i, a.grid_shape()[1]+8));
+  }
+
+  std::vector<BCL::cuda::CudaMatrix<T, Allocator>> c_mats;
+
+  for (size_t i = 0; i < c.grid_shape()[0]; i++) {
+    /*
+    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
+      if (c.tile_rank({i, j}) == BCL::rank()) {
+        */
+        c_mats.emplace_back(BCL::cuda::CudaMatrix<T, Allocator>(
+                            {c.tile_shape()[0], c.tile_shape()[1]}));
+        c_mats[i] = 0;
+      // }
+    // }
+  }
+
+  std::vector<MPI_Request> requests(c.grid_shape()[0], MPI_REQUEST_NULL);
+
+  for (size_t k = 0; k < a.grid_shape()[1]; k++) {
+    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
+      if (b.tile_rank({k, j}) == BCL::rank()) {
+        size_t i_offset = k + j;
+        auto begin = std::chrono::high_resolution_clock::now();
+        auto buf_a = a.arget_tile_exp({i_offset % a.grid_shape()[0], k});
+        auto end = std::chrono::high_resolution_clock::now();
+        duration_issue += std::chrono::duration<double>(end - begin).count();
+        for (size_t i_ = 0; i_ < a.grid_shape()[0]; i_++) {
+          size_t i = (i_ + i_offset) % a.grid_shape()[0];
+
+          begin = std::chrono::high_resolution_clock::now();
+          auto local_a = buf_a.get();
+          auto local_b = b.get_local_tile({k, j});
+          auto& local_c = c_mats[i];
+          end = std::chrono::high_resolution_clock::now();
+          duration_sync += std::chrono::duration<double>(end - begin).count();
+
+          if (i_ + 1 < a.grid_shape()[0]) {
+            begin = std::chrono::high_resolution_clock::now();
+            buf_a = a.arget_tile_exp({(i+1) % a.grid_shape()[0], k});
+            end = std::chrono::high_resolution_clock::now();
+            duration_issue += std::chrono::duration<double>(end - begin).count();
+          }
+
+          begin = std::chrono::high_resolution_clock::now();
+          local_c.m_ = local_a.shape()[0];
+          local_c.n_ = local_b.shape()[1];
+          spmm_cusparse(local_a, local_b, local_c);
+          end = std::chrono::high_resolution_clock::now();
+          duration_compute += std::chrono::duration<double>(end - begin).count();
+          
+          queue_type& queue = queues[c.tile_rank({i, j})];
+          queue.push({BCL::cuda::__to_cuda_gptr<T>(local_c.data()), local_c.shape()[0], local_c.shape()[1], local_c.ld(), i, j});
+
+        }
+      }
+    }
+  }
+
+  queue_type& my_queue = queues[BCL::rank()];
+  auto begin = std::chrono::high_resolution_clock::now();
+  if (c.my_num_tiles() > 0) {
+    for (size_t i = 0; i < a.grid_shape()[1]; i++) {
+      CudaMatrix_ptr<T> ptr;
+      while (!my_queue.pop(ptr)) {}
+      CudaMatrix<T, BCL::cuda::bcl_allocator<T>> x({c.tile_shape()[0], c.tile_shape()[1]});
+      BCL::cuda::memcpy(x.data(), ptr.values, sizeof(T)*x.size());
+      auto local_c = c.get_local_tile({ptr.i, ptr.j});
+      local_c += x;
+    }
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  duration_sync_reduction += std::chrono::duration<double>(end - begin).count();
+  begin = std::chrono::high_resolution_clock::now();
+  BCL::cuda::barrier();
+  end = std::chrono::high_resolution_clock::now();
+  duration_barrier += std::chrono::duration<double>(end - begin).count();
+}
+
+template <typename T, typename index_type,
+          typename Allocator = BCL::cuda::bcl_allocator<T>>
+void gemm_aowns_onesided(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<T>& b,
+                         BCL::cuda::Matrix<T>& c) {
+  assert(a.grid_shape()[0] == c.grid_shape()[0]);
+  assert(b.grid_shape()[1] == c.grid_shape()[1]);
+  assert(a.grid_shape()[1] == b.grid_shape()[0]);
+
+  using queue_type = BCL::ChecksumQueue<CudaMatrix_ptr<T>, BCL::djb2_hash<CudaMatrix_ptr<T>>>;
+  std::vector<queue_type> queues;
+
+  for (size_t i = 0; i < BCL::nprocs(); i++) {
+    queues.emplace_back(queue_type(i, a.grid_shape()[1]+8));
+  }
+
+  std::vector<BCL::cuda::CudaMatrix<T, Allocator>> c_mats;
+
+  for (size_t i = 0; i < c.grid_shape()[1]; i++) {
+    /*
+    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
+      if (c.tile_rank({i, j}) == BCL::rank()) {
+        */
+        c_mats.emplace_back(BCL::cuda::CudaMatrix<T, Allocator>(
+                            {c.tile_shape()[0], c.tile_shape()[1]}));
+        c_mats[i] = 0;
+      // }
+    // }
+  }
+
+  // std::vector<MPI_Request> requests;
+  std::vector<MPI_Request> requests(c.grid_shape()[0], MPI_REQUEST_NULL);
+
+  for (size_t i = 0; i < a.grid_shape()[0]; i++) {
+    for (size_t k = 0; k < a.grid_shape()[1]; k++) {
+      if (a.tile_rank({i, k}) == BCL::rank()) {
+        size_t j_offset = i + k;
+        auto begin = std::chrono::high_resolution_clock::now();
+        auto buf_b = b.arget_tile_exp({k, j_offset % b.grid_shape()[1]});
+        auto end = std::chrono::high_resolution_clock::now();
+        duration_issue += std::chrono::duration<double>(end - begin).count();
+        for (size_t j_ = 0; j_ < b.grid_shape()[1]; j_++) {
+          size_t j = (j_ + j_offset) % b.grid_shape()[1];
+
+          begin = std::chrono::high_resolution_clock::now();
+          auto local_a = a.get_local_tile({i, k});
+          auto local_b = buf_b.get();
+          auto& local_c = c_mats[j];
+          end = std::chrono::high_resolution_clock::now();
+          duration_sync += std::chrono::duration<double>(end - begin).count();
+
+          if (j_ + 1 < b.grid_shape()[1]) {
+            begin = std::chrono::high_resolution_clock::now();
+            buf_b = b.arget_tile_exp({k, (j+1) % b.grid_shape()[1]});
+            end = std::chrono::high_resolution_clock::now();
+            duration_issue += std::chrono::duration<double>(end - begin).count();
+          }
+
+          begin = std::chrono::high_resolution_clock::now();
+          local_c.m_ = local_a.shape()[0];
+          local_c.n_ = local_b.shape()[1];
+          spmm_cusparse(local_a, local_b, local_c);
+          end = std::chrono::high_resolution_clock::now();
+          duration_compute += std::chrono::duration<double>(end - begin).count();
+          
+          queue_type& queue = queues[c.tile_rank({i, j})];
+          queue.push({BCL::cuda::__to_cuda_gptr<T>(local_c.data()), local_c.shape()[0], local_c.shape()[1], local_c.ld(), i, j});
+
+        }
+      }
+    }
+  }
+  queue_type& my_queue = queues[BCL::rank()];
+  auto begin = std::chrono::high_resolution_clock::now();
+  if (c.my_num_tiles() > 0) {
+    for (size_t i = 0; i < a.grid_shape()[1]; i++) {
+      CudaMatrix_ptr<T> ptr;
+      while (!my_queue.pop(ptr)) {}
+      CudaMatrix<T, BCL::cuda::bcl_allocator<T>> x({c.tile_shape()[0], c.tile_shape()[1]});
+      BCL::cuda::memcpy(x.data(), ptr.values, sizeof(T)*x.size());
+      auto local_c = c.get_local_tile({ptr.i, ptr.j});
+      local_c += x;
+    }
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  duration_sync_reduction += std::chrono::duration<double>(end - begin).count();
+  begin = std::chrono::high_resolution_clock::now();
+  BCL::cuda::barrier();
+  end = std::chrono::high_resolution_clock::now();
+  duration_barrier += std::chrono::duration<double>(end - begin).count();
+}
+
+template <typename T, typename index_type,
+          typename Allocator = BCL::cuda::bcl_allocator<T>>
+void gemm_cusp(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::Matrix<T>& b,
+               BCL::cuda::Matrix<T>& c) {
+  assert(a.grid_shape()[0] == c.grid_shape()[0]);
+  assert(b.grid_shape()[1] == c.grid_shape()[1]);
+  assert(a.grid_shape()[1] == b.grid_shape()[0]);
+  for (size_t i = 0; i < c.grid_shape()[0]; i++) {
+    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
+      if (c.tile_rank({i, j}) == BCL::rank()) {
+        size_t k_offset = i + j;
+
+        auto begin = std::chrono::high_resolution_clock::now();
+        auto buf_a = a.arget_tile_exp({i, k_offset % a.grid_shape()[1]});
+        auto buf_b = b.arget_tile_exp({k_offset % a.grid_shape()[1], j});
+        auto end = std::chrono::high_resolution_clock::now();
+        duration_issue += std::chrono::duration<double>(end - begin).count();
+        for (size_t k_ = 0; k_ < a.grid_shape()[1]; k_++) {
+          size_t k = (k_ + k_offset) % a.grid_shape()[1];
+          auto begin = std::chrono::high_resolution_clock::now();
+          auto local_a = buf_a.get();
+          auto local_b = buf_b.get();
+          auto local_c = c.get_local_tile({i, j});
+          auto end = std::chrono::high_resolution_clock::now();
+          duration_sync += std::chrono::duration<double>(end - begin).count();
+
+          if (k_+1 < a.grid_shape()[1]) {
+            auto begin = std::chrono::high_resolution_clock::now();
+            buf_a = a.arget_tile_exp({i, (k+1) % a.grid_shape()[1]});
+            buf_b = b.arget_tile_exp({(k+1) % a.grid_shape()[1], j});
+            auto end = std::chrono::high_resolution_clock::now();
+            duration_issue += std::chrono::duration<double>(end - begin).count();
+          }
+
+          begin = std::chrono::high_resolution_clock::now();
+          spmm_cusp(local_a, local_b, local_c);
+          end = std::chrono::high_resolution_clock::now();
+          duration_compute += std::chrono::duration<double>(end - begin).count();
+        }
+      }
+    }
+  }
+  auto begin = std::chrono::high_resolution_clock::now();
+  BCL::cuda::barrier();
+  auto end = std::chrono::high_resolution_clock::now();
   duration_barrier += std::chrono::duration<double>(end - begin).count();
 }
 

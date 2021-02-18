@@ -49,10 +49,16 @@ inline __device__ __host__ size_t nprocs() {
 }
 
 inline void init() {
+#ifdef MPI
   nvshmemx_init_attr_t attr;
   attr.mpi_comm = &BCL::comm;
 
   nvshmemx_init_attr(NVSHMEMX_INIT_WITH_MPI_COMM, &attr);
+#elif SHMEM
+  nvshmemx_init_attr(NVSHMEMX_INIT_WITH_SHMEM, 0);
+#else
+  static_assert(false);
+#endif
 
   int device_count;
   cudaGetDeviceCount(&device_count);

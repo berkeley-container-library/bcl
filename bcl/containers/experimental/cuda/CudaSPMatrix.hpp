@@ -23,15 +23,18 @@
 #include <bcl/containers/experimental/cuda/sequential/CudaCSRMatrix.hpp>
 #include <graphblas/graphblas.hpp>
 
+#include <bcl/backends/mpi/team_conv.hpp>
+
 namespace BCL {
 
 namespace cuda {
 
-template <typename T, typename index_type = int>
+template <typename T, typename I = int>
 class SPMatrix {
 public:
 
   using value_type = T;
+  using index_type = I;
 
   std::vector<BCL::cuda::ptr<T>> vals_;
   std::vector<BCL::cuda::ptr<index_type>> col_ind_;
@@ -331,6 +334,18 @@ public:
     return matrix;
   }
 
+  __host__ size_t my_num_tiles() {
+    size_t num_tiles = 0;
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        if (tile_rank({i, j}) == BCL::rank()) {
+          num_tiles++;
+        }
+      }
+    }
+    return num_tiles;
+  }
+
   __host__ size_t my_nnzs() {
     size_t total_nnzs = 0;
     for (size_t i = 0; i < grid_shape()[0]; i++) {
@@ -421,6 +436,13 @@ public:
                       (std::move(local_mat),
                        cuda_thread_request<decltype(memcpy_thread)>
                                             (std::move(memcpy_thread)));
+  }
+
+  __host__ auto get_local_tile(matrix_dim idx) const {
+    size_t vals_idx = idx[0]*grid_shape()[1] + idx[1];
+    return CudaCSRMatrixView<value_type, index_type>(
+                   tile_shape(idx)[0], tile_shape(idx)[1], nnzs_[vals_idx],
+                   vals_[vals_idx].local(), row_ptr_[vals_idx].local(), col_ind_[vals_idx].local());
   }
 
   __host__ BCL::CSRMatrix<T, index_type> get_tile_cpu(matrix_dim idx) {

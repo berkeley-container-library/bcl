@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
   fflush(stdout);
   BCL::barrier();
 
-  BCL::cuda::init(8*1024);
+  BCL::cuda::init();
 
   size_t insert_size = 8192;
   size_t inserts_per_proc = 8*1024;

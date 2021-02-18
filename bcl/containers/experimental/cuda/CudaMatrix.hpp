@@ -12,6 +12,7 @@
 #include <bcl/containers/detail/Blocking.hpp>
 #include <bcl/containers/experimental/cuda/sequential/device_vector.cuh>
 #include <bcl/containers/experimental/cuda/util/cuda_future.hpp>
+#include <bcl/backends/mpi/team_conv.hpp>
 
 namespace BCL {
 
@@ -22,6 +23,14 @@ struct CudaMatrix;
 
 template <typename T>
 struct CudaMatrixView;
+
+template <typename T, typename Fn>
+__global__ void apply_fn_1d_impl_(T* a, T* b, size_t size, Fn fn) {
+  size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+  if (tid < size) {
+    a[tid] = fn(a[tid], b[tid]);
+  }
+}
 
 template <typename T, typename Fn>
 __global__ void apply_matrix_impl_(BCL::cuda::ptr<T> data, size_t size, Fn fn) {
@@ -347,6 +356,18 @@ public:
     }
     return local_matrix;
   }
+  
+  __host__ size_t my_num_tiles() {
+    size_t num_tiles = 0;
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        if (tile_rank({i, j}) == BCL::rank()) {
+          num_tiles++;
+        }
+      }
+    }
+    return num_tiles;
+  }
 
   __host__ __device__ std::size_t index(matrix_dim idx, matrix_dim dims) const {
     // Column-major indexing, here.
@@ -399,6 +420,7 @@ __global__ void cudamatrix_copy_impl_(T* data, size_t size, T value) {
 template <typename T, typename Allocator>
 struct CudaMatrix {
   using value_type = T;
+  using allocator_type = Allocator;
 
   struct matrix_dim;
 
@@ -431,7 +453,7 @@ struct CudaMatrix {
   }
 
   operator CudaMatrixView<T>() {
-    return CudaMatrixView<T>({shape()[0], shape()[1]}, data(), ld());
+    return view();
   }
 
   CudaMatrixView<T> view() {
@@ -478,6 +500,21 @@ struct CudaMatrix {
 
   T* data() {
     return data_;
+  }
+
+  CudaMatrix& operator+=(CudaMatrix& other) {
+    auto binary_add = [] __device__ (T x, T y) -> T { return x + y; };
+    return apply_binary_op(other, binary_add);
+  }
+
+  template <typename Fn>
+  CudaMatrix& apply_binary_op(CudaMatrix& other, Fn&& fn) {
+    size_t block_dim = 1024;
+    size_t block_size = std::min(block_dim, size());
+    size_t num_blocks = (size() + block_size - 1) / block_size;
+    apply_fn_1d_impl_<<<num_blocks, block_size>>>(data(), other.data(), size(), fn);
+    cudaDeviceSynchronize();
+    return *this;
   }
 
   CudaMatrix& operator=(T value) {
@@ -554,6 +591,21 @@ struct CudaMatrixView {
 
   T* data() {
     return data_;
+  }
+
+  CudaMatrixView& operator+=(CudaMatrixView other) {
+    auto binary_add = [] __device__ (T x, T y) -> T { return x + y; };
+    return apply_binary_op(other, binary_add);
+  }
+
+  template <typename Fn>
+  CudaMatrixView& apply_binary_op(CudaMatrixView other, Fn&& fn) {
+    size_t block_dim = 1024;
+    size_t block_size = std::min(block_dim, size());
+    size_t num_blocks = (size() + block_size - 1) / block_size;
+    apply_fn_1d_impl_<<<num_blocks, block_size>>>(data(), other.data(), size(), fn);
+    cudaDeviceSynchronize();
+    return *this;
   }
 
   T* data_ = nullptr;
