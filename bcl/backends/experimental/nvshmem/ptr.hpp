@@ -43,10 +43,6 @@ struct ptr {
     return (*this != nullptr) && rank_ == BCL::rank();
   }
 
-  __host__ __device__ operator ptr<void>() noexcept {
-    return ptr<void>(rank_, ptr_);
-  }
-
   __host__ __device__ operator const ptr<void>() const noexcept {
     return ptr<void>(rank_, ptr_);
   }

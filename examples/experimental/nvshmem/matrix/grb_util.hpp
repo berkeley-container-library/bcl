@@ -384,7 +384,7 @@ spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
   grb_desc_->descriptor_.debug_ = false;
   if (a.nnz() == 0 || b.nnz() == 0) {
     // return empty matrix
-    return CudaCSRMatrix<T, index_type, Allocator>({a.shape()[0], b.shape()[1]});
+    return CudaCSRMatrix<T, index_type, Allocator>({a.shape()[0], b.shape()[1]}, 0);
   } else {
     size_t m = a.m();
     size_t n = b.n();
@@ -549,7 +549,7 @@ void spmm_cusparse(AMatrixType& a,
 
 // TODO: Put this in another file
 
-template <typename T, typename index_type, typename Allocator>
+template <typename T, typename index_type, typename Allocator = BCL::bcl_allocator<T>>
 CudaCSRMatrix<T, index_type, Allocator> to_gpu(CSRMatrix<T, index_type>& mat) {
   CudaCSRMatrix<T, index_type, Allocator> mat_gpu({mat.m(), mat.n()}, mat.nnz());
   cudaMemcpy(mat_gpu.values_data(), mat.values_data(), sizeof(T)*mat.nnz(), cudaMemcpyHostToDevice);

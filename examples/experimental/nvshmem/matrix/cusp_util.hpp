@@ -1,3 +1,4 @@
+#pragma once
 
 namespace BCL {
 
@@ -78,6 +79,33 @@ void spmm_cusp(AMatrixType& a,
 
   cusp::multiply(a_view, b_view, c_view);
   cudaDeviceSynchronize();
+}
+
+template <typename AMatrixType, typename BMatrixType, typename CMatrixType>
+void spgemm_cusp(AMatrixType& a,
+                 BMatrixType& b,
+                 CMatrixType& c)
+{
+  using Allocator = typename AMatrixType::allocator_type;
+  if (a.nnz() == 0 || b.nnz() == 0){ 
+    return;
+  }
+
+  auto a_view = get_cusp_view_sparse(a);
+  auto b_view = get_cusp_view_sparse(b);
+
+  cusp::multiply(a_view, b_view, c);
+  cudaDeviceSynchronize();
+}
+
+template <typename T, typename I, typename MatrixType>
+BCL::cuda::CudaCSRMatrixView<T, I> get_view(MatrixType& x) {
+  auto* values_data = thrust::raw_pointer_cast(&x.values[0]);
+  auto* rowptr_data = thrust::raw_pointer_cast(&x.row_offsets[0]);
+  auto* colind_data = thrust::raw_pointer_cast(&x.column_indices[0]);
+
+  return BCL::cuda::CudaCSRMatrixView<T, I>(x.num_rows, x.num_cols, x.num_entries,
+                                            values_data, rowptr_data, colind_data);
 }
 
 } // end cuda

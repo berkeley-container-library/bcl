@@ -478,8 +478,8 @@ public:
                                      std::move(l_col_ind));
   }
 
-  template <typename Allocator>
-  __host__ void assign_tile(matrix_dim idx, CudaCSRMatrix<T, index_type, Allocator>& mat) {
+  template <typename MatrixType>
+  __host__ void assign_tile(matrix_dim idx, MatrixType& mat) {
     size_t i = idx[0];
     size_t j = idx[1];
     assert(vals_[j + i*grid_shape()[1]].is_local());

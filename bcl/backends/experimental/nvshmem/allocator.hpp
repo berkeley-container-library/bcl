@@ -41,7 +41,7 @@ public:
     }
     T* ptr;
     cudaError_t error = cudaMalloc(&ptr, n*sizeof(value_type));
-    if (error != CUDA_SUCCESS || ptr == nullptr) {
+    if (error != cudaSuccess || ptr == nullptr) {
       throw std::bad_alloc();
     } else {
       return ptr;
