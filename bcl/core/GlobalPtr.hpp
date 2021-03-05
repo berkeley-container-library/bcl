@@ -81,18 +81,7 @@ struct GlobalPtr {
     return !(*this == null);
   }
 
-  /*
-  template <typename U>
-  operator GlobalPtr <U> () const {
-    return GlobalPtr <U> (this->rank, this->ptr);
-  }
-  */
-
-  operator GlobalPtr<void>() noexcept {
-    return GlobalPtr<void>(rank, ptr);
-  }
-
-  operator const GlobalPtr<void>() const noexcept {
+  operator GlobalPtr<void>() const noexcept {
     return GlobalPtr<void>(rank, ptr);
   }
 

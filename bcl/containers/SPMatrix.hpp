@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <numeric>
 
+#include <cstring>
+
 #include <bcl/containers/sequential/CSRMatrix.hpp>
 #include <bcl/containers/sequential/SparseAccumulator.hpp>
 #include <bcl/containers/detail/Blocking.hpp>
@@ -56,11 +58,12 @@ public:
   }
 };
 
-template <typename T, typename index_type = int>
+template <typename T, typename I = int>
 class SPMatrix {
 public:
 
   using size_type = size_t;
+  using index_type = index_t;
 
   // NOTE: vals_[i], col_ind_[i] are of size nnz_[i];
   std::vector<BCL::GlobalPtr<T>> vals_;
@@ -88,18 +91,85 @@ public:
 
   template <typename TeamType>
   SPMatrix(const std::string& fname, Block&& blocking, const TeamType& team,
-           FileFormat format = FileFormat::MatrixMarket) :
+           FileFormat format = FileFormat::Unknown) :
            team_ptr_(team.clone()) {
     init(fname, std::move(blocking), format);
   }
 
   SPMatrix(const std::string& fname, Block&& blocking = BCL::BlockOpt(),
-           FileFormat format = FileFormat::MatrixMarket) :
+           FileFormat format = FileFormat::Unknown) :
           team_ptr_(new BCL::WorldTeam()) {
     init(fname, std::move(blocking), format);
   }
 
-  void init(const std::string& fname, Block&& blocking, FileFormat format = FileFormat::MatrixMarket) {
+  // XXX: in progress, initialize with an empty matrix
+  template <typename TeamType>
+  SPMatrix(size_t m, size_t n, Block&& blocking, const TeamType& team) :
+           team_ptr_(team.clone()) {
+    init_with_zero(m, n, blocking);
+  }
+
+  SPMatrix(size_t m, size_t n, Block&& blocking) :
+           team_ptr_(new BCL::WorldTeam()) {
+    init_with_zero(m, n, std::move(blocking));
+  }
+
+  void init_with_zero(size_t m, size_t n, Block&& blocking) {
+    m_ = m;
+    n_ = n;
+    nnz_ = 0;
+
+    blocking.seed(m_, n_, BCL::nprocs(this->team()));
+
+    pm_ = blocking.pgrid_shape()[0];
+    pn_ = blocking.pgrid_shape()[1];
+
+    tile_size_m_ = blocking.tile_shape()[0];
+    tile_size_n_ = blocking.tile_shape()[1];
+
+    if (pm_*pn_ > BCL::nprocs()) {
+      throw std::runtime_error("DMatrix: tried to create a DMatrix with a too large p-grid.");
+    }
+
+    grid_dim_m_ = (m_ + tile_size_m_ - 1) / tile_size_m_;
+    grid_dim_n_ = (n_ + tile_size_n_ - 1) / tile_size_n_;
+
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        size_t lpi = i % pm_;
+        size_t lpj = j % pn_;
+        size_t proc = lpj + lpi*pn_;
+
+        size_t nnz;
+        BCL::GlobalPtr<T> vals;
+        BCL::GlobalPtr<index_type> col_ind;
+        BCL::GlobalPtr<index_type> row_ptr;
+        if (BCL::rank() == proc) {
+          vals = BCL::alloc<T>(1);
+          col_ind = BCL::alloc<index_type>(1);
+          row_ptr = BCL::alloc<index_type>(2);
+
+          *vals = 0;
+          *col_ind = 0;
+          row_ptr[0] = 0;
+          row_ptr[1] = 1;
+        }
+
+        nnz = BCL::broadcast(nnz, proc);
+        vals = BCL::broadcast(vals, proc);
+        col_ind = BCL::broadcast(col_ind, proc);
+        row_ptr = BCL::broadcast(row_ptr, proc);
+
+        nnzs_.push_back(nnz);
+        vals_.push_back(vals);
+        col_ind_.push_back(col_ind);
+        row_ptr_.push_back(row_ptr);
+      }
+    }
+  }
+
+  void init(const std::string& fname, Block&& blocking,
+            FileFormat format = FileFormat::Unknown) {
     CSRMatrix<T, index_type> mat(fname, format);
 
     m_ = mat.m_;
@@ -459,3 +529,5 @@ public:
 };
 
 }
+
+#include <bcl/containers/algorithms/spgemm.hpp>
