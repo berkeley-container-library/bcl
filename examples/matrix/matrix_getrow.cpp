@@ -27,9 +27,8 @@ int main(int argc, char** argv) {
   }
 
   // Apply the matrix to random values.
-  // srand48(BCL::rank());
-  // matrix.apply_inplace([](float a) { return drand48(); });
-  matrix = 12;
+  srand48(BCL::rank());
+  matrix.apply_inplace([](float a) { return drand48(); });
 
   // Barrier necessary to ensure all processes are finished
   // before rank 0 reads.
@@ -42,7 +41,7 @@ int main(int argc, char** argv) {
 		  size_t row_num = i % matrix.tile_shape()[0];
 		  printf("Getting row %lu, which should be row %lu within tile %lu:\n",
 		  	     i, row_num, tile_num);
-		  std::vector<float> row = matrix.get_tile_row(tile_num, 0, i);
+		  std::vector<float> row = matrix.get_tile_row(tile_num, 0, row_num);
 		  print_vec(row);
 	  }
   }
