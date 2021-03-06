@@ -8,7 +8,9 @@ int main(int argc, char** argv) {
 	BCL::init(segment_size);
 
   // Create a distributed matrix of size 1024 x 1024
-	BCL::DMatrix<float> matrix({1024, 1024}, BCL::BlockRow({10, BCL::Tile::div}));
+	BCL::DMatrix<float> matrix({1024, 1024}, BCL::BlockRow());
+	// This would mean each row block has a fixed height of 10
+	// BCL::DMatrix<float> matrix({1024, 1024}, BCL::BlockRow({10, BCL::Tile::div}));
 
   // Print information about tile size and distribution.
   if (BCL::rank() == 0) {

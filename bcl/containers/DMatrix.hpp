@@ -178,6 +178,12 @@ public:
     return vals;
   }
 
+  std::vector<T> get_tile_row(size_t i, size_t j, size_t row) const {
+    std::vector<T> vals(tile_shape(i, j)[1]);
+    BCL::rget(tile_ptr(i, j) + row*tile_shape()[1], vals.data(), vals.size());
+    return vals;
+  }
+
   GlobalRef<T> operator()(size_t i, size_t j) {
     size_t pi = i / tile_shape()[0];
     size_t pj = j / tile_shape()[1];
