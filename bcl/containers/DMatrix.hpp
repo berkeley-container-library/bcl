@@ -26,6 +26,17 @@ template <typename T>
 class DMatrix : public DExpr<DMatrix<T>> {
 public:
 
+  struct matrix_dim {
+    size_t m, n;
+    size_t operator[](size_t dim_num) {
+      if (dim_num == 0) {
+        return m;
+      } else {
+        return n;
+      }
+    }
+  };
+
   using value_type = T;
 
   std::vector<BCL::GlobalPtr<T>> ptrs_;
@@ -129,14 +140,14 @@ public:
   }
 
   template <typename TeamType>
-  DMatrix(size_t m, size_t n, Block&& blocking,
-          const TeamType& team) : m_(m), n_(n), team_ptr_(team.clone()) {
-    init(m, n, std::move(blocking));
+  DMatrix(matrix_dim dim, Block&& blocking,
+          const TeamType& team) : m_(dim[0]), n_(dim[1]), team_ptr_(team.clone()) {
+    init(dim[0], dim[1], std::move(blocking));
   }
 
-  DMatrix(size_t m, size_t n, Block&& blocking = BCL::BlockOpt()) : m_(m), n_(n),
+  DMatrix(matrix_dim dim, Block&& blocking = BCL::BlockOpt()) : m_(dim[0]), n_(dim[1]),
           team_ptr_(new BCL::WorldTeam()) {
-    init(m, n, std::move(blocking));
+    init(dim[0], dim[1], std::move(blocking));
   }
 
   const BCL::Team& team() const {
@@ -351,21 +362,22 @@ public:
     return false;
   }
 
-  std::array<size_t, 2> shape() const noexcept {
+  matrix_dim shape() const noexcept {
     return {m_, n_};
   }
 
-  std::array<size_t, 2> grid_shape() const noexcept {
+  matrix_dim grid_shape() const noexcept {
     return {grid_dim_m_, grid_dim_n_};
   }
 
-  std::array<size_t, 2> pgrid_shape() const noexcept {
+  matrix_dim pgrid_shape() const noexcept {
     return {pm(), pn()};
   }
 
-  std::array<size_t, 2> tile_shape() const noexcept {
+  matrix_dim tile_shape() const noexcept {
     return {tile_size_m_, tile_size_n_};
   }
+
 
   std::array<size_t, 2> tile_shape(size_t i, size_t j) const noexcept {
     size_t m_size = std::min(tile_size_m_, m_ - i*tile_size_m_);
