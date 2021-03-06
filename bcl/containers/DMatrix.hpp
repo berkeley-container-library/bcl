@@ -379,7 +379,7 @@ public:
   }
 
 
-  std::array<size_t, 2> tile_shape(size_t i, size_t j) const noexcept {
+  matrix_dim tile_shape(size_t i, size_t j) const noexcept {
     size_t m_size = std::min(tile_size_m_, m_ - i*tile_size_m_);
     size_t n_size = std::min(tile_size_n_, n_ - j*tile_size_n_);
     return {m_size, n_size};
@@ -429,6 +429,23 @@ public:
            tile_shape()[0], tile_shape()[1]);
     printf("  Forming a %lu x %lu tile grid\n", grid_shape()[0], grid_shape()[1]);
     printf("  On a %lu x %lu processor grid\n", pgrid_shape()[0], pgrid_shape()[1]);
+  }
+
+  void print_info(bool print_pgrid = true) const {
+    printf("=== MATRIX INFO ===\n");
+    printf("%lu x %lu matrix\n", shape()[0], shape()[1]);
+    printf("  * Consists of %lu x %lu tiles\n", tile_shape()[0], tile_shape()[1]);
+    printf("  * Arranged in a %lu x %lu grid\n", grid_shape()[0], grid_shape()[1]);
+
+    if (print_pgrid) {
+      for (size_t i = 0; i < grid_shape()[0]; i++) {
+        printf("   ");
+        for (size_t j = 0; j < grid_shape()[1]; j++) {
+          printf("%2lu ", tile_ptr(i, j).rank);
+        }
+        printf("\n");
+      }
+    }
   }
 
   template <typename Allocator = BCL::bcl_allocator<T>>

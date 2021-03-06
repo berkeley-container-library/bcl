@@ -15,12 +15,13 @@ SOURCES += $(wildcard *.cpp)
 TARGETS := $(patsubst %.cpp, %, $(SOURCES))
 
 # SHMEM and GASNet-EX tend to perform the best.
-BACKEND = -DMPI
+# MPI is default
+BACKEND = 
 # BACKEND = '-DSHMEM'
 # BACKEND = '-DGASNET_EX'
 
-# This should likely be replaced with MKL on Cori.
-BLAS_LIB = -lcblas
+# If you compile off of Cori, you will need to link with `-lcblas`.
+BLAS_LIB = 
 
 CXXFLAGS = -std=gnu++17 -O3 $(BACKEND) -I$(BCL_HOME) $(BLAS_LIB)
 
