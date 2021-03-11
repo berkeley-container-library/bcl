@@ -50,7 +50,7 @@ inline void init(uint64_t shared_segment_size = 256, bool thread_safe = false) {
     shmem_init();
   } else {
     int provided;
-    shmem_init_thread(SHMEM_THREAD_MULTIPLE, &provided);
+    shmem_init_thread(SHMEM_THREAD_MULTIPLE);
 
     if (provided < SHMEM_THREAD_MULTIPLE) {
       throw BCL::error("BCL requested SHMEM_THREAD_MULTIPLE, but was deniced."

@@ -40,43 +40,51 @@ namespace BCL {
 
   template <typename T> struct xor_;
 
+  /*
   template <>
   struct xor_<unsigned long long> : public abstract_xor_<unsigned long long>, public abstract_ulonglong, public atomic_op<unsigned long long> {
     unsigned long long shmem_atomic_op(const GlobalPtr<unsigned long long> ptr, const unsigned long long& val) const {
       return shmem_ulonglong_atomic_fetch_xor(ptr.rptr(), val, ptr.rank);
     }
   };
+  */
 
+  /*
   template <>
   struct xor_<int> : public abstract_xor_<int>, public abstract_int, public atomic_op<int> {
     int shmem_atomic_op(const GlobalPtr<int> ptr, const int& val) const {
       return shmem_int_atomic_fetch_xor(ptr.rptr(), val, ptr.rank);
     }
   };
+  */
 
   template <typename T>
   struct abstract_or_: public virtual abstract_op<T>{};
 
   template <typename T> struct or_;
 
+  /*
   template <>
   struct or_<int> : public abstract_or_<int>, public abstract_int, public atomic_op<int> {
     int shmem_atomic_op(const GlobalPtr<int> ptr, const int& val) const {
       return shmem_int_atomic_fetch_or(ptr.rptr(), val, ptr.rank);
     }
   };
+  */
 
   template <typename T>
   struct abstract_and_: public virtual abstract_op<T>{};
 
   template <typename T> struct and_;
 
+  /*
   template <>
   struct and_<int> : public abstract_and_<int>, public abstract_int, public atomic_op<int> {
     int shmem_atomic_op(const GlobalPtr<int> ptr, const int& val) const {
       return shmem_int_atomic_fetch_and(ptr.rptr(), val, ptr.rank);
     }
   };
+  */
 
   // Define the plus operation
   template <typename T>
