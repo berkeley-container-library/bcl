@@ -67,6 +67,17 @@ inline T broadcast(T& val, uint64_t root) {
   return rv;
 }
 
+template <typename T>
+inline auto arbroadcast(T* val, uint64_t root, size_t size, const BCL::Team& team) {
+  throw debug_error("BCL arbroadcast(): Has not been implemented on GASNet-EX backend.");
+  return BCL::request(gex_Event_t());
+}
+
+template <typename T, typename Allocator>
+inline void broadcast(std::vector<T, Allocator>& val, uint64_t root, const BCL::Team& team) {
+  throw debug_error("BCL broadcast() (with teams): Has not been implemented on GASNet-EX backend.");
+}
+
 
 template <typename T, typename Op>
 inline T reduce(const T& val, Op fn, size_t dst_rank) {
