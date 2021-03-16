@@ -184,6 +184,11 @@ public:
     return vals;
   }
 
+  template <typename Allocator = BCL::bcl_allocator<T>>
+  auto arget_tile_row(size_t i, size_t j, size_t row) const {
+    return BCL::arget<T, Allocator>(tile_ptr(i, j) + row*tile_shape()[1], tile_shape(i, j)[1]);
+  }
+
   GlobalRef<T> operator()(size_t i, size_t j) {
     size_t pi = i / tile_shape()[0];
     size_t pj = j / tile_shape()[1];
