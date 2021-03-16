@@ -113,7 +113,7 @@ inline T broadcast(const T &val, uint64_t root) {
 template <typename T>
 inline auto arbroadcast(T* val, uint64_t root, size_t size, const BCL::Team& team) {
   throw debug_error("BCL arbroadcast(): Has not been implemented on SHMEM backend.");
-  return BCL::request(gex_Event_t());
+  return BCL::request();
 }
 
 template <typename T, typename Allocator>
