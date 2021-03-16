@@ -2,8 +2,8 @@
 #include <bcl/containers/DMatrix.hpp>
 #include <cstdio>
 
-template <typename T>
-void print_vec(std::vector<T>& v) {
+template <typename T, typename Allocator>
+void print_vec(std::vector<T, Allocator>& v) {
 	for (size_t i = 0; i < v.size(); i++) {
 		printf(" %.2lf", v[i]);
 	}
@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
 		  printf("Getting row %lu, which should be row %lu within tile %lu:\n",
 		  	     i, row_num, tile_num);
 		  auto row_buf = matrix.arget_tile_row(tile_num, 0, row_num);
-		  row = row_buf.get();
+		  auto row = row_buf.get();
 		  print_vec(row);
 	  }
   }
