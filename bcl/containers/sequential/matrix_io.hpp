@@ -17,6 +17,7 @@ auto detect_file_type(const std::string& fname) {
   for (int64_t i = fname.size()-1; i >= 0; i--) {
     if (fname[i] == '.') {
       suffix_spot = i;
+      break;
     }
   }
 

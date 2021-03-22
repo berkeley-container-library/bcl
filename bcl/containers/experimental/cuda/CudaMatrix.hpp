@@ -13,15 +13,16 @@
 #include <bcl/containers/experimental/cuda/sequential/device_vector.cuh>
 #include <bcl/containers/experimental/cuda/util/cuda_future.hpp>
 #include <bcl/backends/mpi/team_conv.hpp>
+#include <bcl/containers/experimental/cuda/util/matrix_indexing.hpp>
 
 namespace BCL {
 
 namespace cuda {
 
-template <typename T, typename Allocator>
+template <typename T, typename Allocator, typename Indexing>
 struct CudaMatrix;
 
-template <typename T>
+template <typename T, typename Indexing>
 struct CudaMatrixView;
 
 template <typename T, typename Fn>
@@ -54,18 +55,21 @@ apply_matrix_2d_idx_impl_(BCL::cuda::ptr<T> data,
   size_t tidy = threadIdx.y + blockIdx.y * blockDim.y;
   if (tidx < tile_shape_m && tidy < tile_shape_n) {
     // Column-major indexing, here.
-    size_t idx = tidx + tidy*tile_size_m;
+    size_t idx = tidx*tile_size_n + tidy;
     data.local()[idx] = fn(data.local()[idx], tidx + tile_offset_m, tidy + tile_offset_n);
   }
 }
 
-template <typename T, typename Allocator = BCL::cuda::bcl_allocator<T>>
+template <typename T,
+          typename Allocator = BCL::cuda::bcl_allocator<T>,
+          typename Indexing = RowMajorIndexing>
 struct CudaMatrix;
 
-template <typename T>
+template <typename T,
+          typename Indexing = RowMajorIndexing>
 struct CudaMatrixView;
 
-template <typename T>
+template <typename T, typename Indexing = RowMajorIndexing>
 class Matrix {
 public:
 
@@ -115,7 +119,7 @@ public:
         size_t proc = lpj + lpi*pn_;
         BCL::cuda::ptr<T> ptr;
         if (BCL::rank() == proc) {
-          ptr = BCL::cuda::alloc<T>(tile_size());
+          ptr = BCL::cuda::alloc<T>(tile_size({i, j}));
         }
         ptr = BCL::broadcast(ptr, proc);
         if (ptr == nullptr) {
@@ -164,6 +168,9 @@ public:
   std::vector<std::vector<BCL::backend::MPICommWrapper>> row_teams_mpi_;
 
   void init_comms(size_t i_block) {
+    if (column_teams_.empty()) {
+      init_teams();
+    }
     for (size_t i = 0; i < column_teams_.size(); i++) {
       column_teams_mpi_.push_back(std::vector<BCL::backend::MPICommWrapper>());
       for (size_t j = 0; j < i_block; j++) {
@@ -206,7 +213,7 @@ public:
   }
 
   template <typename U, typename V>
-  auto min(U a, V b) const {
+  __device__ __host__ auto min(U a, V b) const {
     if (a < b) {
       return a;
     } else {
@@ -224,8 +231,8 @@ public:
     return matrix_dim {grid_dim_m_, grid_dim_n_};
   }
 
-  __device__ __host__ size_t tile_size() const {
-    return tile_shape()[0] * tile_shape()[1];
+  __device__ __host__ size_t tile_size(matrix_dim idx) const {
+    return tile_shape(idx)[0]*tile_shape(idx)[1];
   }
 
   __device__ __host__ BCL::cuda::ptr<T> tile_ptr(matrix_dim idx) const {
@@ -240,53 +247,52 @@ public:
   }
 
   __host__ auto get_tile(matrix_dim idx) const {
-    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size());
-    BCL::cuda::memcpy(x.data(), tile_ptr(idx), sizeof(T) * tile_size());
+    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size(idx));
+    BCL::cuda::memcpy(x.data(), tile_ptr(idx), sizeof(T) * tile_size(idx));
     BCL::cuda::flush();
     return x;
   }
 
   __host__ auto get_local_tile(matrix_dim idx) const {
     T* data = tile_ptr(idx).local();
-    return CudaMatrixView<T>({tile_shape(idx)[0], tile_shape(idx)[1]}, data,
-                             tile_shape()[0]);
+    return CudaMatrixView<T, Indexing>({tile_shape(idx)[0], tile_shape(idx)[1]}, data);
   }
 
   template <typename Allocator>
   __host__ void get_tile_no_alloc_(matrix_dim idx,
                          BCL::cuda::device_vector<T, Allocator>& vec) const {
-    nvshmem_getmem_nbi(vec.data(), tile_ptr(idx).rptr(), sizeof(T)*tile_size(),
+    nvshmem_getmem_nbi(vec.data(), tile_ptr(idx).rptr(), sizeof(T)*tile_size(idx),
                        tile_ptr(idx).rank_);
   }
 
   __host__ auto arget_tile(matrix_dim idx) const {
     using no_init = typename BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>::no_init;
-    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size(), no_init{});
+    BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>> x(tile_size(idx), no_init{});
     if (x.data() == nullptr) {
       printf("%lu has nullptr x!\n", BCL::rank());
       assert(false);
     }
-    // BCL::cuda::memcpy(x.data(), tile_ptr(idx), sizeof(T) * tile_size());
-    nvshmem_getmem_nbi(x.data(), tile_ptr(idx).rptr(), sizeof(T)*tile_size(),
+    // BCL::cuda::memcpy(x.data(), tile_ptr(idx), sizeof(T) * tile_size(idx));
+    nvshmem_getmem_nbi(x.data(), tile_ptr(idx).rptr(), sizeof(T)*tile_size(idx),
                        tile_ptr(idx).rank_);
     return cuda_future<BCL::cuda::device_vector<T, BCL::cuda::bcl_allocator<T>>>
                       (std::move(x), cuda_request());
   }
 
   __host__ auto arget_tile_exp(matrix_dim idx) const {
-    auto data = BCL::cuda::alloc<T>(tile_size());
+    auto data = BCL::cuda::alloc<T>(tile_size(idx));
     if (data == nullptr) {
       printf("(%lu has nullptr x!\n", BCL::rank());
       assert(false);
     }
-    CudaMatrix<T, BCL::cuda::bcl_allocator<T>> x({tile_shape(idx)[0], tile_shape(idx)[1]},
-                                                 data.local(), tile_shape()[0]);
+    CudaMatrix<T, BCL::cuda::bcl_allocator<T>, Indexing> x({tile_shape(idx)[0], tile_shape(idx)[1]},
+                                                           data.local());
 
     std::thread memcpy_thread([](auto dst, auto src, auto n) {
       BCL::cuda::memcpy(dst, src, n);
-    }, data, tile_ptr(idx), sizeof(T) * tile_size());
+    }, data, tile_ptr(idx), sizeof(T) * tile_size(idx));
     using request_type = cuda_thread_request<decltype(memcpy_thread)>;
-    return cuda_future<CudaMatrix<T, BCL::cuda::bcl_allocator<T>>, request_type>
+    return cuda_future<CudaMatrix<T, BCL::cuda::bcl_allocator<T>, Indexing>, request_type>
                       (std::move(x),
                        cuda_thread_request<decltype(memcpy_thread)>
                                                     (std::move(memcpy_thread)));
@@ -299,9 +305,9 @@ public:
       for (size_t j = 0; j < grid_shape()[1]; j++) {
         if (tile_ptr({i, j}).rank_ == BCL::rank()) {
           size_t block_dim = 1024;
-          size_t block_size = std::min(std::size_t(block_dim), tile_size());
-          size_t num_blocks = (tile_size() + block_size - 1) / block_size;
-          apply_matrix_impl_<<<num_blocks, block_size>>>(tile_ptr({i, j}), tile_size(), fn);
+          size_t block_size = std::min(std::size_t(block_dim), tile_size({i, j}));
+          size_t num_blocks = (tile_size({i, j}) + block_size - 1) / block_size;
+          apply_matrix_impl_<<<num_blocks, block_size>>>(tile_ptr({i, j}), tile_size({i, j}), fn);
         }
       }
     }
@@ -349,7 +355,11 @@ public:
             size_t li = ii + offset_idx_m;
             size_t lj = jj + offset_idx_n;
             // local_matrix[li*shape()[1] + lj] = local_tile[index({ii, jj}, tile_shape())];
-            local_matrix[li + lj*shape()[0]] = local_tile[index({ii, jj}, tile_shape())];
+            local_matrix[li*shape()[1] + lj] =
+                   local_tile[Indexing().index(ii,
+                                               jj,
+                                               tile_shape({i, j})[0],
+                                               tile_shape({i, j})[1])];
           }
         }
       }
@@ -371,18 +381,20 @@ public:
 
   __host__ __device__ std::size_t index(matrix_dim idx, matrix_dim dims) const {
     // Column-major indexing, here.
-    return idx[0] + idx[1]*dims[0];
+    // return idx[0] + idx[1]*dims[0];
+    // Row-major indexing, here.
+    return idx[0]*dims[1] + idx[1];
   }
 
   __host__ void randomize() {
     for (size_t i = 0; i < grid_shape()[0]; i++) {
       for (size_t j = 0; j < grid_shape()[1]; j++) {
         if (tile_ptr({i, j}).rank_ == BCL::rank()) {
-          std::vector<T> local(tile_size());
+          std::vector<T> local(tile_size({i, j}));
           for (size_t k = 0; k < local.size(); k++) {
             local[k] = (lrand48() % 101) - 50;
           }
-          cudaMemcpy(tile_ptr({i, j}).local(), local.data(), sizeof(T)*tile_size(), cudaMemcpyHostToDevice);
+          cudaMemcpy(tile_ptr({i, j}).local(), local.data(), sizeof(T)*tile_size({i, j}), cudaMemcpyHostToDevice);
         }
       }
     }
@@ -416,17 +428,21 @@ __global__ void cudamatrix_copy_impl_(T* data, size_t size, T value) {
   }
 }
 
-// Column major GPU matrix
-template <typename T, typename Allocator>
+// GPU matrix
+template <typename T,
+          typename Allocator,
+          typename Indexing>
 struct CudaMatrix {
   using value_type = T;
   using allocator_type = Allocator;
+  // XXX: not to be confused with index_type
+  using indexing_type = Indexing;
 
   struct matrix_dim;
 
   CudaMatrix(matrix_dim shape, size_t ld = 0) : m_(shape[0]), n_(shape[1]), ld_(ld) {
     if (ld_ == 0) {
-      ld_ = m();
+      ld_ = Indexing().default_ld(m(), n());
     }
     data_ = allocate_with<T, Allocator>(size());
   }
@@ -435,13 +451,41 @@ struct CudaMatrix {
              n_(shape[1]), data_(data), ld_(ld)
   {
     if (ld_ == 0) {
-      ld_ = m();
+      ld_ = Indexing().default_ld(m(), n());
     }
   }
 
   CudaMatrix() = delete;
-  CudaMatrix(const CudaMatrix&) = delete;
-  CudaMatrix& operator=(const CudaMatrix&) = delete;
+  // CudaMatrix(const CudaMatrix&) = delete;
+  // CudaMatrix& operator=(const CudaMatrix&) = delete;
+
+  CudaMatrix(const CudaMatrix& other) {
+    m_ = other.m_;
+    n_ = other.n_;
+    ld_ = other.ld_;
+    data_ = allocate_with<T, Allocator>(size());
+    cudaMemcpy(data_, other.data_, sizeof(T)*other.size(), cudaMemcpyDeviceToDevice);
+  }
+
+  CudaMatrix& operator=(const CudaMatrix& other) {
+    deallocate_with<T, Allocator>(data_);
+    m_ = other.m_;
+    n_ = other.n_;
+    ld_ = other.ld_;
+    data_ = allocate_with<T, Allocator>(size());
+    cudaMemcpy(data_, other.data_, sizeof(T)*other.size(), cudaMemcpyDeviceToDevice);
+    return *this;
+  }
+
+  CudaMatrix& operator=(const CudaMatrixView<T, Indexing>& other) {
+    deallocate_with<T, Allocator>(data_);
+    m_ = other.m_;
+    n_ = other.n_;
+    ld_ = other.ld_;
+    data_ = allocate_with<T, Allocator>(size());
+    cudaMemcpy(data_, other.data_, sizeof(T)*other.size(), cudaMemcpyDeviceToDevice);
+    return *this;
+  }
 
   CudaMatrix(CudaMatrix&& other) {
     move(std::move(other));
@@ -452,12 +496,12 @@ struct CudaMatrix {
     return *this;
   }
 
-  operator CudaMatrixView<T>() {
+  operator CudaMatrixView<T, Indexing>() {
     return view();
   }
 
-  CudaMatrixView<T> view() {
-    return CudaMatrixView<T>({shape()[0], shape()[1]}, data(), ld());
+  CudaMatrixView<T, Indexing> view() {
+    return CudaMatrixView<T, Indexing>({shape()[0], shape()[1]}, data(), ld());
   }
 
   void move(CudaMatrix&& other) {
@@ -495,7 +539,7 @@ struct CudaMatrix {
 
   // Size of matrix data in number of elements
   size_t size() const {
-    return ld()*n();
+    return Indexing().size(m(), n(), ld());
   }
 
   T* data() {
@@ -509,6 +553,7 @@ struct CudaMatrix {
 
   template <typename Fn>
   CudaMatrix& apply_binary_op(CudaMatrix& other, Fn&& fn) {
+    assert(ld() == other.ld());
     size_t block_dim = 1024;
     size_t block_size = std::min(block_dim, size());
     size_t num_blocks = (size() + block_size - 1) / block_size;
@@ -543,10 +588,12 @@ struct CudaMatrix {
   };
 };
 
-// Column-major GPU view
-template <typename T>
+// Row-major GPU view
+template <typename T, typename Indexing>
 struct CudaMatrixView {
   using value_type = T;
+  // XXX: not to be confused with index_type.
+  using indexing_type = Indexing;
   
   struct matrix_dim;
 
@@ -554,7 +601,7 @@ struct CudaMatrixView {
                  n_(shape[1]), data_(data), ld_(ld)
   {
     if (ld_ == 0) {
-      ld_ = m();
+      ld_ = Indexing().default_ld(m(), n());
     }
   }
 
@@ -586,7 +633,7 @@ struct CudaMatrixView {
 
   // Size of matrix data in number of elements
   size_t size() const {
-    return ld()*n();
+    return Indexing().size(m(), n(), ld());
   }
 
   T* data() {
@@ -600,6 +647,7 @@ struct CudaMatrixView {
 
   template <typename Fn>
   CudaMatrixView& apply_binary_op(CudaMatrixView other, Fn&& fn) {
+    assert(ld() == other.ld());
     size_t block_dim = 1024;
     size_t block_size = std::min(block_dim, size());
     size_t num_blocks = (size() + block_size - 1) / block_size;

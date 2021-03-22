@@ -18,10 +18,10 @@
 #include <bcl/containers/experimental/cuda/util/cuda_future.hpp>
 
 #include <bcl/containers/sequential/CSRMatrix.hpp>
+#include <bcl/containers/sequential/CSRMatrixMemoryMapped.hpp>
 #include <bcl/containers/sequential/SparseHashAccumulator.hpp>
 
 #include <bcl/containers/experimental/cuda/sequential/CudaCSRMatrix.hpp>
-#include <graphblas/graphblas.hpp>
 
 #include <bcl/backends/mpi/team_conv.hpp>
 
@@ -59,8 +59,20 @@ public:
   SPMatrix(SPMatrix&&) = default;
 
   void init(const std::string& fname, Block&& blocking, FileFormat format) {
-    CSRMatrix<T, index_type> mat(fname, format);
+    if (format == BCL::FileFormat::Unknown) {
+      format = BCL::matrix_io::detect_file_type(fname);
+    }
+    if (format == BCL::FileFormat::Binary) {
+      CSRMatrixMemoryMapped<T, index_type> mat(fname);
+      init_(mat, std::move(blocking));
+    } else {
+      CSRMatrix<T, index_type> mat(fname, format);
+      init_(mat, std::move(blocking));
+    }
+  }
 
+  template <typename MatrixType>
+  void init_(MatrixType& mat, Block&& blocking) {
     m_ = mat.m_;
     n_ = mat.n_;
     nnz_ = mat.nnz_;
@@ -89,7 +101,6 @@ public:
     grid_dim_m_ = (m + tile_shape()[0] - 1) / tile_shape()[0];
     grid_dim_n_ = (n + tile_shape()[1] - 1) / tile_shape()[1];
 
-
     for (size_t i = 0; i < grid_shape()[0]; i++) {
       for (size_t j = 0; j < grid_shape()[1]; j++) {
         size_t lpi = i % pm_;
@@ -97,9 +108,9 @@ public:
         size_t proc = lpj + lpi*pn_;
 
         size_t nnz;
-        BCL::cuda::ptr<T> values;
-        BCL::cuda::ptr<index_type> col_ind;
-        BCL::cuda::ptr<index_type> row_ptr;
+        BCL::cuda::ptr<T> values = nullptr;
+        BCL::cuda::ptr<index_type> col_ind = nullptr;
+        BCL::cuda::ptr<index_type> row_ptr = nullptr;
         if (BCL::rank() == proc) {
           auto slc = mat.get_slice_impl_(i*tile_size_m_, (i+1)*tile_size_m_,
                                          j*tile_size_n_, (j+1)*tile_size_n_);
@@ -120,20 +131,32 @@ public:
                        cudaMemcpyHostToDevice);
           }
         }
-        nnz = BCL::broadcast(nnz, proc);
-        values = BCL::broadcast(values, proc);
-        col_ind = BCL::broadcast(col_ind, proc);
-        row_ptr = BCL::broadcast(row_ptr, proc);
-        if (values == nullptr || col_ind == nullptr || row_ptr == nullptr) {
-          throw std::runtime_error("SPMatrix: ran out of memory! (init)");
-        }
         nnzs_.push_back(nnz);
         vals_.push_back(values);
         col_ind_.push_back(col_ind);
         row_ptr_.push_back(row_ptr);
       }
     }
+
+    size_t loc = 0;
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        size_t lpi = i % pm_;
+        size_t lpj = j % pn_;
+        size_t proc = lpj + lpi*pn_;
+
+        nnzs_[loc] = BCL::broadcast(nnzs_[loc], proc);
+        vals_[loc] = BCL::broadcast(vals_[loc], proc);
+        col_ind_[loc] = BCL::broadcast(col_ind_[loc], proc);
+        row_ptr_[loc] = BCL::broadcast(row_ptr_[loc], proc);
+        if (vals_[loc] == nullptr || col_ind_[loc] == nullptr || row_ptr_[loc] == nullptr) {
+          throw std::runtime_error("SPMatrix: ran out of memory! (init)");
+        }
+        loc++;
+      }
+    }
   }
+
 
   std::vector<BCL::UserTeam> column_teams_;
   std::vector<BCL::UserTeam> row_teams_;
@@ -165,6 +188,29 @@ public:
       }
       */
       column_teams_.push_back(BCL::UserTeam(column_procs));
+    }
+  }
+  
+  std::vector<std::vector<BCL::backend::MPICommWrapper>> column_teams_mpi_;
+  std::vector<std::vector<BCL::backend::MPICommWrapper>> row_teams_mpi_;
+
+  void init_comms(size_t i_block) {
+    if (column_teams_.empty()) {
+      init_teams();
+    }
+    for (size_t i = 0; i < column_teams_.size(); i++) {
+      column_teams_mpi_.push_back(std::vector<BCL::backend::MPICommWrapper>());
+      for (size_t j = 0; j < i_block; j++) {
+        BCL::backend::MPICommWrapper comm(column_teams_[i]);
+        column_teams_mpi_[i].emplace_back(std::move(comm));
+      }
+    }
+    for (size_t i = 0; i < row_teams_.size(); i++) {
+      row_teams_mpi_.push_back(std::vector<BCL::backend::MPICommWrapper>());
+      for (size_t j = 0; j < i_block; j++) {
+        BCL::backend::MPICommWrapper comm(row_teams_[i]);
+        row_teams_mpi_[i].emplace_back(std::move(comm));
+      }
     }
   }
 
