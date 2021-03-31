@@ -28,9 +28,9 @@ int main(int argc, char** argv) {
   BCL::cuda::init();
 
   using T = float;
-  using index_type = int;
+  using index_type = int32_t;
 
-  bool verify_result = true;
+  bool verify_result = false;
 
   std::string fname = std::string(argv[1]);
 
@@ -73,8 +73,11 @@ int main(int argc, char** argv) {
 
   assert(a.grid_shape()[1] == b.grid_shape()[0]);
 
+  auto ws_grid = generate_grid(a);
+  BCL::cuda::barrier();
+
   auto begin = std::chrono::high_resolution_clock::now();
-  BCL::cuda::gemm_bowns_onesided(a, b, c);
+  BCL::cuda::gemm_workstealing(a, b, c, ws_grid);
   BCL::cuda::barrier();
   auto end = std::chrono::high_resolution_clock::now();
 
@@ -149,9 +152,9 @@ int main(int argc, char** argv) {
 
     assert(distributed_c.size() == local_c.size());
     fprintf(stderr, "Checking accuracy...\n");
-    T eps = 1.0e-5;
+    T eps = 1.0e-4;
     size_t matching = 0;
-    bool print = false;
+    bool print = true;
     for (size_t i = 0; i < c.shape()[0]; i++) {
       for (size_t j = 0; j < c.shape()[1]; j++) {
         size_t d_idx = i*c.shape()[1] + j;
@@ -159,17 +162,17 @@ int main(int argc, char** argv) {
         if (std::abs(distributed_c[d_idx] - local_data[l_idx]) > eps) {
           // assert(false);
           if (print) {
-            printf("O %2.2lf != %2.2lf ", distributed_c[d_idx], local_data[l_idx]);
+            printf("O(%lu, %lu) %2.2lf != %2.2lf\n", i, j, distributed_c[d_idx], local_data[l_idx]);
           }
         } else {
           if (print) {
-            printf("X %2.2lf == %2.2lf ", distributed_c[d_idx], local_data[l_idx]);
+            // printf("X %2.2lf == %2.2lf\n", distributed_c[d_idx], local_data[l_idx]);
           }
           matching++;
         }
       }
       if (print) {
-        printf("\n");
+        // printf("\n");
       }
     }
     /*

@@ -65,9 +65,11 @@ public:
     if (format == BCL::FileFormat::Binary) {
       CSRMatrixMemoryMapped<T, index_type> mat(fname);
       init_(mat, std::move(blocking));
-    } else {
+    } else if (format == BCL::FileFormat::MatrixMarket) {
       CSRMatrix<T, index_type> mat(fname, format);
       init_(mat, std::move(blocking));
+    } else {
+      throw std::runtime_error("SPMatrix: file format of " + fname + " not recognized.");
     }
   }
 

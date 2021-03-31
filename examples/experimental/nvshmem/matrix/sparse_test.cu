@@ -1,4 +1,12 @@
 
+#define __thrust_compiler_fence() __sync_synchronize()
+#include <cusp/io/matrix_market.h>
+#include <cusp/csr_matrix.h>
+#include <cusp/array2d.h>
+#include <cusp/multiply.h>
+#include <cusp/array2d.h>
+#include <cusp/print.h>
+
 #include <bcl/bcl.hpp>
 #include <bcl/backends/experimental/nvshmem/backend.hpp>
 #include <bcl/containers/experimental/cuda/CudaMatrix.hpp>
@@ -15,19 +23,6 @@
 #include <chrono>
 #include <essl.h>
 
-template <typename T>
-graphblas::Matrix<T> read_matrix(const std::string& fname) {
-  std::vector<graphblas::Index> row_indices, col_indices;
-  std::vector<T> values;
-  graphblas::Index num_rows, num_cols, num_edges;
-  char* dat_name;
-  readMtx(fname.c_str(), &row_indices, &col_indices, &values, &num_rows, &num_cols,
-          &num_edges, 0, false, &dat_name);
-  graphblas::Matrix<T> a(num_rows, num_cols);
-  a.build(&row_indices, &col_indices, &values, num_edges, GrB_NULL, NULL);
-  return a;
-}
-
 template <typename T, typename U>
 struct PairHash {
   std::size_t operator()(const std::pair<T, U>& value) const noexcept {
@@ -39,11 +34,10 @@ int main(int argc, char** argv) {
   BCL::init(16);
   BCL::cuda::init();
 
-  using index_type = graphblas::Index;
-
   using T = float;
+  using index_type = int;
 
-  bool verify_result = true;
+  bool verify_result = false;
 
   std::string fname = std::string(argv[1]);
 
@@ -57,11 +51,9 @@ int main(int argc, char** argv) {
   auto blocks = BCL::block_matmul(m, n, k);
 
   BCL::print("Reading matrices...\n");
-  BCL::cuda::SPMatrix<T, graphblas::Index> a(fname, std::move(blocks[0]));
-  BCL::cuda::SPMatrix<T, graphblas::Index> b(fname, std::move(blocks[1]));
-  BCL::cuda::SPMatrix<T, graphblas::Index> c(m, n, std::move(blocks[2]));
-
-  BCL::cuda::grb_desc_ = new graphblas::Descriptor();
+  BCL::cuda::SPMatrix<T, index_type> a(fname, std::move(blocks[0]));
+  BCL::cuda::SPMatrix<T, index_type> b(fname, std::move(blocks[1]));
+  BCL::cuda::SPMatrix<T, index_type> c(m, n, std::move(blocks[2]));
 
   BCL::print("Info:\n");
   if (BCL::rank() == 0) {
@@ -72,6 +64,8 @@ int main(int argc, char** argv) {
     printf("C:\n");
     c.print_info();
   }
+
+  cusparseStatus_t status = cusparseCreate(&BCL::cuda::bcl_cusparse_handle_);
 
   // printf("A taking %lf GB, B %lf GB\n", 1.0e-9*a.my_mem(), 1.0e-9*b.my_mem());
 
@@ -89,7 +83,7 @@ int main(int argc, char** argv) {
 
   BCL::barrier();
   auto begin = std::chrono::high_resolution_clock::now();
-  BCL::cuda::gemm<T, graphblas::Index, allocator_type>(a, b, c);
+  BCL::cuda::gemm<T, index_type, allocator_type>(a, b, c);
   auto end = std::chrono::high_resolution_clock::now();
   double duration = std::chrono::duration<double>(end - begin).count();
 
@@ -145,60 +139,17 @@ int main(int argc, char** argv) {
   BCL::print("Matrix multiply finished in %lf s\n", duration);
 
   if (BCL::rank() == 0 && verify_result) {
-    BCL::CSRMatrix<T, graphblas::Index> mat(fname);
+    BCL::CSRMatrix<T, index_type> mat(fname);
 
-    T* d_a_vals, *d_b_vals;
-    graphblas::Index* d_a_rowptr, *d_b_rowptr;
-    graphblas::Index* d_a_colind, *d_b_colind;
-    cudaMalloc((void**) &d_a_vals, sizeof(T)*mat.vals_.size());
-    cudaMalloc((void**) &d_a_rowptr, sizeof(graphblas::Index)*mat.row_ptr_.size());
-    cudaMalloc((void**) &d_a_colind, sizeof(graphblas::Index)*mat.col_ind_.size());
-    cudaMalloc((void**) &d_b_vals, sizeof(T)*mat.vals_.size());
-    cudaMalloc((void**) &d_b_rowptr, sizeof(graphblas::Index)*mat.row_ptr_.size());
-    cudaMalloc((void**) &d_b_colind, sizeof(graphblas::Index)*mat.col_ind_.size());
+    auto local_a = BCL::cuda::to_gpu<T, index_type, allocator_type>(mat);
 
-    if (d_a_vals == nullptr || d_a_rowptr == nullptr || d_b_vals == nullptr ||
-        d_b_rowptr == nullptr || d_a_colind == nullptr || d_b_colind == nullptr) {
-      throw std::runtime_error("Ran out of memory verifying results.");
-    }
-
-    cudaMemcpy(d_a_vals, mat.vals_.data(), sizeof(T)*mat.vals_.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_a_rowptr, mat.row_ptr_.data(), sizeof(graphblas::Index)*mat.row_ptr_.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_a_colind, mat.col_ind_.data(), sizeof(graphblas::Index)*mat.col_ind_.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b_vals, mat.vals_.data(), sizeof(T)*mat.vals_.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b_rowptr, mat.row_ptr_.data(), sizeof(graphblas::Index)*mat.row_ptr_.size(), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b_colind, mat.col_ind_.data(), sizeof(graphblas::Index)*mat.col_ind_.size(), cudaMemcpyHostToDevice);
-
-    graphblas::Matrix<T> s_a(mat.m_, mat.n_);
-    graphblas::Matrix<T> s_b(mat.m_, mat.n_);
-
-    s_a.build(d_a_rowptr, d_a_colind, d_a_vals, mat.vals_.size());
-    s_b.build(d_b_rowptr, d_b_colind, d_b_vals, mat.vals_.size());
-
-    graphblas::Matrix<T> s_c(m, n);
-
-    fprintf(stderr, "Multiplying matrix...\n");
-    graphblas::mxm<T, T, T, T>(&s_c, GrB_NULL,
-                               GrB_NULL, graphblas::PlusMultipliesSemiring<T>(),
-                               &s_a, &s_b, BCL::cuda::grb_desc_);
-    cudaDeviceSynchronize();
+    auto s_c = spgemm_cusparse(local_a, local_a);
 
     fprintf(stderr, "Getting COO...\n");
     auto local_c = c.get().get_coo();
     local_c = BCL::cuda::remove_zeros(local_c);
 
-    fprintf(stderr, "Extracting tuples...\n");
-    index_type nnz;
-    s_c.nvals(&nnz);
-    std::vector<index_type> row_idx(nnz);
-    std::vector<index_type> col_idx(nnz);
-    std::vector<T> vals(nnz);
-
-    s_c.extractTuples(&row_idx, &col_idx, &vals, &nnz);
-
-    fprintf(stderr, "Extracting COO from GraphBLAS\n");
-
-    auto s_c_coo = BCL::cuda::get_coo(vals, row_idx, col_idx);
+    auto s_c_coo = BCL::cuda::to_cpu(s_c).get_coo();
 
     fprintf(stderr, "local_computation (%lu nnz), distributed result (%lu nnz)\n", s_c_coo.size(), local_c.size());
 

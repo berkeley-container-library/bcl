@@ -1,4 +1,12 @@
 
+#define __thrust_compiler_fence() __sync_synchronize()
+#include <cusp/io/matrix_market.h>
+#include <cusp/csr_matrix.h>
+#include <cusp/array2d.h>
+#include <cusp/multiply.h>
+#include <cusp/array2d.h>
+#include <cusp/print.h>
+
 #include <bcl/bcl.hpp>
 #include <bcl/backends/experimental/nvshmem/backend.hpp>
 #include <bcl/containers/experimental/cuda/CudaMatrix.hpp>
@@ -37,15 +45,18 @@ int main(int argc, char** argv) {
   BCL::print("Choosing blocks...\n");
   auto blocks = BCL::block_matmul(m, n, k);
 
+  using allocator_type = BCL::cuda::bcl_allocator<T>;
+  using indexing_type = BCL::cuda::RowMajorIndexing;
+
   BCL::print("Reading matrices...\n");
-  BCL::cuda::SPMatrix<T, graphblas::Index> a(fname, std::move(blocks[0]));
-  BCL::cuda::Matrix<T> b(k, n, std::move(blocks[1]));
-  BCL::cuda::Matrix<T> c(m, n, std::move(blocks[2]));
+  BCL::cuda::SPMatrix<T, index_type> a(fname, std::move(blocks[0]));
+  BCL::print("Reading B...\n");
+  BCL::cuda::Matrix<T, indexing_type> b(k, n, std::move(blocks[1]));
+  BCL::cuda::Matrix<T, indexing_type> c(m, n, std::move(blocks[2]));
   b = 1;
   c = 0;
   BCL::cuda::barrier();
 
-  BCL::cuda::grb_desc_ = new graphblas::Descriptor();
 
   BCL::print("Info:\n");
   if (BCL::rank() == 0) {
@@ -57,11 +68,11 @@ int main(int argc, char** argv) {
     c.print_info();
   }
 
+  cusparseStatus_t status = cusparseCreate(&BCL::cuda::bcl_cusparse_handle_);
+
   // printf("A taking %lf GB, B %lf GB\n", 1.0e-9*a.my_mem(), 1.0e-9*b.my_mem());
 
   assert(a.grid_shape()[1] == b.grid_shape()[0]);
-
-  using allocator_type = BCL::cuda::bcl_allocator<T>;
 
   auto begin = std::chrono::high_resolution_clock::now();
   BCL::cuda::gemm(a, b, c);
@@ -114,14 +125,14 @@ int main(int argc, char** argv) {
 
   if (BCL::rank() == 0 && verify_result) {
     fprintf(stderr, "Reading in matrix...\n");
-    BCL::CSRMatrix<T, graphblas::Index> mat(fname);
+    BCL::CSRMatrix<T, index_type> mat(fname);
     fprintf(stderr, "Copying to GPU...\n");
-    auto local_a = BCL::cuda::to_gpu<T, graphblas::Index, allocator_type>(mat);
+    auto local_a = BCL::cuda::to_gpu<T, index_type, allocator_type>(mat);
 
     fprintf(stderr, "Creating local b...\n");
-    BCL::cuda::CudaMatrix<T, allocator_type> local_b({k, n});
+    BCL::cuda::CudaMatrix<T, allocator_type, indexing_type> local_b({k, n});
     fprintf(stderr, "Creating local c...\n");
-    BCL::cuda::CudaMatrix<T, allocator_type> local_c({m, n});
+    BCL::cuda::CudaMatrix<T, allocator_type, indexing_type> local_c({m, n});
 
     fprintf(stderr, "Writing to matrices...\n");
     local_b = 1;
@@ -144,15 +155,16 @@ int main(int argc, char** argv) {
     bool print = false;
     for (size_t i = 0; i < c.shape()[0]; i++) {
       for (size_t j = 0; j < c.shape()[1]; j++) {
-        size_t idx = i + j*c.shape()[0];
-        if (std::abs(distributed_c[idx] - local_data[idx]) > eps) {
-          assert(false);
+        size_t d_idx = i*c.shape()[1] + j;
+        size_t l_idx = indexing_type().index(i, j, local_c.ld());
+        if (std::abs(distributed_c[d_idx] - local_data[l_idx]) > eps) {
+          // assert(false);
           if (print) {
-            printf("O %2.2lf != %2.2lf ", distributed_c[idx], local_data[idx]);
+            printf("O %2.2lf != %2.2lf ", distributed_c[d_idx], local_data[l_idx]);
           }
         } else {
           if (print) {
-            printf("X %2.2lf == %2.2lf ", distributed_c[idx], local_data[idx]);
+            printf("X %2.2lf == %2.2lf ", distributed_c[d_idx], local_data[l_idx]);
           }
           matching++;
         }
@@ -170,8 +182,13 @@ int main(int argc, char** argv) {
       }
     }
     */
-    printf("%lu / %lu indices match.\n", matching, distributed_c.size());
-    printf("OK.\n");
+    printf("%lu / %lu (%lf%%) indices match.\n", matching, distributed_c.size(),
+           100 * ((double) matching) / distributed_c.size());
+    if (matching == distributed_c.size()) {
+      printf("OK.\n");
+    } else {
+      printf("***FAILED!***\n");
+    }
   }
 
   BCL::finalize();

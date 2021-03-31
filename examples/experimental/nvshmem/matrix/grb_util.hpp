@@ -1,7 +1,5 @@
 #pragma once
 
-#include <matrix_sum.cuh>
-
 namespace BCL {
 
 template <typename T>
@@ -28,80 +26,7 @@ struct min {
 
 namespace cuda {
 
-graphblas::Descriptor* grb_desc_ = nullptr;
-// TODO: Actually free matrix contents.
-template <typename T>
-void destroy_grb(graphblas::Matrix<T>* x, const std::string lbl = "hey") {
-  if (x == nullptr) {
-    return;
-  }
-  auto& m = x->matrix_.sparse_;
-  if (m.h_csrRowPtr_) free(m.h_csrRowPtr_);
-  if (m.h_csrColInd_) free(m.h_csrColInd_);
-  if (m.h_csrVal_   ) free(m.h_csrVal_);
-  if (BCL::cuda::__is_valid_cuda_gptr(m.d_csrRowPtr_)) {
-    BCL::cuda::dealloc(BCL::cuda::__to_cuda_gptr(m.d_csrRowPtr_));
-  } else {
-    /*
-    fprintf(stderr, "0x%p is not a valid BCL pointer, checking value for %s (valid segment is 0x%p -> 0x%p\n",
-            m.d_csrRowPtr_, lbl.c_str(), BCL::cuda::smem_base_ptr, BCL::cuda::smem_base_ptr + BCL::cuda::shared_segment_size);
-            */
-    CUDA_CALL(cudaPeekAtLastError());
-    if (m.d_csrRowPtr_) CUDA_CALL(cudaFree(m.d_csrRowPtr_));
-  }
-  if (BCL::cuda::__is_valid_cuda_gptr(m.d_csrColInd_)) {
-    BCL::cuda::dealloc(BCL::cuda::__to_cuda_gptr(m.d_csrColInd_));
-  } else {
-    if (m.d_csrColInd_) CUDA_CALL(cudaFree(m.d_csrColInd_));
-  }
-  if (BCL::cuda::__is_valid_cuda_gptr(m.d_csrVal_   )) {
-    BCL::cuda::dealloc(BCL::cuda::__to_cuda_gptr(m.d_csrVal_));
-  } else {
-    if (m.d_csrVal_   ) CUDA_CALL(cudaFree(m.d_csrVal_   ));
-  }
-
-  if (m.format_ == graphblas::backend::GrB_SPARSE_MATRIX_CSRCSC) {
-    throw std::runtime_error("destroy_grb: Case not handled.");
-  }
-}
-
-template <typename T, typename Allocator>
-graphblas::Matrix<T>* sum_tiles_yuxin(std::vector<graphblas::Matrix<T>*> imp) {
-  if (imp.size() == 0) {
-    return nullptr;
-  }
-
-  using index_type = graphblas::Index;
-
-  graphblas::Index m, n;
-  imp[0]->nrows(&m);
-  imp[0]->ncols(&n);
-
-  ::cuda::SparseSPAAccumulator<T, index_type, Allocator> acc;
-
-  for (auto mat : imp) {
-    // convert mat into Yuxin's BCL::cuda::CSRMatrix
-    graphblas::Index nnz;
-    mat->nvals(&nnz);
-    ::cuda::CSRMatrix<T, index_type, Allocator> cmat(m, n, nnz,
-                                                mat->matrix_.sparse_.d_csrVal_,
-                                                mat->matrix_.sparse_.d_csrRowPtr_,
-                                                mat->matrix_.sparse_.d_csrColInd_);
-    acc.accumulate(std::move(cmat), {0, 0});
-  }
-  acc.sort_mats();
-  acc.get_lbs();
-  // Assume a 1 GB memory limit for accumualtor.
-  size_t max_mem = 1*1000*1000*1000;
-  size_t max_mem_row = std::min<size_t>(m, max_mem/((sizeof(graphblas::Index)+sizeof(T))*n));
-  size_t block_size = 512;
-  auto result_mat = acc.get_matrix(m, n, max_mem_row, block_size);
-
-  graphblas::Matrix<T>* grb_result = new graphblas::Matrix<T>(result_mat.m_, result_mat.n_);
-  grb_result->build(result_mat.row_ptr_, result_mat.col_ind_, result_mat.vals_,
-                    result_mat.nnz_);
-  return grb_result;
-}
+cusparseHandle_t bcl_cusparse_handle_;
 
 template <typename T, typename index_type>
 auto get_coo(const std::vector<T>& values,
@@ -153,59 +78,6 @@ void print_coo(const T& coo, size_t max_idx = std::numeric_limits<size_t>::max()
     auto idx = std::get<0>(coo[i]);
     auto val = std::get<1>(coo[i]);
     printf("(%lu, %lu) %f\n", idx.first, idx.second, val);
-  }
-}
-
-template <typename T, typename index_type, typename Allocator>
-graphblas::Matrix<T>*
-get_graphblast_view(CudaCSRMatrix<T, index_type, Allocator>& a) {
-  graphblas::Matrix<T>* grb_matrix = new graphblas::Matrix<T>(a.m(), a.n());
-  grb_matrix->build(a.rowptr_data(), a.colind_data(), a.values_data(), a.nnz());
-  return grb_matrix;
-}
-
-template <typename T, typename index_type, typename Allocator>
-CudaCSRMatrix<T, index_type, Allocator>
-convert_to_csr(graphblas::Matrix<T>* a_grb) {
-  graphblas::Index m, n, nnz;
-  a_grb->nrows(&m);
-  a_grb->ncols(&n);
-  a_grb->nvals(&nnz);
-  T* values = a_grb->matrix_.sparse_.d_csrVal_;
-  index_type* rowptr = a_grb->matrix_.sparse_.d_csrRowPtr_;
-  index_type* colind = a_grb->matrix_.sparse_.d_csrColInd_;
-  return CudaCSRMatrix<T, index_type, Allocator>({m, n}, nnz, values, rowptr, colind);
-}
-
-template <typename T, typename index_type, typename Allocator>
-CudaCSRMatrix<T, index_type, Allocator>
-spgemm_graphblast(CudaCSRMatrix<T, index_type, Allocator>& a,
-                  CudaCSRMatrix<T, index_type, Allocator>& b)
-{
-  // static assert index_type is graphblas::Index
-  grb_desc_->descriptor_.debug_ = false;
-  if (a.nnz() == 0 || b.nnz() == 0) {
-    // return empty matrix
-    return CudaCSRMatrix<T, index_type, Allocator>({a.shape()[0], b.shape()[1]});
-  } else {
-    auto binary_op = GrB_NULL;
-    auto semiring = graphblas::PlusMultipliesSemiring<T>{};
-    auto a_grb = get_graphblast_view(a);
-    auto b_grb = get_graphblast_view(b);
-
-    auto* c_grb = new graphblas::Matrix<T>(a.shape()[0], b.shape()[1]);
-
-    graphblas::mxm<T, T, T, T, decltype(binary_op), decltype(semiring),
-                   Allocator>
-                   (c_grb, GrB_NULL,
-                    binary_op, semiring,
-                    a_grb, b_grb, grb_desc_);
-
-    auto c = convert_to_csr<T, index_type, Allocator>(c_grb);
-    free(a_grb);
-    free(b_grb);
-    free(c_grb);
-    return c;
   }
 }
 
@@ -381,7 +253,6 @@ spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
                 CudaCSRMatrix<T, index_type, Allocator>& b)
 {
   // static assert index_type is graphblas::Index
-  grb_desc_->descriptor_.debug_ = false;
   if (a.nnz() == 0 || b.nnz() == 0) {
     // return empty matrix
     return CudaCSRMatrix<T, index_type, Allocator>({a.shape()[0], b.shape()[1]}, 0);
@@ -390,10 +261,8 @@ spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
     size_t n = b.n();
     size_t k = a.n();
 
-    cusparseHandle_t handle;
+    cusparseHandle_t& handle = bcl_cusparse_handle_;
     cusparseStatus_t status = cusparseCreate(&handle);
-    BCL::cuda::throw_cusparse(status);
-    status = cusparseSetPointerMode(handle, CUSPARSE_POINTER_MODE_HOST);
     BCL::cuda::throw_cusparse(status);
 
     int baseC, nnzC;
@@ -404,7 +273,6 @@ spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
     int* nnzTotalDevHostPtr = &nnzC;
     T alpha = 1;
     T beta = 0;
-    cusparseSetPointerMode(handle, CUSPARSE_POINTER_MODE_HOST);
 
     cusparseMatDescr_t descr;
     cusparseCreateMatDescr(&descr);
@@ -464,50 +332,88 @@ spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
     cusparseDestroyCsrgemm2Info(info);
     deallocate_with<char, Allocator>(buffer);
 
-    cusparseDestroy(handle);
-
     return CudaCSRMatrix<T, index_type, Allocator>({m, n}, nnzC, csrValC, csrRowPtrC, csrColIndC);
   }
 }
 
+template <typename T>
+struct cusparse_type_t;
+
+template <>
+struct cusparse_type_t<int32_t> {
+  using type = int32_t;
+  static auto cusparse_type() {
+    return CUSPARSE_INDEX_32I;
+  }
+};
+
+template <>
+struct cusparse_type_t<int64_t> {
+  using type = int64_t;
+  static auto cusparse_type() {
+    return CUSPARSE_INDEX_64I;
+  }
+};
+
 template <typename AMatrixType, typename BMatrixType, typename CMatrixType>
 void spmm_cusparse(AMatrixType& a,
                    BMatrixType& b,
-                   CMatrixType& c)
+                   CMatrixType& c,
+                   typename AMatrixType::value_type alpha = 1,
+                   typename AMatrixType::value_type beta = 1)
 {
-  using Allocator = typename AMatrixType::allocator_type;
   if (a.nnz() == 0) {
     return;
   }
+  using T = typename AMatrixType::value_type;
+  using Allocator = BCL::cuda::bcl_allocator<T>;
   static_assert(std::is_same<typename AMatrixType::value_type, float>::value);
   static_assert(std::is_same<typename BMatrixType::value_type, float>::value);
   static_assert(std::is_same<typename CMatrixType::value_type, float>::value);
-  static_assert(std::is_same<typename AMatrixType::index_type, int32_t>::value);
-  cusparseHandle_t handle;
-  cusparseStatus_t status = cusparseCreate(&handle);
-  BCL::cuda::throw_cusparse(status);
+  using index_type = typename AMatrixType::index_type;
+  // static_assert(std::is_same<typename AMatrixType::index_type, int32_t>::value);
+  cusparseHandle_t& handle = bcl_cusparse_handle_;
+
+  cusparseOrder_t order;
+  cusparseSpMMAlg_t algorithm;
+
+  using bmatrix_indexing = typename BMatrixType::indexing_type;
+  using cmatrix_indexing = typename CMatrixType::indexing_type;
+  static_assert(std::is_same<bmatrix_indexing, cmatrix_indexing>::value);
+  constexpr bool row_major = std::is_same<bmatrix_indexing, RowMajorIndexing>::value;
+  constexpr bool column_major = std::is_same<bmatrix_indexing, ColumnMajorIndexing>::value;
+
+  static_assert(row_major || column_major);
+
+  if (std::is_same<bmatrix_indexing, RowMajorIndexing>::value) {
+    order = CUSPARSE_ORDER_ROW;
+    algorithm = CUSPARSE_SPMM_CSR_ALG2;
+  } else if (std::is_same<bmatrix_indexing, ColumnMajorIndexing>::value) {
+    order = CUSPARSE_ORDER_COL;
+    algorithm = CUSPARSE_MM_ALG_DEFAULT;
+  } 
 
   cusparseSpMatDescr_t a_cusparse;
-  status = 
+  cusparseStatus_t status = 
   cusparseCreateCsr(&a_cusparse, a.m(), a.n(), a.nnz(),
                     a.rowptr_data(), a.colind_data(), a.values_data(),
-                    CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
+                    cusparse_type_t<index_type>::cusparse_type(),
+                    cusparse_type_t<index_type>::cusparse_type(),
                     CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F);
   BCL::cuda::throw_cusparse(status);
   cusparseDnMatDescr_t b_cusparse;
+
   status = 
   cusparseCreateDnMat(&b_cusparse, b.m(), b.n(), b.ld(),
-                      b.data(), CUDA_R_32F, CUSPARSE_ORDER_COL);
+                      b.data(), CUDA_R_32F, order);
   BCL::cuda::throw_cusparse(status);
 
   cusparseDnMatDescr_t c_cusparse;
   status = 
   cusparseCreateDnMat(&c_cusparse, c.m(), c.n(), c.ld(),
-                      c.data(), CUDA_R_32F, CUSPARSE_ORDER_COL);
+                      c.data(), CUDA_R_32F, order);
   BCL::cuda::throw_cusparse(status);
 
-  T alpha = 1.0;
-  T beta = 1.0;
   size_t bufferSize;
   status = 
   cusparseSpMM_bufferSize(handle,
@@ -519,7 +425,7 @@ void spmm_cusparse(AMatrixType& a,
                           &beta,
                           c_cusparse,
                           CUDA_R_32F,
-                          CUSPARSE_MM_ALG_DEFAULT,
+                          algorithm,
                           &bufferSize);
   BCL::cuda::throw_cusparse(status);
 
@@ -535,13 +441,16 @@ void spmm_cusparse(AMatrixType& a,
                &beta,
                c_cusparse,
                CUDA_R_32F,
-               CUSPARSE_MM_ALG_DEFAULT,
+               algorithm,
                externalBuffer);
   BCL::cuda::throw_cusparse(status);
   cudaDeviceSynchronize();
+  cudaError_t error = cudaGetLastError();
+  if (error != cudaSuccess) {
+    assert(error == cudaSuccess);
+  }
 
   deallocate_with<char, Allocator>(externalBuffer);
-  cusparseDestroy(handle);
   cusparseDestroySpMat(a_cusparse);
   cusparseDestroyDnMat(b_cusparse);
   cusparseDestroyDnMat(c_cusparse);
@@ -556,6 +465,21 @@ CudaCSRMatrix<T, index_type, Allocator> to_gpu(CSRMatrix<T, index_type>& mat) {
   cudaMemcpy(mat_gpu.rowptr_data(), mat.rowptr_data(), sizeof(index_type)*(mat.m()+1), cudaMemcpyHostToDevice);
   cudaMemcpy(mat_gpu.colind_data(), mat.colind_data(), sizeof(index_type)*mat.nnz(), cudaMemcpyHostToDevice);
   return mat_gpu;
+}
+
+template <typename T, typename index_type, typename Allocator>
+CSRMatrix<T, index_type> to_cpu(CudaCSRMatrix<T, index_type, Allocator>& mat) {
+  std::vector<T> values(mat.nnz());
+  std::vector<index_type> rowptr(mat.m()+1);
+  std::vector<index_type> colind(mat.nnz());
+
+  cudaMemcpy(values.data(), mat.values_data(), sizeof(T)*mat.nnz(), cudaMemcpyDeviceToHost);
+  cudaMemcpy(rowptr.data(), mat.rowptr_data(), sizeof(index_type)*(mat.m()+1), cudaMemcpyDeviceToHost);
+  cudaMemcpy(colind.data(), mat.colind_data(), sizeof(index_type)*mat.nnz(), cudaMemcpyDeviceToHost);
+
+  return CSRMatrix<T, index_type>(mat.m(), mat.n(), mat.nnz(),
+                                  std::move(values), std::move(rowptr),
+                                  std::move(colind));
 }
 
 } // end cuda	

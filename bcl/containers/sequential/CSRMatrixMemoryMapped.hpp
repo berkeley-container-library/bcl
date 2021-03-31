@@ -33,6 +33,10 @@ public:
     return address_;
   }
 
+  size_t size() const {
+    return length_;
+  }
+
   ~MemoryMappedFile() {
     munmap(address_, length_);
     close(fd_);
@@ -153,7 +157,7 @@ public:
 class MemoryMappedFileWritable {
 public:
   MemoryMappedFileWritable(const std::string& fname, size_t size = 0) : fname_(fname) {
-    fd_ = open(fname.c_str(), O_RDWR);
+    fd_ = open(fname.c_str(), O_CREAT | O_RDWR);
 
     if (fd_ < 0) {
       throw std::runtime_error("MemoryMappedFileWriteable::MemoryMappedFileWriteable(...): could not open file \"" + fname + "\"");
@@ -173,6 +177,10 @@ public:
 
   const void* data() {
     return address_;
+  }
+
+  size_t size() const {
+    return length_;
   }
 
   ~MemoryMappedFileWritable() {
