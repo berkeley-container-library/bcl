@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
   BCL::cuda::init();
 
   using T = float;
-  using index_type = int32_t;
+  using index_type = int64_t;
 
   bool verify_result = false;
 
@@ -67,6 +67,13 @@ int main(int argc, char** argv) {
     c.print_info();
   }
 
+  using queue_type = BCL::ChecksumQueue<BCL::cuda::CudaMatrix_ptr<T>, BCL::djb2_hash<BCL::cuda::CudaMatrix_ptr<T>>>;
+  std::vector<queue_type> queues;
+
+  for (size_t i = 0; i < BCL::nprocs(); i++) {
+    queues.emplace_back(queue_type(i, a.grid_shape()[1]+8));
+  }
+
   cusparseStatus_t status = cusparseCreate(&BCL::cuda::bcl_cusparse_handle_);
 
   // printf("A taking %lf GB, B %lf GB\n", 1.0e-9*a.my_mem(), 1.0e-9*b.my_mem());
@@ -77,7 +84,7 @@ int main(int argc, char** argv) {
   BCL::cuda::barrier();
 
   auto begin = std::chrono::high_resolution_clock::now();
-  BCL::cuda::gemm_workstealing(a, b, c, ws_grid);
+  BCL::cuda::gemm_workstealing(a, b, c, queues, ws_grid);
   BCL::cuda::barrier();
   auto end = std::chrono::high_resolution_clock::now();
 

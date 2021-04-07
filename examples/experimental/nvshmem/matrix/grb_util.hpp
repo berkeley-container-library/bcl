@@ -159,22 +159,53 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
 
   index_type* b_row_ptr = b.rowptr_data();
   index_type* b_col_ind = b.colind_data();
+  
+  T alpha = 1.0;
+  T beta = 1.0;
+
+  size_t pBufferSizeInBytes;
+
+  // TODO: what am I supposed to pass for csrValC and csrColIndC???
+  //       we don't know nnz yet.
+  status =
+  cusparseScsrgeam2_bufferSizeExt(handle,
+                                  m,
+                                  n,
+                                  &alpha,
+                                  descr_a,
+                                  a_nnz,
+                                  a.values_data(),
+                                  a.rowptr_data(),
+                                  a.colind_data(),
+                                  &beta,
+                                  descr_b,
+                                  b_nnz,
+                                  b.values_data(),
+                                  b.rowptr_data(),
+                                  b.colind_data(),
+                                  descr_c,
+                                  nullptr, row_ptr_c, nullptr,
+                                  &pBufferSizeInBytes);
+  BCL::cuda::throw_cusparse(status);
+
+  char* buffer = rebind_allocator_t<Allocator, char>{}.allocate(pBufferSizeInBytes);
 
   status = 
-  cusparseXcsrgeamNnz(handle,
-                      m,
-                      n,
-                      descr_a,
-                      a_nnz,
-                      a_row_ptr,
-                      a_col_ind,
-                      descr_b,
-                      b_nnz,
-                      b_row_ptr,
-                      b_col_ind,
-                      descr_c,
-                      row_ptr_c,
-                      nnzTotalDevHostPtr);
+  cusparseXcsrgeam2Nnz(handle,
+                       m,
+                       n,
+                       descr_a,
+                       a_nnz,
+                       a_row_ptr,
+                       a_col_ind,
+                       descr_b,
+                       b_nnz,
+                       b_row_ptr,
+                       b_col_ind,
+                       descr_c,
+                       row_ptr_c,
+                       nnzTotalDevHostPtr,
+                       buffer);
   BCL::cuda::throw_cusparse(status);
 
   if (nnzTotalDevHostPtr == nullptr) {
@@ -182,8 +213,6 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
   } else {
     c_nnz = *nnzTotalDevHostPtr;
   }
-  T alpha = 1.0;
-  T beta = 1.0;
   index_type* col_ind_c;
   T* values_c;
   col_ind_c = rebind_allocator_t<Allocator, index_type>{}.allocate(c_nnz);
@@ -192,28 +221,31 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
     throw std::runtime_error("sum_tiles(): out of memory.");
   }
   status = 
-  cusparseScsrgeam(handle,
-                   m,
-                   n,
-                   &alpha,
-                   descr_a,
-                   a_nnz,
-                   a.values_data(),
-                   a.rowptr_data(),
-                   a.colind_data(),
-                   &beta,
-                   descr_b,
-                   b_nnz,
-                   b.values_data(),
-                   b.rowptr_data(),
-                   b.colind_data(),
-                   descr_c,
-                   values_c,
-                   row_ptr_c,
-                   col_ind_c);
+  cusparseScsrgeam2(handle,
+                    m,
+                    n,
+                    &alpha,
+                    descr_a,
+                    a_nnz,
+                    a.values_data(),
+                    a.rowptr_data(),
+                    a.colind_data(),
+                    &beta,
+                    descr_b,
+                    b_nnz,
+                    b.values_data(),
+                    b.rowptr_data(),
+                    b.colind_data(),
+                    descr_c,
+                    values_c,
+                    row_ptr_c,
+                    col_ind_c,
+                    buffer);
 
   BCL::cuda::throw_cusparse(status);
   cudaDeviceSynchronize();
+
+  deallocate_with<char, Allocator>(buffer);
 
   return CudaCSRMatrix<T, index_type, Allocator>({m, n}, c_nnz, values_c, row_ptr_c, col_ind_c);
 }

@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
   BCL::cuda::init();
 
   using T = float;
-  using index_type = int;
+  using index_type = int64_t;
 
   bool verify_result = false;
 
@@ -221,7 +221,13 @@ int main(int argc, char** argv) {
       auto val_b = std::get<1>(local_c[i]);
 
       assert(idx_a == idx_b);
-      assert(std::abs(val_a - val_b) < eps);
+      if (std::abs((val_a - val_b)/val_b) >= eps) {
+        fprintf(stderr, "(%lu, %lu) == (%lu, %lu)\n", idx_a.first, idx_a.second,
+                                                      idx_b.first, idx_b.second);
+        fprintf(stderr, "%f ~= %f\n", val_a, val_b);
+        fflush(stderr);
+      }
+      assert(std::abs((val_a - val_b)/val_b) < eps);
       // printf("(%lu, %lu) == (%lu, %lu)\n", idx_a.first, idx_a.second,
       //                                    idx_b.first, idx_b.second);
       // printf("%f ~= %f\n", val_a, val_b);
