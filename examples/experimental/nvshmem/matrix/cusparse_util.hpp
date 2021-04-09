@@ -27,6 +27,8 @@ void throw_cusparse(cusparseStatus_t status) {
       throw std::runtime_error("CUSPARSE_STATUS_MATRIX_TYPE_NOT_SUPPORTED");
     } else if (status == CUSPARSE_STATUS_NOT_SUPPORTED) {
       throw std::runtime_error("CUSPARSE_STATUS_NOT_SUPPORTED");
+    } else if (status == CUSPARSE_STATUS_INSUFFICIENT_RESOURCES) {
+      throw std::runtime_error("CUSPARSE_STATUS_INSUFFICIENT_RESOURCES");
     }
     throw std::runtime_error("Unknown CUSPARSE error");
   }
