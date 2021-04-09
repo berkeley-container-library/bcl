@@ -54,6 +54,11 @@ int main(int argc, char** argv) {
   BCL::cuda::SPMatrix<T, index_type> a(fname, std::move(blocks[0]));
   BCL::cuda::SPMatrix<T, index_type> b(fname, std::move(blocks[1]));
   BCL::cuda::SPMatrix<T, index_type> c(m, n, std::move(blocks[2]));
+  
+  BCL::cuda::barrier();
+
+  a.init_comms(1);
+  b.init_comms(1);
 
   BCL::print("Info:\n");
   if (BCL::rank() == 0) {
@@ -65,12 +70,14 @@ int main(int argc, char** argv) {
     c.print_info();
   }
 
+
   cusparseStatus_t status = cusparseCreate(&BCL::cuda::bcl_cusparse_handle_);
   BCL::cuda::throw_cusparse(status);
 
   // printf("A taking %lf GB, B %lf GB\n", 1.0e-9*a.my_mem(), 1.0e-9*b.my_mem());
 
   assert(a.grid_shape()[1] == b.grid_shape()[0]);
+  BCL::cuda::warmup_communicators(a, b, c);
 
   using allocator_type = BCL::cuda::bcl_allocator<T>;
 
@@ -82,9 +89,9 @@ int main(int argc, char** argv) {
 
   BCL::print("Beginning SpGEMM...\n");
 
-  BCL::barrier();
+  BCL::cuda::barrier();
   auto begin = std::chrono::high_resolution_clock::now();
-  BCL::cuda::gemm<T, index_type, allocator_type>(a, b, c);
+  BCL::cuda::gemm_mpi_simple<T, index_type, allocator_type>(a, b, c);
   auto end = std::chrono::high_resolution_clock::now();
   double duration = std::chrono::duration<double>(end - begin).count();
 

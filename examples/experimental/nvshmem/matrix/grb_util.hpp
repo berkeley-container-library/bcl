@@ -24,7 +24,27 @@ struct min {
   }
 };
 
+
 namespace cuda {
+
+template <typename T>
+struct cusparse_type_t;
+
+template <>
+struct cusparse_type_t<int32_t> {
+  using type = int32_t;
+  static auto cusparse_type() {
+    return CUSPARSE_INDEX_32I;
+  }
+};
+
+template <>
+struct cusparse_type_t<int64_t> {
+  using type = int64_t;
+  static auto cusparse_type() {
+    return CUSPARSE_INDEX_64I;
+  }
+};
 
 cusparseHandle_t bcl_cusparse_handle_;
 
@@ -81,6 +101,8 @@ void print_coo(const T& coo, size_t max_idx = std::numeric_limits<size_t>::max()
   }
 }
 
+bool print_stuff = false;
+
 template <typename T, typename index_type, typename Allocator>
 CudaCSRMatrix<T, index_type, Allocator>
 sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
@@ -89,15 +111,10 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
   //      'A' here is local_c, and 'B' here is result_c
   //.     At the end, the new accumulated matrix will be put in local_c.
 
-  // TODO: allocate handle elsewhere.
-
-  cusparseHandle_t handle;
-  cusparseStatus_t status = 
-  cusparseCreate(&handle);
-  BCL::cuda::throw_cusparse(status);
-  status = 
-  cusparseSetPointerMode(handle, CUSPARSE_POINTER_MODE_HOST);
-  BCL::cuda::throw_cusparse(status);
+  if (print_stuff) {
+    BCL::print("cusparse sum...\n");
+  }
+  cusparseHandle_t& handle = bcl_cusparse_handle_;
 
   index_type arows = a.shape()[0];
   index_type acols = a.shape()[1];
@@ -112,7 +129,7 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
 
   static_assert(std::is_same<int, index_type>::value);
   cusparseMatDescr_t descr_a, descr_b, descr_c;
-  status = 
+  cusparseStatus_t status = 
   cusparseCreateMatDescr(&descr_a);
   BCL::cuda::throw_cusparse(status);
   status =
@@ -167,6 +184,9 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
 
   // TODO: what am I supposed to pass for csrValC and csrColIndC???
   //       we don't know nnz yet.
+  if (print_stuff) {
+  BCL::print("cusparseScsrgeam2_bufferSizeExt\n");
+}
   status =
   cusparseScsrgeam2_bufferSizeExt(handle,
                                   m,
@@ -190,6 +210,9 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
 
   char* buffer = rebind_allocator_t<Allocator, char>{}.allocate(pBufferSizeInBytes);
 
+  if (print_stuff) {
+  BCL::print("cusparseXcsrgeam2Nnz\n");
+}
   status = 
   cusparseXcsrgeam2Nnz(handle,
                        m,
@@ -220,6 +243,9 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
   if (col_ind_c == nullptr || values_c == nullptr) {
     throw std::runtime_error("sum_tiles(): out of memory.");
   }
+  if (print_stuff) {
+  BCL::print("cusparseScsrgeam2\n");
+}
   status = 
   cusparseScsrgeam2(handle,
                     m,
@@ -244,6 +270,10 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
 
   BCL::cuda::throw_cusparse(status);
   cudaDeviceSynchronize();
+
+  cusparseDestroyMatDescr(descr_a);
+  cusparseDestroyMatDescr(descr_b);
+  cusparseDestroyMatDescr(descr_c);
 
   deallocate_with<char, Allocator>(buffer);
 
@@ -279,12 +309,52 @@ bool is_shared_seg(CudaCSRMatrix<T, index_type, Allocator>& mat) {
   }
 }
 
-template <typename T, typename index_type, typename Allocator>
-CudaCSRMatrix<T, index_type, Allocator>
-spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
-                CudaCSRMatrix<T, index_type, Allocator>& b)
+template <typename MatrixType>
+void check_matrix(MatrixType& x) {
+  size_t m = x.m();
+  size_t n = x.n();
+  size_t nnz = x.nnz();
+
+  using T = typename MatrixType::value_type;
+  using index_type = typename MatrixType::index_type;
+
+  std::vector<T> values(nnz);
+  std::vector<index_type> rowptr(m+1);
+  std::vector<index_type> colind(nnz);
+
+  cudaMemcpy(values.data(), x.values_data(), sizeof(T)*nnz, cudaMemcpyDeviceToHost);
+  cudaMemcpy(rowptr.data(), x.rowptr_data(), sizeof(index_type)*(m+1), cudaMemcpyDeviceToHost);
+  cudaMemcpy(colind.data(), x.colind_data(), sizeof(index_type)*nnz, cudaMemcpyDeviceToHost);
+
+  size_t counted_nnz = 0;
+  for (size_t i = 0; i < m; i++) {
+    index_type last_colidx = -1;
+    for (index_type j_ptr = rowptr[i]; j_ptr < rowptr[i+1]; j_ptr++) {
+      index_type j = colind[j_ptr];
+      T value = values[j_ptr];
+
+      assert(j > last_colidx);
+      last_colidx = j;
+
+      assert(i >= 0 && i < m);
+      assert(j >= 0 && j < n);
+      counted_nnz++;
+    }
+  }
+  assert(counted_nnz == nnz);
+  fprintf(stderr, "Counted %lu / %lu nnz, all within bounds (%lu, %lu)\n",
+          counted_nnz, nnz, m, n);
+}
+
+template <typename AMatrixType, typename BMatrixType>
+auto spgemm_cusparse(AMatrixType& a,
+                     BMatrixType& b)
 {
+  using T = typename AMatrixType::value_type;
+  using index_type = typename AMatrixType::index_type;
+  using Allocator = BCL::cuda::bcl_allocator<T>;
   // static assert index_type is graphblas::Index
+  assert(a.n() == b.m());
   if (a.nnz() == 0 || b.nnz() == 0) {
     // return empty matrix
     return CudaCSRMatrix<T, index_type, Allocator>({a.shape()[0], b.shape()[1]}, 0);
@@ -293,9 +363,15 @@ spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
     size_t n = b.n();
     size_t k = a.n();
 
+    fprintf(stderr, "(%lu) Multiplying A (%lu x %lu), %lu nnz by B (%lu x %lu), %lu nnz -> C(%lu x %lu), ? nnz\n",
+            BCL::rank(), a.m(), a.n(), a.nnz(), b.m(), b.n(), b.nnz(),
+            m, n);
+
+    check_matrix(a);
+    check_matrix(b);
+    fprintf(stderr, "Matrices okay.\n");
+
     cusparseHandle_t& handle = bcl_cusparse_handle_;
-    cusparseStatus_t status = cusparseCreate(&handle);
-    BCL::cuda::throw_cusparse(status);
 
     int baseC, nnzC;
     csrgemm2Info_t info = nullptr;
@@ -307,39 +383,57 @@ spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
     T beta = 0;
 
     cusparseMatDescr_t descr;
+    cusparseStatus_t status = 
     cusparseCreateMatDescr(&descr);
+    BCL::cuda::throw_cusparse(status);
 
+    status = 
     cusparseSetMatType(descr, CUSPARSE_MATRIX_TYPE_GENERAL);
+    BCL::cuda::throw_cusparse(status);
+    status = 
     cusparseSetMatIndexBase(descr, CUSPARSE_INDEX_BASE_ZERO);
+    BCL::cuda::throw_cusparse(status);
 
-    // step1: create an opaque structure
-    cusparseCreateCsrgemm2Info(&info);
+    status = cusparseCreateCsrgemm2Info(&info);
+    BCL::cuda::throw_cusparse(status);
+
+  if (print_stuff) {
+    BCL::print("cusparseScsrgemm2_bufferSizeExt\n");
+  }
 
     status = 
     cusparseScsrgemm2_bufferSizeExt(handle, m, n, k, &alpha,
         descr, a.nnz(), a.rowptr_data(), a.colind_data(),
         descr, b.nnz(), b.rowptr_data(), b.colind_data(),
         &beta,
-        descr, b.nnz(), b.rowptr_data(), b.colind_data(),
+        descr, 0, NULL, NULL,
         info,
         &bufferSize);
     BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
 
     buffer = allocate_with<char, Allocator>(bufferSize);
+    fprintf(stderr, "buffer: %p (%lu bytes)\n", buffer, bufferSize);
 
+  if (print_stuff) {
+    BCL::print("cusparseXcsrgemm2Nnz\n");
+  }
     // step 3: compute csrRowPtrC
     index_type* csrRowPtrC = allocate_with<index_type, Allocator>(m+1);
     status = 
     cusparseXcsrgemm2Nnz(handle, m, n, k,
                          descr, a.nnz(), a.rowptr_data(), a.colind_data(),
                          descr, b.nnz(), b.rowptr_data(), b.colind_data(),
-                         descr, b.nnz(), b.rowptr_data(), b.colind_data(),
+                         descr, 0, NULL, NULL,
                          descr, csrRowPtrC, nnzTotalDevHostPtr, info, buffer);
     BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
 
     if (nnzTotalDevHostPtr != nullptr) {
+      fprintf(stderr, "RegCopy...\n");
       nnzC = *nnzTotalDevHostPtr;
     } else {
+      fprintf(stderr, "Mmecpying...\n");
       cudaMemcpy(&nnzC, csrRowPtrC+m, sizeof(index_type), cudaMemcpyDeviceToHost);
       cudaMemcpy(&baseC, csrRowPtrC, sizeof(index_type), cudaMemcpyDeviceToHost);
       nnzC -= baseC;
@@ -349,12 +443,15 @@ spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
     index_type* csrColIndC = allocate_with<index_type, Allocator>(nnzC);
     T* csrValC = allocate_with<T, Allocator>(nnzC);
     // Remark: set csrValC to null if only sparsity pattern is required.
+  if (print_stuff) {
+    BCL::print("cusparseScsrgemm2\n");
+  }
     status = 
     cusparseScsrgemm2(handle, m, n, k, &alpha,
             descr, a.nnz(), a.values_data(), a.rowptr_data(), a.colind_data(),
             descr, b.nnz(), b.values_data(), b.rowptr_data(), b.colind_data(),
             &beta,
-            descr, b.nnz(), b.values_data(), b.rowptr_data(), b.colind_data(),
+            descr, 0, NULL, NULL, NULL,
             descr, csrValC, csrRowPtrC, csrColIndC,
             info, buffer);
     BCL::cuda::throw_cusparse(status);
@@ -362,30 +459,170 @@ spgemm_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
 
     // step 5: destroy the opaque structure
     cusparseDestroyCsrgemm2Info(info);
+    cusparseDestroyMatDescr(descr);
     deallocate_with<char, Allocator>(buffer);
 
     return CudaCSRMatrix<T, index_type, Allocator>({m, n}, nnzC, csrValC, csrRowPtrC, csrColIndC);
   }
 }
 
-template <typename T>
-struct cusparse_type_t;
+// New CuSPARSE SpGEMM API, `cusparseSpGEMM`
+// Currently no advantage, since it does not
+// actually support any extra types.
+// TODO: concepts
+template <typename AMatrixType, typename BMatrixType>
+auto
+spgemm_cusparse_newapi(AMatrixType& a,
+                       BMatrixType& b)
+{
+  // static assert index_type is graphblas::Index
+  using T = typename AMatrixType::value_type;
+  using index_type = typename AMatrixType::index_type;
+  using Allocator = BCL::cuda::bcl_allocator<T>;
+  if (a.nnz() == 0 || b.nnz() == 0) {
+    // return empty matrix
+    return CudaCSRMatrix<T, index_type, Allocator>({a.shape()[0], b.shape()[1]}, 0);
+  } else {
+    size_t m = a.m();
+    size_t n = b.n();
+    size_t k = a.n();
 
-template <>
-struct cusparse_type_t<int32_t> {
-  using type = int32_t;
-  static auto cusparse_type() {
-    return CUSPARSE_INDEX_32I;
-  }
-};
+    cusparseHandle_t& handle = bcl_cusparse_handle_;
 
-template <>
-struct cusparse_type_t<int64_t> {
-  using type = int64_t;
-  static auto cusparse_type() {
-    return CUSPARSE_INDEX_64I;
+    T alpha = 1;
+    T beta = 0;
+
+    fprintf(stderr, "(%lu) Multiplying A (%lu x %lu), %lu nnz by B (%lu x %lu), %lu nnz -> C(%lu x %lu), ? nnz\n",
+            BCL::rank(), a.m(), a.n(), a.nnz(), b.m(), b.n(), b.nnz(),
+            m, n);
+
+    cusparseSpMatDescr_t descr_a, descr_b, descr_c;
+
+    fprintf(stderr, "(%lu) Create CSRs...\n", BCL::rank());
+    cusparseStatus_t status =
+    cusparseCreateCsr(&descr_a, a.m(), a.n(), a.nnz(),
+                      a.rowptr_data(), a.colind_data(), a.values_data(),
+                      cusparse_type_t<index_type>::cusparse_type(),
+                      cusparse_type_t<index_type>::cusparse_type(),
+                      CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F);
+    BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
+
+    status =
+    cusparseCreateCsr(&descr_b, b.m(), b.n(), b.nnz(),
+                      b.rowptr_data(), b.colind_data(), b.values_data(),
+                      cusparse_type_t<index_type>::cusparse_type(),
+                      cusparse_type_t<index_type>::cusparse_type(),
+                      CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F);
+    BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
+
+    status =
+    cusparseCreateCsr(&descr_c, m, n, 0,
+                      NULL, NULL, NULL,
+                      cusparse_type_t<index_type>::cusparse_type(),
+                      cusparse_type_t<index_type>::cusparse_type(),
+                      CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F);
+    BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
+
+    cusparseSpGEMMDescr_t descr_spgemm;
+    status =
+    cusparseSpGEMM_createDescr(&descr_spgemm);
+    BCL::cuda::throw_cusparse(status);
+
+    size_t bufferSize1;
+
+    fprintf(stderr, "(%lu) Estimate work...\n", BCL::rank());
+    status =
+    cusparseSpGEMM_workEstimation(handle,
+                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                  &alpha, descr_a, descr_b, &beta, descr_c,
+                                  CUDA_R_32F, CUSPARSE_SPGEMM_DEFAULT,
+                                  descr_spgemm, &bufferSize1, NULL);
+    BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
+
+    fprintf(stderr, "(%lu) first buffer %lu bytes\n", BCL::rank(), bufferSize1);
+
+    char* buffer_1 = allocate_with<char, Allocator>(bufferSize1);
+
+    status =
+    cusparseSpGEMM_workEstimation(handle,
+                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                  &alpha, descr_a, descr_b, &beta, descr_c,
+                                  CUDA_R_32F, CUSPARSE_SPGEMM_DEFAULT,
+                                  descr_spgemm, &bufferSize1, buffer_1);
+    BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
+
+    fprintf(stderr, "(%lu) Compute 1...\n", BCL::rank());
+    size_t bufferSize2;
+    status =
+    cusparseSpGEMM_compute(handle,
+                           CUSPARSE_OPERATION_NON_TRANSPOSE,
+                           CUSPARSE_OPERATION_NON_TRANSPOSE,
+                           &alpha, descr_a, descr_b, &beta, descr_c,
+                           CUDA_R_32F, CUSPARSE_SPGEMM_DEFAULT,
+                           descr_spgemm, &bufferSize2, NULL);
+    BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
+
+    fprintf(stderr, "(%lu) second buffer %lu bytes\n", BCL::rank(), bufferSize2);
+
+    char* buffer_2 = allocate_with<char, Allocator>(bufferSize2);
+
+    fprintf(stderr, "(%lu) Compute 2...\n", BCL::rank());
+    status =
+    cusparseSpGEMM_compute(handle,
+                           CUSPARSE_OPERATION_NON_TRANSPOSE,
+                           CUSPARSE_OPERATION_NON_TRANSPOSE,
+                           &alpha, descr_a, descr_b, &beta, descr_c,
+                           CUDA_R_32F, CUSPARSE_SPGEMM_DEFAULT,
+                           descr_spgemm, &bufferSize2, buffer_2);
+    BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
+
+    fprintf(stderr, "(%lu) Extracting...\n", BCL::rank());
+
+    int64_t nrows, ncols, nnz;
+    status =
+    cusparseSpMatGetSize(descr_c, &nrows, &ncols, &nnz);
+    BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
+
+    index_type* c_colind = allocate_with<index_type, Allocator>(nnz);
+    T* c_values = allocate_with<T, Allocator>(nnz);
+    index_type* c_rowptr = allocate_with<index_type, Allocator>(m+1);
+
+    status =
+    cusparseCsrSetPointers(descr_c, c_rowptr, c_colind, c_values);
+    BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
+
+    status =
+    cusparseSpGEMM_copy(handle,
+                        CUSPARSE_OPERATION_NON_TRANSPOSE,
+                        CUSPARSE_OPERATION_NON_TRANSPOSE,
+                        &alpha, descr_a, descr_b, &beta, descr_c,
+                        CUDA_R_32F, CUSPARSE_SPGEMM_DEFAULT, descr_spgemm);
+    BCL::cuda::throw_cusparse(status);
+    cudaDeviceSynchronize();
+
+    deallocate_with<char, Allocator>(buffer_2);
+    deallocate_with<char, Allocator>(buffer_1);
+
+    cusparseSpGEMM_destroyDescr(descr_spgemm);
+    cusparseDestroySpMat(descr_a);
+    cusparseDestroySpMat(descr_b);
+    cusparseDestroySpMat(descr_c);
+
+    return CudaCSRMatrix<T, index_type, Allocator>({m, n}, nnz, c_values, c_rowptr, c_colind);
   }
-};
+}
+
 
 template <typename AMatrixType, typename BMatrixType, typename CMatrixType>
 void spmm_cusparse(AMatrixType& a,

@@ -71,7 +71,7 @@ void gemm(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::SPMatrix<T, index_ty
           }
 
           begin = std::chrono::high_resolution_clock::now();
-          auto result_c = spgemm_cusparse<T, index_type, Allocator>(local_a, local_b);
+          auto result_c = spgemm_cusparse(local_a, local_b);
           end = std::chrono::high_resolution_clock::now();
           duration_compute += std::chrono::duration<double>(end - begin).count();
 
@@ -105,12 +105,10 @@ void gemm(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::SPMatrix<T, index_ty
   duration_barrier += std::chrono::duration<double>(end - begin).count();
 }
 
-template <typename T, typename index_type,
-          typename Indexing,
-          typename Allocator = BCL::cuda::bcl_allocator<T>>
-void warmup_communicators(BCL::cuda::SPMatrix<T, index_type>& a,
-                          BCL::cuda::Matrix<T, Indexing>& b,
-                          BCL::cuda::Matrix<T, Indexing>& c) {
+template <typename AMatrixType, typename BMatrixType, typename CMatrixType>
+void warmup_communicators(AMatrixType& a,
+                          BMatrixType& b,
+                          CMatrixType& c) {
   for (size_t i = 0; i < c.grid_shape()[0]; i++) {
     for (size_t j = 0; j < c.grid_shape()[1]; j++) {
       if (c.tile_rank({i, j}) == BCL::rank()) {
@@ -219,6 +217,145 @@ void gemm_mpi_simple(BCL::cuda::SPMatrix<T, index_type>& a,
   }
   auto begin = std::chrono::high_resolution_clock::now();
   BCL::cuda::barrier();
+  auto end = std::chrono::high_resolution_clock::now();
+  duration_barrier += std::chrono::duration<double>(end - begin).count();
+}
+
+template <typename T, typename index_type,
+          typename Allocator = BCL::cuda::bcl_allocator<T>>
+void gemm_mpi_simple(BCL::cuda::SPMatrix<T, index_type>& a,
+                     BCL::cuda::SPMatrix<T, index_type>& b,
+                     BCL::cuda::SPMatrix<T, index_type>& c) {
+  assert(a.grid_shape()[0] == c.grid_shape()[0]);
+  assert(b.grid_shape()[1] == c.grid_shape()[1]);
+  assert(a.grid_shape()[1] == b.grid_shape()[0]);
+  for (size_t i = 0; i < c.grid_shape()[0]; i++) {
+    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
+      if (c.tile_rank({i, j}) == BCL::rank()) {
+        using csr_type = decltype(a.arget_tile_exp({0, 0}).get());
+        std::vector<csr_type> intermediate_results;
+        // fprintf(stderr, "RANK(%lu): Doing tile (%lu, %lu)\n", BCL::rank(), i, j);
+        for (size_t k = 0; k < a.grid_shape()[1]; k++) {
+          BCL::print("Iteration %lu...\n", k);
+          auto begin = std::chrono::high_resolution_clock::now();
+          MPI_Comm row_comm = a.row_teams_mpi_[i][0].comm();
+          MPI_Comm column_comm = b.column_teams_mpi_[j][0].comm();
+
+          T* a_values_data;
+          index_type* a_rowptr_data;
+          index_type* a_colind_data;
+
+          size_t nnz = a.nnzs_[i*a.grid_shape()[1] + k];
+          size_t m = a.tile_shape({i, k})[0];
+          size_t n = a.tile_shape({i, k})[1];
+
+          if (BCL::rank() == a.tile_rank({i, k})) {
+            auto local_a = a.get_local_tile({i, k});
+            a_values_data = local_a.values_data();
+            a_rowptr_data = local_a.rowptr_data();
+            a_colind_data = local_a.colind_data();
+          } else {
+            a_values_data = allocate_with<T, Allocator>(nnz);
+            a_rowptr_data = allocate_with<index_type, Allocator>(m+1);
+            a_colind_data = allocate_with<index_type, Allocator>(nnz);
+          }
+
+          size_t root = a.row_teams_[i].resolve(a.tile_rank({i, k}));
+          assert(root == k);
+
+          MPI_Bcast(a_values_data, nnz, MPI_FLOAT, root, row_comm);
+          MPI_Bcast(a_rowptr_data, m+1, MPI_INT, root, row_comm);
+          MPI_Bcast(a_colind_data, nnz, MPI_INT, root, row_comm);
+
+          BCL::cuda::CudaCSRMatrixView<T, index_type> local_a(m, n, nnz,
+                                                              a_values_data,
+                                                              a_rowptr_data,
+                                                              a_colind_data);
+
+          // *** BCAST of B ***
+
+          T* b_values_data;
+          index_type* b_rowptr_data;
+          index_type* b_colind_data;
+
+          nnz = b.nnzs_[k*b.grid_shape()[1] + j];
+          m = b.tile_shape({k, j})[0];
+          n = b.tile_shape({k, j})[1];
+
+          if (BCL::rank() == b.tile_rank({k, j})) {
+            auto local_b = b.get_local_tile({k, j});
+            b_values_data = local_b.values_data();
+            b_rowptr_data = local_b.rowptr_data();
+            b_colind_data = local_b.colind_data();
+          } else {
+            b_values_data = allocate_with<T, Allocator>(nnz);
+            b_rowptr_data = allocate_with<index_type, Allocator>(m+1);
+            b_colind_data = allocate_with<index_type, Allocator>(nnz);
+          }
+
+          root = b.column_teams_[j].resolve(b.tile_rank({k, j}));
+          assert(root == k);
+
+          MPI_Bcast(b_values_data, nnz, MPI_FLOAT, root, column_comm);
+          MPI_Bcast(b_rowptr_data, m+1, MPI_INT, root, column_comm);
+          MPI_Bcast(b_colind_data, nnz, MPI_INT, root, column_comm);
+
+          BCL::cuda::CudaCSRMatrixView<T, index_type> local_b(m, n, nnz,
+                                                              b_values_data,
+                                                              b_rowptr_data,
+                                                              b_colind_data);
+
+          auto end = std::chrono::high_resolution_clock::now();
+          duration_sync += std::chrono::duration<double>(end - begin).count();
+
+          // *** Local MatMul ***
+
+          begin = std::chrono::high_resolution_clock::now();
+          if (BCL::rank() == 0) {
+            auto result_c = spgemm_cusparse(local_a, local_b);
+          }
+          end = std::chrono::high_resolution_clock::now();
+          duration_compute += std::chrono::duration<double>(end - begin).count();
+
+          if (BCL::rank() != a.tile_rank({i, k})) {
+            deallocate_with<T, Allocator>(a_values_data);
+            deallocate_with<index_type, Allocator>(a_rowptr_data);
+            deallocate_with<index_type, Allocator>(a_colind_data);
+          }
+
+          if (BCL::rank() != b.tile_rank({k, j})) {
+            deallocate_with<T, Allocator>(b_values_data);
+            deallocate_with<index_type, Allocator>(b_rowptr_data);
+            deallocate_with<index_type, Allocator>(b_colind_data);
+          }
+
+/*
+          BCL::print("Summing...\n");
+          if (!result_c.empty()) {
+            auto begin = std::chrono::high_resolution_clock::now();
+            intermediate_results.push_back(std::move(result_c));
+            // TODO: implement sum_tiles_grb
+            auto c_block = sum_tiles_cusparse<T, index_type, Allocator>(intermediate_results);
+            intermediate_results.clear();
+            intermediate_results.push_back(std::move(c_block));
+            auto end = std::chrono::high_resolution_clock::now();
+            duration_accumulate += std::chrono::duration<double>(end - begin).count();
+          }
+          */
+
+        }
+
+/*
+        auto c_block = sum_tiles_cusparse<T, index_type, Allocator>(intermediate_results);
+        if (!c_block.empty()) {
+          c.assign_tile({i, j}, c_block);
+        }
+        */
+      }
+    }
+  }
+  auto begin = std::chrono::high_resolution_clock::now();
+  c.rebroadcast_tiles();
   auto end = std::chrono::high_resolution_clock::now();
   duration_barrier += std::chrono::duration<double>(end - begin).count();
 }
