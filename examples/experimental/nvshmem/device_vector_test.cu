@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 #include <cuda.h>
 #include <bcl/backends/experimental/nvshmem/backend.hpp>
 #include <bcl/containers/experimental/cuda/sequential/device_vector.cuh>

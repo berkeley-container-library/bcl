@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 # Makefile for some simple examples in this directory.
 # On bridges, you need to run `source prep.sh` to set

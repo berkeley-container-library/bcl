@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 # XXX: Modify BCLROOT if you move this Makefile
 #      out of an examples/* directory.
 BCLROOT=$(PWD)/../../../../

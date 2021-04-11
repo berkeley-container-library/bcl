@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 # NOTE: uncomment these three lines to use the GASNet-EX backend.
 #       Note that the environment variable `gasnet_prefix`

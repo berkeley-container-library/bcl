@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 #include <bcl/containers/DMatrix.hpp>
 
 double num_gflops(size_t M, size_t N, size_t K);
