@@ -12,6 +12,13 @@
 #include <bcl/bcl.hpp>
 
 namespace BCL {
+
+template <typename T>
+extern inline void rput(const T *src, const GlobalPtr <T> &dst, const size_t size);
+
+template <typename T>
+extern inline void rget(const GlobalPtr <T> &src, T *dst, const size_t size);
+
   template <typename T, size_t N>
   struct serial_blob {
     T val[N];
@@ -181,9 +188,12 @@ namespace BCL {
     Container() {};
 
     void free() {
-      // TODO: memory leak.
-      if (this->ptr != nullptr && this->ptr.is_local()) {
-        BCL::dealloc(this->ptr);
+      if (this->ptr != nullptr) {
+        if (this->ptr.is_local()) {
+          BCL::dealloc(this->ptr);
+        } else {
+          rdealloc(this->ptr);
+        }
       }
     }
 
@@ -198,9 +208,12 @@ namespace BCL {
     }
 
     void set(const T &val, uint64_t rank = BCL::rank()) {
-      // TODO: memory leak.
-      if (this->ptr != nullptr && this->ptr.is_local()) {
-        BCL::dealloc(this->ptr);
+      if (this->ptr != nullptr) {
+        if (this->ptr.is_local()) {
+          BCL::dealloc(this->ptr);
+        } else {
+          rdealloc(this->ptr);
+        }
       }
       serial_ptr <SPT> ptr = Serialize{}(val);
       this->ptr = BCL::alloc <SPT> (ptr.N);
@@ -208,7 +221,11 @@ namespace BCL {
         throw std::runtime_error("BCL Container: ran out of memory");
       }
       this->len = ptr.N;
-      BCL::rput(ptr.ptr.get(), this->ptr, ptr.N);
+      static_assert(std::is_same<decltype(ptr.ptr.get()), decltype(this->ptr.local())>::value);
+      static_assert(std::is_same<SPT, char>::value);
+      // static_assert(std::is_same<decltype(ptr.ptr.get()), int>::value);
+      SPT* lptr = ptr.ptr.get();
+      BCL::rput(lptr, this->ptr, ptr.N);
     }
   };
 

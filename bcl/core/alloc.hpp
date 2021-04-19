@@ -21,6 +21,12 @@ inline void dealloc(GlobalPtr <T> ptr) {
   local_free <T> (ptr);
 }
 
+template <typename T>
+GlobalPtr <T> ralloc(const size_t size, const uint64_t rank);
+
+template <typename T>
+void rdealloc(GlobalPtr <T> &ptr);
+
 template <typename T, typename... Args>
 inline GlobalPtr<T> new_(Args&& ...args) {
   BCL::GlobalPtr<T> ptr = BCL::alloc<T>(1);

@@ -5,7 +5,10 @@
 #pragma once
 
 #include <mpi.h>
+#include <cassert>
 
+#include "progress_thread.hpp"
+#include "rpc.hpp"
 #include "alloc.hpp"
 #include "comm.hpp"
 #include "ops.hpp"
@@ -13,12 +16,16 @@
 
 #include "async_allocator.hpp"
 
+
 namespace BCL {
 
 extern uint64_t shared_segment_size;
 extern void *smem_base_ptr;
 
 extern inline void init_malloc();
+
+extern void start_progress_thread();
+extern void stop_progress_thread();
 
 MPI_Comm comm;
 MPI_Win win;
@@ -75,12 +82,12 @@ void flush() {
 
 // MPI communicator, shared_segment_size in MB,
 // and whether to start the progress thread.
-void init(uint64_t shared_segment_size = 256, bool thread_safe = false) {
+void init(uint64_t shared_segment_size = 256, bool thread_safe = false, bool progress = false) {
   BCL::comm = MPI_COMM_WORLD;
   BCL::shared_segment_size = 1024*1024*shared_segment_size;
 
   if (!mpi_initialized()) {
-    if (!thread_safe) {
+    if (!thread_safe && !progress) {
       MPI_Init(NULL, NULL);
     } else {
       int provided;
@@ -91,6 +98,11 @@ void init(uint64_t shared_segment_size = 256, bool thread_safe = false) {
       }
     }
     we_initialized = true;
+  }
+
+  if (progress) {
+    assert(thread_safe);
+    BCL::start_progress_thread();
   }
 
   int rank, nprocs;
@@ -119,6 +131,7 @@ void init(uint64_t shared_segment_size = 256, bool thread_safe = false) {
 
 void finalize() {
   BCL::barrier();
+  BCL::stop_progress_thread();
   MPI_Win_unlock_all(win);
   MPI_Info_free(&info);
   MPI_Win_free(&win);
