@@ -156,6 +156,8 @@ int main(int argc, char** argv) {
 
     if (s_c_coo.size() != local_c.size()) {
       fprintf(stderr, "ERROR: number of nonzeros does not match.\n");
+    } else {
+      fprintf(stderr, "Nonzeros match %lu == %lu\n", s_c_coo.size(), local_c.size());
     }
 
 /*

@@ -27,6 +27,23 @@ struct min {
 
 namespace cuda {
 
+template <typename MatrixType>
+CSRMatrix<typename MatrixType::value_type, typename MatrixType::index_type> to_cpu_generic(MatrixType& mat) {
+  using T = typename MatrixType::value_type;
+  using index_type = typename MatrixType::index_type;
+  std::vector<T> values(mat.nnz());
+  std::vector<index_type> rowptr(mat.m()+1);
+  std::vector<index_type> colind(mat.nnz());
+
+  cudaMemcpy(values.data(), mat.values_data(), sizeof(T)*mat.nnz(), cudaMemcpyDeviceToHost);
+  cudaMemcpy(rowptr.data(), mat.rowptr_data(), sizeof(index_type)*(mat.m()+1), cudaMemcpyDeviceToHost);
+  cudaMemcpy(colind.data(), mat.colind_data(), sizeof(index_type)*mat.nnz(), cudaMemcpyDeviceToHost);
+
+  return CSRMatrix<T, index_type>(mat.m(), mat.n(), mat.nnz(),
+                                  std::move(values), std::move(rowptr),
+                                  std::move(colind));
+}
+
 template <typename T>
 struct cusparse_type_t;
 
@@ -101,7 +118,39 @@ void print_coo(const T& coo, size_t max_idx = std::numeric_limits<size_t>::max()
   }
 }
 
-bool print_stuff = false;
+/*
+struct alloc_t {
+  char* ptr_;
+  size_t size_;
+
+  template <typename T>
+  alloc_t(T* ptr, size_t size) : ptr_((char *) ptr), size_(size*sizeof(T)) {}
+
+  char* begin() {
+    return ptr_;
+  }
+
+  char* end() {
+    return ptr_ + size_;
+  }
+};
+
+bool check_overlap(alloc_t a, alloc_t b) {
+  return a.begin() <= b.end() && a.end() >= b.begin();
+}
+
+bool check_overlap(const std::vector<alloc_t>& allocations) {
+  for (size_t i = 0; i < allocations.size(); i++) {
+    for (size_t j = i+1; j < allocations.size(); j++) {
+      if (check_overlap(allocations[i], allocations[j])) {
+        fprintf(stderr, "%p overlaps with %p\n", allocations[i].ptr_, allocations[j].ptr_);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+*/
 
 template <typename T, typename index_type, typename Allocator>
 CudaCSRMatrix<T, index_type, Allocator>
@@ -111,9 +160,6 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
   //      'A' here is local_c, and 'B' here is result_c
   //.     At the end, the new accumulated matrix will be put in local_c.
 
-  if (print_stuff) {
-    BCL::print("cusparse sum...\n");
-  }
   cusparseHandle_t& handle = bcl_cusparse_handle_;
 
   index_type arows = a.shape()[0];
@@ -184,9 +230,6 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
 
   // TODO: what am I supposed to pass for csrValC and csrColIndC???
   //       we don't know nnz yet.
-  if (print_stuff) {
-  BCL::print("cusparseScsrgeam2_bufferSizeExt\n");
-}
   status =
   cusparseScsrgeam2_bufferSizeExt(handle,
                                   m,
@@ -210,9 +253,6 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
 
   char* buffer = rebind_allocator_t<Allocator, char>{}.allocate(pBufferSizeInBytes);
 
-  if (print_stuff) {
-  BCL::print("cusparseXcsrgeam2Nnz\n");
-}
   status = 
   cusparseXcsrgeam2Nnz(handle,
                        m,
@@ -243,9 +283,6 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
   if (col_ind_c == nullptr || values_c == nullptr) {
     throw std::runtime_error("sum_tiles(): out of memory.");
   }
-  if (print_stuff) {
-  BCL::print("cusparseScsrgeam2\n");
-}
   status = 
   cusparseScsrgeam2(handle,
                     m,
@@ -341,18 +378,35 @@ void check_matrix(MatrixType& x) {
       counted_nnz++;
     }
   }
-  assert(counted_nnz == nnz);
   fprintf(stderr, "Counted %lu / %lu nnz, all within bounds (%lu, %lu)\n",
           counted_nnz, nnz, m, n);
+  // assert(counted_nnz == nnz);
 }
 
 template <typename AMatrixType, typename BMatrixType>
 auto spgemm_cusparse(AMatrixType& a,
                      BMatrixType& b)
 {
+    // fprintf(stderr, "FIRST PRINT a values_ptr: %p, b values_ptr: %p\n",
+    //         a.values_data(), b.values_data());
+
+/*
+    std::vector<alloc_t> allocations = {alloc_t(a.values_data(), a.nnz()),
+                                        alloc_t(a.rowptr_data(), a.shape()[0]+1),
+                                        alloc_t(a.colind_data(), a.nnz()),
+                                        alloc_t(b.values_data(), b.nnz()),
+                                        alloc_t(b.rowptr_data(), b.shape()[0]+1),
+                                        alloc_t(b.colind_data(), b.nnz())};
+    if (check_overlap(allocations)) {
+      fprintf(stderr, "Overlapping!\n");
+    } else {
+      fprintf(stderr, "NOT overlapping.\n");
+    }
+    */
   using T = typename AMatrixType::value_type;
   using index_type = typename AMatrixType::index_type;
   using Allocator = BCL::cuda::bcl_allocator<T>;
+  // using Allocator = typename AMatrixType::allocator_type;
   // static assert index_type is graphblas::Index
   assert(a.n() == b.m());
   if (a.nnz() == 0 || b.nnz() == 0) {
@@ -362,14 +416,23 @@ auto spgemm_cusparse(AMatrixType& a,
     size_t m = a.m();
     size_t n = b.n();
     size_t k = a.n();
+    assert(b.m() == k);
 
+    // fprintf(stderr, "First time A:\n");
+    // check_matrix(a);
+    // fprintf(stderr, "First time B:\n");
+    // check_matrix(b);
+
+
+/*
     fprintf(stderr, "(%lu) Multiplying A (%lu x %lu), %lu nnz by B (%lu x %lu), %lu nnz -> C(%lu x %lu), ? nnz\n",
             BCL::rank(), a.m(), a.n(), a.nnz(), b.m(), b.n(), b.nnz(),
             m, n);
+            */
 
-    check_matrix(a);
-    check_matrix(b);
-    fprintf(stderr, "Matrices okay.\n");
+    // check_matrix(a);
+    // check_matrix(b);
+    // fprintf(stderr, "Matrices okay.\n");
 
     cusparseHandle_t& handle = bcl_cusparse_handle_;
 
@@ -397,43 +460,140 @@ auto spgemm_cusparse(AMatrixType& a,
     status = cusparseCreateCsrgemm2Info(&info);
     BCL::cuda::throw_cusparse(status);
 
-  if (print_stuff) {
-    BCL::print("cusparseScsrgemm2_bufferSizeExt\n");
-  }
+    T* values_d = allocate_with<T, Allocator>(1);
+    index_type* colind_d = allocate_with<index_type, Allocator>(1);
+    index_type* rowptr_d = allocate_with<index_type, Allocator>(m+1);
+    cudaMemset(rowptr_d, 0, sizeof(index_type)*(m+1));
+
+    /*
+    fprintf(stderr, "Calling cusparseScsrgemm2_bufferSizeExt(handle, %lu, %lu, %lu, %f,\n"
+                    "                                        descr, %lu, %p, %p,\n"
+                    "                                        descr, %lu, %p, %p,\n"
+                    "                                        %f,\n"
+                    "                                        descr, 0, 0, 0,\n"
+                    "                                        info,\n"
+                    "                                        &bufferSize);\n\n",
+                    m, n, k, alpha,
+                    a.nnz(), a.rowptr_data(), a.colind_data(),
+                    b.nnz(), b.rowptr_data(), b.colind_data(),
+                    beta);
+    fprintf(stderr, "Check A:\n");
+    check_matrix(a);
+    fprintf(stderr, "Check B:\n");
+    check_matrix(b);
+
+    fprintf(stderr, "a values_ptr: %p, b values_ptr: %p\n",
+            a.values_data(), b.values_data());
+
+    std::vector<alloc_t> allocations = {alloc_t(a.values_data(), a.nnz()),
+                                        alloc_t(a.rowptr_data(), m+1),
+                                        alloc_t(a.colind_data(), a.nnz()),
+                                        alloc_t(b.values_data(), b.nnz()),
+                                        alloc_t(b.rowptr_data(), k+1),
+                                        alloc_t(b.colind_data(), b.nnz())};
+    if (check_overlap(allocations)) {
+      fprintf(stderr, "Overlapping!\n");
+    } else {
+      fprintf(stderr, "NOT overlapping.\n");
+    }
+    */
 
     status = 
     cusparseScsrgemm2_bufferSizeExt(handle, m, n, k, &alpha,
         descr, a.nnz(), a.rowptr_data(), a.colind_data(),
         descr, b.nnz(), b.rowptr_data(), b.colind_data(),
         &beta,
-        descr, 0, NULL, NULL,
+        descr, 0, rowptr_d, colind_d,
         info,
         &bufferSize);
     BCL::cuda::throw_cusparse(status);
-    cudaDeviceSynchronize();
+    // fprintf(stderr, "(%lu): cusparseScsrgemm2_bufferSizeExt\n", BCL::rank());
+    // cudaDeviceSynchronize();
+
 
     buffer = allocate_with<char, Allocator>(bufferSize);
-    fprintf(stderr, "buffer: %p (%lu bytes)\n", buffer, bufferSize);
+    // fprintf(stderr, "buffer: %p (%lu bytes)\n", buffer, bufferSize);
 
-  if (print_stuff) {
-    BCL::print("cusparseXcsrgemm2Nnz\n");
-  }
     // step 3: compute csrRowPtrC
+
+/*
+      {
+      fprintf(stderr, "First print, before:\n");
+      fprintf(stderr, "Tried to mutiply A (%lu, %lu), %lu nnz by B(%lu, %lu) %lu nnz\n",
+              a.shape()[0], a.shape()[1], b.nnz(), b.shape()[0], b.shape()[1], b.nnz());
+      auto local_a = BCL::cuda::to_cpu_generic(a);
+      auto local_a_coo = local_a.get_coo();
+      fprintf(stderr, "BEGIN Printing matrix:\n");
+      fprintf(stderr, "%lu %lu %lu\n", local_a.shape()[0], local_a.shape()[1], a.nnz());
+      for (size_t i = 0; i < local_a.shape()[0]; i++) {
+        // fprintf(stderr, "printing row %lu (%lu -> %lu)\n", i, local_a.rowptr_data()[i], local_a.rowptr_data()[i+1]);
+        for (index_type j_ptr = local_a.rowptr_data()[i]; j_ptr < local_a.rowptr_data()[i+1]; j_ptr++) {
+          index_type j = local_a.colind_data()[j_ptr];
+          T value = local_a.values_data()[j_ptr];
+          fprintf(stderr, "%lu %d %f\n", i+1, j+1, value);
+        }
+      }
+      /*
+      for (size_t i = 0; i < local_a.vals_.size(); i++) {
+        std::cout << local_a.vals_[i] << std::endl;
+        printf("%f\n", local_a.vals_[i]);
+      }
+      for (const auto& tuple : local_a_coo) {
+        std::cout << std::get<0>(std::get<0>(tuple)) << " " << std::get<1>(std::get<0>(tuple)) << " " << std::get<1>(tuple) << std::endl;
+      }
+      */
+      // fprintf(stderr, "END print\n");
+      // fflush(stdout);
+      // sleep(1);
+      // }
+
     index_type* csrRowPtrC = allocate_with<index_type, Allocator>(m+1);
     status = 
     cusparseXcsrgemm2Nnz(handle, m, n, k,
                          descr, a.nnz(), a.rowptr_data(), a.colind_data(),
                          descr, b.nnz(), b.rowptr_data(), b.colind_data(),
-                         descr, 0, NULL, NULL,
+                         descr, 0, rowptr_d, colind_d,
                          descr, csrRowPtrC, nnzTotalDevHostPtr, info, buffer);
+    /*
+    if (status == CUSPARSE_STATUS_EXECUTION_FAILED) {
+      {
+      fprintf(stderr, "Failed. I should probably print the matrices.\n");
+      fprintf(stderr, "Tried to mutiply A (%lu, %lu), %lu nnz by B(%lu, %lu) %lu nnz\n",
+              a.shape()[0], a.shape()[1], b.nnz(), b.shape()[0], b.shape()[1], b.nnz());
+      auto local_a = BCL::cuda::to_cpu_generic(a);
+      auto local_a_coo = local_a.get_coo();
+      fprintf(stderr, "BEGIN Printing matrix:\n");
+      for (size_t i = 0; i < local_a.shape()[0]; i++) {
+        fprintf(stderr, "printing row %lu (%lu -> %lu)\n", i, local_a.rowptr_data()[i], local_a.rowptr_data()[i+1]);
+        for (index_type j_ptr = local_a.rowptr_data()[i]; j_ptr < local_a.rowptr_data()[i+1]; j_ptr++) {
+          index_type j = local_a.colind_data()[j_ptr];
+          T value = local_a.values_data()[j_ptr];
+          fprintf(stderr, "%lu %d %f\n", i, j, value);
+        }
+      }
+      for (size_t i = 0; i < local_a.vals_.size(); i++) {
+        std::cout << local_a.vals_[i] << std::endl;
+        printf("%f\n", local_a.vals_[i]);
+      }
+      for (const auto& tuple : local_a_coo) {
+        std::cout << std::get<0>(std::get<0>(tuple)) << " " << std::get<1>(std::get<0>(tuple)) << " " << std::get<1>(tuple) << std::endl;
+      }
+      fprintf(stderr, "END print\n");
+      fflush(stdout);
+      sleep(1);
+      }
+    }
+    */
+    // fprintf(stderr, "(%lu): cusparseXcsrgemm2Nnz\n", BCL::rank());
     BCL::cuda::throw_cusparse(status);
-    cudaDeviceSynchronize();
+    // fprintf(stderr, "(%lu): after cusparseXcsrgemm2Nnz\n", BCL::rank());
+    // cudaDeviceSynchronize();
 
     if (nnzTotalDevHostPtr != nullptr) {
-      fprintf(stderr, "RegCopy...\n");
+      // fprintf(stderr, "RegCopy...\n");
       nnzC = *nnzTotalDevHostPtr;
     } else {
-      fprintf(stderr, "Mmecpying...\n");
+      // fprintf(stderr, "Mmecpying...\n");
       cudaMemcpy(&nnzC, csrRowPtrC+m, sizeof(index_type), cudaMemcpyDeviceToHost);
       cudaMemcpy(&baseC, csrRowPtrC, sizeof(index_type), cudaMemcpyDeviceToHost);
       nnzC -= baseC;
@@ -443,15 +603,12 @@ auto spgemm_cusparse(AMatrixType& a,
     index_type* csrColIndC = allocate_with<index_type, Allocator>(nnzC);
     T* csrValC = allocate_with<T, Allocator>(nnzC);
     // Remark: set csrValC to null if only sparsity pattern is required.
-  if (print_stuff) {
-    BCL::print("cusparseScsrgemm2\n");
-  }
     status = 
     cusparseScsrgemm2(handle, m, n, k, &alpha,
             descr, a.nnz(), a.values_data(), a.rowptr_data(), a.colind_data(),
             descr, b.nnz(), b.values_data(), b.rowptr_data(), b.colind_data(),
             &beta,
-            descr, 0, NULL, NULL, NULL,
+            descr, 0, values_d, rowptr_d, colind_d,
             descr, csrValC, csrRowPtrC, csrColIndC,
             info, buffer);
     BCL::cuda::throw_cusparse(status);
@@ -461,6 +618,9 @@ auto spgemm_cusparse(AMatrixType& a,
     cusparseDestroyCsrgemm2Info(info);
     cusparseDestroyMatDescr(descr);
     deallocate_with<char, Allocator>(buffer);
+    deallocate_with<index_type, Allocator>(rowptr_d);
+    deallocate_with<index_type, Allocator>(colind_d);
+    deallocate_with<T, Allocator>(values_d);
 
     return CudaCSRMatrix<T, index_type, Allocator>({m, n}, nnzC, csrValC, csrRowPtrC, csrColIndC);
   }
@@ -636,6 +796,7 @@ void spmm_cusparse(AMatrixType& a,
   }
   using T = typename AMatrixType::value_type;
   using Allocator = BCL::cuda::bcl_allocator<T>;
+  // using Allocator = typename AMatrix::allocator_type;
   static_assert(std::is_same<typename AMatrixType::value_type, float>::value);
   static_assert(std::is_same<typename BMatrixType::value_type, float>::value);
   static_assert(std::is_same<typename CMatrixType::value_type, float>::value);

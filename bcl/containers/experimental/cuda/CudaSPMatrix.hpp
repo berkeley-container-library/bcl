@@ -317,6 +317,11 @@ public:
     return matrix_dim {tile_size_m_, tile_size_n_};
   }
 
+  __device__ __host__ size_t tile_nnz(matrix_dim idx) const {
+    size_t vals_idx = idx[0]*grid_shape()[1] + idx[1];
+    return nnzs_[vals_idx];
+  }
+
   template <typename U, typename V>
   __host__ __device__ auto min(U a, V b) const {
     if (a < b) {
