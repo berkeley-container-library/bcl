@@ -464,6 +464,8 @@ auto spgemm_cusparse(AMatrixType& a,
     index_type* colind_d = allocate_with<index_type, Allocator>(1);
     index_type* rowptr_d = allocate_with<index_type, Allocator>(m+1);
     cudaMemset(rowptr_d, 0, sizeof(index_type)*(m+1));
+    cudaMemset(values_d, 0, sizeof(T));
+    cudaMemset(colind_d, 0, sizeof(index_type));
 
     /*
     fprintf(stderr, "Calling cusparseScsrgemm2_bufferSizeExt(handle, %lu, %lu, %lu, %f,\n"
@@ -506,6 +508,7 @@ auto spgemm_cusparse(AMatrixType& a,
         descr, 0, rowptr_d, colind_d,
         info,
         &bufferSize);
+    cudaDeviceSynchronize();
     BCL::cuda::throw_cusparse(status);
     // fprintf(stderr, "(%lu): cusparseScsrgemm2_bufferSizeExt\n", BCL::rank());
     // cudaDeviceSynchronize();
@@ -554,6 +557,7 @@ auto spgemm_cusparse(AMatrixType& a,
                          descr, b.nnz(), b.rowptr_data(), b.colind_data(),
                          descr, 0, rowptr_d, colind_d,
                          descr, csrRowPtrC, nnzTotalDevHostPtr, info, buffer);
+    cudaDeviceSynchronize();
     /*
     if (status == CUSPARSE_STATUS_EXECUTION_FAILED) {
       {

@@ -311,9 +311,7 @@ void gemm_mpi_simple(BCL::cuda::SPMatrix<T, index_type>& a,
           // *** Local MatMul ***
 
           begin = std::chrono::high_resolution_clock::now();
-          if (BCL::rank() == 0) {
-            auto result_c = spgemm_cusparse(local_a, local_b);
-          }
+          auto result_c = spgemm_cusparse(local_a, local_b);
           end = std::chrono::high_resolution_clock::now();
           duration_compute += std::chrono::duration<double>(end - begin).count();
 
@@ -329,7 +327,6 @@ void gemm_mpi_simple(BCL::cuda::SPMatrix<T, index_type>& a,
             deallocate_with<index_type, Allocator>(b_colind_data);
           }
 
-/*
           if (!result_c.empty()) {
             auto begin = std::chrono::high_resolution_clock::now();
             intermediate_results.push_back(std::move(result_c));
@@ -340,7 +337,6 @@ void gemm_mpi_simple(BCL::cuda::SPMatrix<T, index_type>& a,
             auto end = std::chrono::high_resolution_clock::now();
             duration_accumulate += std::chrono::duration<double>(end - begin).count();
           }
-          */
         }
 
         auto c_block = sum_tiles_cusparse<T, index_type, Allocator>(intermediate_results);
