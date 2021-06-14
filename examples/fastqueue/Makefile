@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2021 Benjamin Brock
-//
-// SPDX-License-Identifier: BSD-3-Clause
 
 SHELL='bash'
 
