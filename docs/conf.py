@@ -78,3 +78,5 @@ html_static_path = ['_static']
 breathe_default_project = "BCL"
 
 master_doc = 'index'
+
+cpp_id_attributes = ["__global__", "__device__", "__host__"]
