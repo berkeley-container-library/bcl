@@ -17,3 +17,9 @@ Communication
 
 .. doxygenstruct:: BCL::GlobalPtr
   :members:
+
+.. doxygenfunction:: BCL::alloc
+
+.. doxygenfunction:: BCL::dealloc
+
+.. doxygenfunction:: BCL::reinterpret_pointer_cast(const GlobalPtr<U>&)

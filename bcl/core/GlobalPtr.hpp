@@ -90,6 +90,7 @@ struct GlobalPtr {
     return GlobalPtr<void>(rank, ptr);
   }
 
+  /// Check if `GlobalPtr` points to memory on the local rank.
   bool is_local() const {
     return rank == BCL::rank();
   }
@@ -97,6 +98,9 @@ struct GlobalPtr {
   // Local pointer to somewhere in my shared memory segment.
   // XXX: should we alloc result to be undefined if called on remote pointer?
   //      Currently defined to nullptr.
+  /// Return a local pointer to the memory pointed to by the global pointer.
+  /// Only valid if called on a `GlobalPtr` that is pointing to memory on the
+  /// local rank.  If not pointing to local memory, will return `nullptr`.
   T *local() const {
     if (rank != BCL::rank()) {
       BCL_DEBUG(throw debug_error("calling local() on a remote GlobalPtr\n"));
@@ -113,6 +117,8 @@ struct GlobalPtr {
     return (T *) (((char *) BCL::smem_base_ptr) + ptr);
   }
 
+  /// Dereference the global pointer, returning a global reference `GlobalRef`
+  /// that can be used to read or write to the memory location.
   GlobalRef<T> operator*() {
     return GlobalRef<T>(*this);
   }
@@ -234,6 +240,7 @@ struct GlobalPtr {
   }
 };
 
+/// Cast a `GlobalPtr` to point to memory of another type.
 template <typename T, typename U>
 inline GlobalPtr <T> reinterpret_pointer_cast(const GlobalPtr <U> &ptr) noexcept {
   return GlobalPtr <T> (ptr.rank, ptr.ptr);
