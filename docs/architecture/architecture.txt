@@ -24,7 +24,7 @@ to a single compilation unit).
    * Defines `rget`, `rput`, etc.  Uses backend functions.
 4) teams.hpp
    * If it has not already been included.
-   * Does not including anythign else; forward declares backend `rank`, `nprocs`
+   * Does not including anything else; forward declares backend `rank`, `nprocs`
 5) util.hpp
    * Utilities, may use anything in core, etc.
 
