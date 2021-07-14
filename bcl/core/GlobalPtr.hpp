@@ -34,6 +34,7 @@ template <class T, class M> M get_member_type(M T:: *);
 template <typename T>
 struct GlobalPtr;
 
+/// Global pointer class.  Provides a way to point to remote memory.
 template <typename T>
 struct GlobalPtr {
   uint64_t rank = 0;
