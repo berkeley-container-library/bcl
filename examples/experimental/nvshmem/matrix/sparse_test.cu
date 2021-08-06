@@ -14,11 +14,9 @@
 #include <thrust/sort.h>
 
 #include <bcl/containers/experimental/cuda/CudaSPMatrix.hpp>
+#include <bcl/containers/experimental/cuda/algorithms/algorithm.hpp>
 
 #include <unordered_map>
-
-#include "cusparse_util.hpp"
-#include "spgemm.hpp"
 
 #include <chrono>
 #include <essl.h>
@@ -29,6 +27,20 @@ struct PairHash {
     return std::hash<T>{}(value.first) ^ std::hash<U>{}(value.second);
   }
 };
+
+// Check if two floating point numbers are
+// within epsilon of each other.
+template <typename T>
+bool equal(T a, T b, T eps = 1.0e-5) {
+  if (std::abs((a - b) / a) <= eps) {
+    return true;
+  } else if (std::abs(a - b) <= eps) {
+    return true;
+  } else if (a == b) {
+    return true;
+  }
+  return false;
+}
 
 int main(int argc, char** argv) {
   BCL::init(16);
@@ -160,61 +172,6 @@ int main(int argc, char** argv) {
       fprintf(stderr, "Nonzeros match %lu == %lu\n", s_c_coo.size(), local_c.size());
     }
 
-/*
-    using coord_type = std::pair<index_type, index_type>;
-    std::unordered_map<coord_type, T, PairHash<index_type, index_type>> serial_set;
-    std::unordered_map<coord_type, T, PairHash<index_type, index_type>> distr_set;
-
-    fprintf(stderr, "Building serial set.\n");
-    auto begin = std::chrono::high_resolution_clock::now();
-    for (const auto& nz : s_c_coo) {
-      auto idx = std::get<0>(nz);
-      auto val = std::get<1>(nz);
-      serial_set[idx] = val;
-    }
-    auto end = std::chrono::high_resolution_clock::now();
-    double duration = std::chrono::duration<double>(end - begin).count();
-    fprintf(stderr, "Took %lf s\n", duration);
-
-    fprintf(stderr, "Building distributed set.\n");
-    begin = std::chrono::high_resolution_clock::now();
-    for (const auto& nz : local_c) {
-      auto idx = std::get<0>(nz);
-      auto val = std::get<1>(nz);
-      distr_set[idx] = val;
-    }
-    end = std::chrono::high_resolution_clock::now();
-    duration = std::chrono::duration<double>(end - begin).count();
-    fprintf(stderr, "Took %lf s\n", duration);
-
-    fprintf(stderr, "Looking through serial set to see if distributed set matches.\n");
-    T eps = 1.0e-5;
-    for (const auto& nz : s_c_coo) {
-      auto idx = std::get<0>(nz);
-      auto val = std::get<1>(nz);
-
-      if (distr_set.find(idx) == distr_set.end()) {
-        fprintf(stderr, "Serial result contains (%lu, %lu, %f) not in distributed result.\n",
-                idx.first, idx.second, val);
-      } else if (std::abs(val - distr_set[idx]) > eps) {
-        fprintf(stderr, "Distributed result (%lu, %lu, %f) != serial result (%lu, %lu, %f)\n",
-                idx.first, idx.second, distr_set[idx],
-                idx.first, idx.second, val);
-      }
-    }
-
-    fprintf(stderr, "Looking through distributed set to see if distributed set matches.\n");
-    for (const auto& nz : local_c) {
-      auto idx = std::get<0>(nz);
-      auto val = std::get<1>(nz);
-
-      if (serial_set.find(idx) == serial_set.end()) {
-        fprintf(stderr, "Distributed result contains (%lu, %lu, %f) not in serial result.\n",
-                idx.first, idx.second, val);
-      }
-    }
-
-*/
     T eps = 1.0e-5;
     for (size_t i = 0; i < s_c_coo.size(); i++) {
       auto idx_a = std::get<0>(s_c_coo[i]);
@@ -224,13 +181,13 @@ int main(int argc, char** argv) {
       auto val_b = std::get<1>(local_c[i]);
 
       assert(idx_a == idx_b);
-      if (std::abs((val_a - val_b)/val_b) >= eps) {
+      if (!equal(val_a, val_b, eps)) {
         fprintf(stderr, "(%lu, %lu) == (%lu, %lu)\n", idx_a.first, idx_a.second,
                                                       idx_b.first, idx_b.second);
         fprintf(stderr, "%f ~= %f\n", val_a, val_b);
         fflush(stderr);
       }
-      assert(std::abs((val_a - val_b)/val_b) < eps);
+      assert(equal(val_a, val_b, eps));
       // printf("(%lu, %lu) == (%lu, %lu)\n", idx_a.first, idx_a.second,
       //                                    idx_b.first, idx_b.second);
       // printf("%f ~= %f\n", val_a, val_b);

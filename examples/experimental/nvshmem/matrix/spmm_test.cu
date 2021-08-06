@@ -14,11 +14,9 @@
 #include <thrust/sort.h>
 
 #include <bcl/containers/experimental/cuda/CudaSPMatrix.hpp>
+#include <bcl/containers/experimental/cuda/algorithms/algorithm.hpp>
 
 #include <unordered_map>
-
-#include "cusparse_util.hpp"
-#include "spgemm.hpp"
 
 #include <chrono>
 #include <essl.h>

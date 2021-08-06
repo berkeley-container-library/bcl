@@ -69,7 +69,7 @@ public:
     return lptr_.local();
   }
 
-  void deallocate(pointer ptr, size_type n) {
+  void deallocate(pointer ptr, size_type n = 0) {
     auto gptr = __to_global_ptr(ptr);
     dealloc<value_type>(gptr);
   }

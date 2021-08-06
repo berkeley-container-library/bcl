@@ -24,7 +24,7 @@ public:
     return ptr;
   }
 
-  void deallocate(pointer ptr, size_type n) {
+  void deallocate(pointer ptr, size_type n = 0) {
     MPI_Free_mem(ptr);
   }
 

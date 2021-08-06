@@ -1,14 +1,38 @@
 #pragma once
 
 #include <bcl/bcl.hpp>
-#include "cusparse_util.hpp"
-#include "grb_util.hpp"
+#include "../sequential/cusparse_util.cuh"
+#include "../sequential/cusparse_error.cuh"
 #include "cusp_util.hpp"
 
 #include <bcl/containers/CircularQueue.hpp>
 #include <bcl/containers/experimental/ChecksumQueue.hpp>
+#include <bcl/containers/experimental/cuda/sequential/cusparse_util.cuh>
+
 
 namespace BCL {
+
+template <typename T>
+struct max {
+  T operator()(const T& a, const T& b) const {
+    if (a < b) {
+      return b;
+    } else {
+      return a;
+    }
+  }
+};
+
+template <typename T>
+struct min {
+  T operator()(const T& a, const T& b) const {
+    if (a < b) {
+      return a;
+    } else {
+      return b;
+    }
+  }
+};
 
 namespace cuda {
 
@@ -856,5 +880,3 @@ void gemm_aowns_ws(BCL::cuda::SPMatrix<T, index_type>& a, BCL::cuda::SPMatrix<T,
 } // end cuda
 
 } // end BCL
-
-#include "spmm.hpp"

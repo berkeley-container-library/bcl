@@ -14,7 +14,7 @@ T* allocate_with(size_t size) {
 
 template <typename T, typename Allocator>
 void deallocate_with(T* ptr) {
-  return rebind_allocator_t<Allocator, T>{}.deallocate(ptr);
+  rebind_allocator_t<Allocator, T>{}.deallocate(ptr);
 }
 
 template <typename T>

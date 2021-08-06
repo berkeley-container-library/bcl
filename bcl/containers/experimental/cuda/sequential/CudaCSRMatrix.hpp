@@ -1,5 +1,7 @@
 #pragma once
 
+#include <bcl/containers/sequential/CSRMatrix.hpp>
+
 namespace BCL {
 
 namespace cuda {
@@ -199,6 +201,100 @@ struct CudaCSRMatrixView {
   };
 
 };
+
+template <typename T, typename index_type, typename Allocator = BCL::bcl_allocator<T>>
+CudaCSRMatrix<T, index_type, Allocator> to_gpu(CSRMatrix<T, index_type>& mat) {
+  CudaCSRMatrix<T, index_type, Allocator> mat_gpu({mat.m(), mat.n()}, mat.nnz());
+  cudaMemcpy(mat_gpu.values_data(), mat.values_data(), sizeof(T)*mat.nnz(), cudaMemcpyHostToDevice);
+  cudaMemcpy(mat_gpu.rowptr_data(), mat.rowptr_data(), sizeof(index_type)*(mat.m()+1), cudaMemcpyHostToDevice);
+  cudaMemcpy(mat_gpu.colind_data(), mat.colind_data(), sizeof(index_type)*mat.nnz(), cudaMemcpyHostToDevice);
+  return mat_gpu;
+}
+
+template <typename T, typename index_type, typename Allocator>
+CSRMatrix<T, index_type> to_cpu(CudaCSRMatrix<T, index_type, Allocator>& mat) {
+  std::vector<T> values(mat.nnz());
+  std::vector<index_type> rowptr(mat.m()+1);
+  std::vector<index_type> colind(mat.nnz());
+
+  cudaMemcpy(values.data(), mat.values_data(), sizeof(T)*mat.nnz(), cudaMemcpyDeviceToHost);
+  cudaMemcpy(rowptr.data(), mat.rowptr_data(), sizeof(index_type)*(mat.m()+1), cudaMemcpyDeviceToHost);
+  cudaMemcpy(colind.data(), mat.colind_data(), sizeof(index_type)*mat.nnz(), cudaMemcpyDeviceToHost);
+
+  return CSRMatrix<T, index_type>(mat.m(), mat.n(), mat.nnz(),
+                                  std::move(values), std::move(rowptr),
+                                  std::move(colind));
+}
+
+template <typename MatrixType>
+CSRMatrix<typename MatrixType::value_type, typename MatrixType::index_type> to_cpu_generic(MatrixType& mat) {
+  using T = typename MatrixType::value_type;
+  using index_type = typename MatrixType::index_type;
+  std::vector<T> values(mat.nnz());
+  std::vector<index_type> rowptr(mat.m()+1);
+  std::vector<index_type> colind(mat.nnz());
+
+  cudaMemcpy(values.data(), mat.values_data(), sizeof(T)*mat.nnz(), cudaMemcpyDeviceToHost);
+  cudaMemcpy(rowptr.data(), mat.rowptr_data(), sizeof(index_type)*(mat.m()+1), cudaMemcpyDeviceToHost);
+  cudaMemcpy(colind.data(), mat.colind_data(), sizeof(index_type)*mat.nnz(), cudaMemcpyDeviceToHost);
+
+  return CSRMatrix<T, index_type>(mat.m(), mat.n(), mat.nnz(),
+                                  std::move(values), std::move(rowptr),
+                                  std::move(colind));
+}
+
+template <typename T, typename index_type>
+auto get_coo(const std::vector<T>& values,
+             const std::vector<index_type>& row_indices,
+             const std::vector<index_type>& col_indices)
+{
+    using coord_type = std::pair<index_type, index_type>;
+    using tuple_type = std::pair<coord_type, T>;
+    using coo_t = std::vector<tuple_type>;
+
+    coo_t coo_values(values.size());
+
+    for (size_t i = 0; i < values.size(); i++) {
+      coo_values[i] = {{row_indices[i], col_indices[i]}, values[i]};
+    }
+
+    std::sort(coo_values.begin(), coo_values.end(),
+              [](const auto& a, const auto& b) -> bool {
+                if (std::get<0>(a) != std::get<0>(b)) {
+                  return std::get<0>(a) < std::get<0>(b);
+                } else {
+                  return std::get<1>(a) < std::get<1>(b);
+                }
+              });
+
+    return coo_values;
+}
+
+template <typename T, typename index_type>
+auto remove_zeros(const std::vector<std::pair<std::pair<index_type, index_type>, T>>& coo_values) {
+    using coord_type = std::pair<index_type, index_type>;
+    using tuple_type = std::pair<coord_type, T>;
+    using coo_t = std::vector<tuple_type>;
+
+    coo_t new_coo;
+
+    for (const auto& nz : coo_values) {
+      auto val = std::get<1>(nz);
+      if (val != 0.0) {
+        new_coo.push_back(nz);
+      }
+    }
+    return new_coo;
+}
+
+template <typename T>
+void print_coo(const T& coo, size_t max_idx = std::numeric_limits<size_t>::max()) {
+  for (size_t i = 0; i < std::min(coo.size(), max_idx); i++) {
+    auto idx = std::get<0>(coo[i]);
+    auto val = std::get<1>(coo[i]);
+    printf("(%lu, %lu) %f\n", idx.first, idx.second, val);
+  }
+}
 
 } // end cuda
 } // end BCL
