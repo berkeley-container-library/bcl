@@ -1,3 +1,18 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+#pragma once
+
+#include <bcl/bcl.hpp>
+#include "nsparse_util.hpp"
+#include "cusparse_util.hpp"
+#include "grb_util.hpp"
+#include "cusp_util.hpp"
+
+#include <bcl/containers/CircularQueue.hpp>
+#include <bcl/containers/experimental/ChecksumQueue.hpp>
+
 namespace BCL {
 
 namespace cuda {

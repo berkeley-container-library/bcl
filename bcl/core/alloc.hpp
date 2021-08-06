@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 #pragma once
 
 #include <bcl/bcl.hpp>
@@ -7,11 +11,17 @@
 
 namespace BCL {
 
+/// Non-collective function. Allocate a block of global memory on the local rank
+/// to hold `size` elements of type `T`.
+/// The total size of the allocation will be `sizeof(T) * size`.
+/// Does not call any constructors.
 template <typename T>
 inline GlobalPtr <T> alloc(const size_t size) {
   return local_malloc <T> (size);
 }
 
+/// Non-collective function. Deallocate the block of memory pointed to by `ptr`.
+/// `ptr` must point to memory on the local rank.
 template <typename T>
 inline void dealloc(GlobalPtr <T> ptr) {
   local_free <T> (ptr);

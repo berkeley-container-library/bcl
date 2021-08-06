@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 #pragma once
 
 #include <functional>
@@ -108,6 +112,17 @@ inline T broadcast(const T &val, uint64_t root) {
   } else {
     return val;
   }
+}
+
+template <typename T>
+inline auto arbroadcast(T* val, uint64_t root, size_t size, const BCL::Team& team) {
+  throw debug_error("BCL arbroadcast(): Has not been implemented on SHMEM backend.");
+  return BCL::request();
+}
+
+template <typename T, typename Allocator>
+inline void broadcast(std::vector<T, Allocator>& val, uint64_t root, const BCL::Team& team) {
+  throw debug_error("BCL broadcast() (with teams): Has not been implemented on SHMEM backend.");
 }
 
 template <typename T, typename BinaryOp>

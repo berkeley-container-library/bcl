@@ -1,11 +1,7 @@
 // Copyright (C) 2011 - 2012 Andrzej Krzemienski.
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
 //
-// Use, modification, and distribution is subject to the Boost Software
-// License, Version 1.0. (See accompanying file LICENSE_1_0.txt or copy at
-// http://www.boost.org/LICENSE_1_0.txt)
-//
-// The idea and interface is based on Boost.Optional library
-// authored by Fernando Luis Cacciola Carballal
+// SPDX-License-Identifier: BSD-3-Clause
 
 # ifndef ___OPTIONAL_HPP___
 # define ___OPTIONAL_HPP___

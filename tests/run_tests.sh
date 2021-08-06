@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 base_dir=$PWD
 
 user_backends=${BASH_ARGV[*]}

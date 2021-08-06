@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 #include <bcl/bcl.hpp>
 #include <bcl/containers/HashMap.hpp>
 #include <bcl/core/detail/hash_functions.hpp>

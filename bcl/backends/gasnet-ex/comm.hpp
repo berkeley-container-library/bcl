@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
 #pragma once
 
 #include "backend.hpp"
@@ -65,6 +69,17 @@ inline T broadcast(T& val, uint64_t root) {
                         GASNET_COLL_IN_ALLSYNC | GASNET_COLL_OUT_ALLSYNC | GASNET_COLL_LOCAL);
 
   return rv;
+}
+
+template <typename T>
+inline auto arbroadcast(T* val, uint64_t root, size_t size, const BCL::Team& team) {
+  throw debug_error("BCL arbroadcast(): Has not been implemented on GASNet-EX backend.");
+  return BCL::request(gex_Event_t());
+}
+
+template <typename T, typename Allocator>
+inline void broadcast(std::vector<T, Allocator>& val, uint64_t root, const BCL::Team& team) {
+  throw debug_error("BCL broadcast() (with teams): Has not been implemented on GASNet-EX backend.");
 }
 
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #define __thrust_compiler_fence() __sync_synchronize()
 #include <cusp/io/matrix_market.h>

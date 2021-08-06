@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2021 Benjamin Brock
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #pragma once
 
@@ -25,6 +28,17 @@ class DTranspose;
 template <typename T>
 class DMatrix : public DExpr<DMatrix<T>> {
 public:
+
+  struct matrix_dim {
+    size_t m, n;
+    size_t operator[](size_t dim_num) {
+      if (dim_num == 0) {
+        return m;
+      } else {
+        return n;
+      }
+    }
+  };
 
   using value_type = T;
 
@@ -129,14 +143,14 @@ public:
   }
 
   template <typename TeamType>
-  DMatrix(size_t m, size_t n, Block&& blocking,
-          const TeamType& team) : m_(m), n_(n), team_ptr_(team.clone()) {
-    init(m, n, std::move(blocking));
+  DMatrix(matrix_dim dim, Block&& blocking,
+          const TeamType& team) : m_(dim[0]), n_(dim[1]), team_ptr_(team.clone()) {
+    init(dim[0], dim[1], std::move(blocking));
   }
 
-  DMatrix(size_t m, size_t n, Block&& blocking = BCL::BlockOpt()) : m_(m), n_(n),
+  DMatrix(matrix_dim dim, Block&& blocking = BCL::BlockOpt()) : m_(dim[0]), n_(dim[1]),
           team_ptr_(new BCL::WorldTeam()) {
-    init(m, n, std::move(blocking));
+    init(dim[0], dim[1], std::move(blocking));
   }
 
   const BCL::Team& team() const {
@@ -165,6 +179,17 @@ public:
     std::vector<T> vals(tile_size());
     BCL::rget(tile_ptr(i, j), vals.data(), tile_size());
     return vals;
+  }
+
+  std::vector<T> get_tile_row(size_t i, size_t j, size_t row) const {
+    std::vector<T> vals(tile_shape(i, j)[1]);
+    BCL::rget(tile_ptr(i, j) + row*tile_shape()[1], vals.data(), vals.size());
+    return vals;
+  }
+
+  template <typename Allocator = BCL::bcl_allocator<T>>
+  auto arget_tile_row(size_t i, size_t j, size_t row) const {
+    return BCL::arget<T, Allocator>(tile_ptr(i, j) + row*tile_shape()[1], tile_shape(i, j)[1]);
   }
 
   GlobalRef<T> operator()(size_t i, size_t j) {
@@ -351,23 +376,24 @@ public:
     return false;
   }
 
-  std::array<size_t, 2> shape() const noexcept {
+  matrix_dim shape() const noexcept {
     return {m_, n_};
   }
 
-  std::array<size_t, 2> grid_shape() const noexcept {
+  matrix_dim grid_shape() const noexcept {
     return {grid_dim_m_, grid_dim_n_};
   }
 
-  std::array<size_t, 2> pgrid_shape() const noexcept {
+  matrix_dim pgrid_shape() const noexcept {
     return {pm(), pn()};
   }
 
-  std::array<size_t, 2> tile_shape() const noexcept {
+  matrix_dim tile_shape() const noexcept {
     return {tile_size_m_, tile_size_n_};
   }
 
-  std::array<size_t, 2> tile_shape(size_t i, size_t j) const noexcept {
+
+  matrix_dim tile_shape(size_t i, size_t j) const noexcept {
     size_t m_size = std::min(tile_size_m_, m_ - i*tile_size_m_);
     size_t n_size = std::min(tile_size_n_, n_ - j*tile_size_n_);
     return {m_size, n_size};
@@ -417,6 +443,23 @@ public:
            tile_shape()[0], tile_shape()[1]);
     printf("  Forming a %lu x %lu tile grid\n", grid_shape()[0], grid_shape()[1]);
     printf("  On a %lu x %lu processor grid\n", pgrid_shape()[0], pgrid_shape()[1]);
+  }
+
+  void print_info(bool print_pgrid = true) const {
+    printf("=== MATRIX INFO ===\n");
+    printf("%lu x %lu matrix\n", shape()[0], shape()[1]);
+    printf("  * Consists of %lu x %lu tiles\n", tile_shape()[0], tile_shape()[1]);
+    printf("  * Arranged in a %lu x %lu grid\n", grid_shape()[0], grid_shape()[1]);
+
+    if (print_pgrid) {
+      for (size_t i = 0; i < grid_shape()[0]; i++) {
+        printf("   ");
+        for (size_t j = 0; j < grid_shape()[1]; j++) {
+          printf("%2lu ", tile_ptr(i, j).rank);
+        }
+        printf("\n");
+      }
+    }
   }
 
   template <typename Allocator = BCL::bcl_allocator<T>>
