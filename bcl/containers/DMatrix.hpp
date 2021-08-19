@@ -187,6 +187,23 @@ public:
     return vals;
   }
 
+  std::vector<T> get_row(size_t i) const {
+    std::vector<T> vals(shape()[1]);
+
+    // Retrieve row `row` of tile `tile_i`
+    size_t tile_i = i / tile_shape()[0];
+    size_t row = i % tile_shape()[0];
+
+    size_t row_length = tile_shape()[1];
+
+    for (size_t tile_j = 0; tile_j < grid_shape()[1]; tile_j++) {
+      auto remote_ptr = tile_ptr(tile_i, tile_j) + row*tile_shape()[1];
+      size_t copy_length = tile_shape(tile_i, tile_j)[1];
+      BCL::memcpy(vals.data() + tile_shape()[1]*tile_j, remote_ptr, copy_length);
+    }
+    return vals;
+  }
+
   template <typename Allocator = BCL::bcl_allocator<T>>
   auto arget_tile_row(size_t i, size_t j, size_t row) const {
     return BCL::arget<T, Allocator>(tile_ptr(i, j) + row*tile_shape()[1], tile_shape(i, j)[1]);

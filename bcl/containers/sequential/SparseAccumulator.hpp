@@ -14,15 +14,27 @@
 #include <numeric>
 
 #include <bcl/core/detail/hash_functions.hpp>
-#include <bcl/containers/detail/mkl/mkl_error_handle.hpp>
 
 #include <bcl/containers/sequential/SimpleHash.hpp>
 
+#ifdef USE_MKL
 #include <mkl.h>
+#include <bcl/containers/detail/mkl/mkl_error_handle.hpp>
+#endif
+
 
 namespace BCL {
 
-// An Eager Sparse Accumulator
+#ifdef USE_MKL
+template <typename T>
+using multithreaded_allocator = tbb::scalable_allocator<T>;
+#else
+template <typename T>
+using multithreaded_allocator = std::allocator<T>;
+#endif
+
+#ifdef USE_MKL
+// An Eager Sparse Accumulator using MKL
 template <typename T, typename index_type = int>
 struct SparseAccumulator {
   using coord_type = std::pair<index_type, index_type>;
@@ -90,7 +102,10 @@ struct SparseAccumulator {
     vals_.reserve(count);
   }
 };
+#endif
 
+#ifdef USE_MKL
+// A lazy accumulator using MKL
 template <typename T, typename index_type = int>
 struct LazyAccumulator {
   using coord_type = std::pair<index_type, index_type>;
@@ -179,6 +194,7 @@ struct LazyAccumulator {
     return c_mat;
   }
 };
+#endif
 
 // An Eager Sparse Accumulator
 template <typename T, typename index_type = int>
@@ -215,7 +231,8 @@ struct EagerSumAccumulator {
   }
 };
 
-// An Eager Sparse Accumulator
+#ifdef USE_MKL
+// An Eager Sparse Accumulator, using MKL
 template <typename T, typename index_type = int>
 struct EagerMKLAccumulator {
   using coord_type = std::pair<index_type, index_type>;
@@ -255,6 +272,7 @@ struct EagerMKLAccumulator {
     }
   }
 };
+#endif
 
 template <
           typename T,
@@ -383,6 +401,7 @@ struct SparseVecAccumulator {
 // TODO: refactor the "SparseAccumulator" concept
 //       handle signed/unsigned integer stuff.
 
+// Sparse Hash accumulator
 template <
           typename T,
           typename index_type = int,
@@ -409,7 +428,7 @@ struct SparseHashAccumulator {
     SparseVecHashAccumulator<T,
                              index_type,
                              Plus,
-                             tbb::scalable_allocator<T>> acc;
+                             multithreaded_allocator<T>> acc;
 
     std::vector<decltype(acc.get())> rows(m);
     #pragma omp parallel for default(shared) private(acc)
@@ -505,7 +524,7 @@ struct SparseHashAccumulator {
   }
 };
 
-
+// Sparse SPAA Accumulator
 template <typename T, typename index_type = int, typename Allocator = std::allocator<T>>
 struct SparseSPAAccumulator {
   using value_type = T;
@@ -527,7 +546,7 @@ struct SparseSPAAccumulator {
     SparseVecAccumulator<T,
                          index_type,
                          std::plus<T>,
-                         tbb::scalable_allocator<T>> acc;
+                         multithreaded_allocator<T>> acc;
 
     std::vector<decltype(acc.get())> rows(m);
     #pragma omp parallel for default(shared) private(acc)
@@ -614,6 +633,7 @@ struct SparseSPAAccumulator {
   }
 };
 
+// Sparse Heap accumulator
 template <typename T, typename index_type = int, typename Allocator = std::allocator<T>>
 struct SparseHeapAccumulator {
   using value_type = T;
@@ -650,7 +670,7 @@ struct SparseHeapAccumulator {
   BCL::CSRMatrix<T, index_type> get_matrix(size_t m, size_t n) {
     auto begin = std::chrono::high_resolution_clock::now();
     std::vector<std::vector<std::pair<index_type, T>,
-                            tbb::scalable_allocator<std::pair<index_type, T>>
+                            multithreaded_allocator<std::pair<index_type, T>>
                             >
                 > rows(m);
 
@@ -658,11 +678,11 @@ struct SparseHeapAccumulator {
     for (size_t i = 0; i < m; i++) {
       std::priority_queue<Entry,
                           std::vector<Entry,
-                                      tbb::scalable_allocator<Entry>
+                                      multithreaded_allocator<Entry>
                                       >,
                           std::greater<Entry>> entries;
       std::vector<index_type,
-                  tbb::scalable_allocator<index_type>
+                  multithreaded_allocator<index_type>
                   > row_indices_(mats_.size());
 
       for (size_t mat_id = 0; mat_id < mats_.size(); mat_id++) {

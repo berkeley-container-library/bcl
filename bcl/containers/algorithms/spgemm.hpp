@@ -5,9 +5,34 @@
 #pragma once
 
 #include <bcl/bcl.hpp>
+#include <bcl/containers/DMatrix.hpp>
 #include <bcl/containers/SPMatrix.hpp>
 
 namespace BCL {
+
+template <typename T,
+          typename I>
+void gemm(const SPMatrix<T, I>& a, const DMatrix<T>& b, DMatrix<T>& c) {
+  BCL::print("Hello, guvnah!\n");
+  assert(a.shape()[0] == c.shape()[0]);
+  assert(b.shape()[1] == c.shape()[1]);
+  assert(a.shape()[1] == b.shape()[0]);
+  for (size_t i = 0; i < c.shape()[0]; i++) {
+    for (size_t j = 0; j < c.shape()[1]; j++) {
+      if (BCL::rank() == c.tile_locale(i, j)) {
+        for (size_t k = 0; k < a.shape()[1]; k++) {
+          auto local_b = b.get_tile(k, j);
+          /*
+          auto local_a = a.get_tile(i, k);
+          auto local_b = b.get_tile(k, j);
+          */
+
+          // call csrmm
+        }
+      }
+    }
+  }
+}
 
 template <
           typename T,

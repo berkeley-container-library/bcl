@@ -66,7 +66,7 @@ class SPMatrix {
 public:
 
   using size_type = size_t;
-  using index_type = index_t;
+  using index_type = I;
 
   // NOTE: vals_[i], col_ind_[i] are of size nnz_[i];
   std::vector<BCL::GlobalPtr<T>> vals_;
