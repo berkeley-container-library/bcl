@@ -10,7 +10,7 @@
 
 int main(int argc, char** argv) {
 	// How big to make each process' shared segment, in MB.
-	size_t segment_size = 256;
+	size_t segment_size = 2048;
 
 	BCL::init(segment_size);
 
@@ -44,17 +44,14 @@ int main(int argc, char** argv) {
 
 	BCL::DMatrix<float> b({k, n}, std::move(blocks[1]));
 	BCL::DMatrix<float> c({k, n}, std::move(blocks[2]));
-	BCL::DMatrix<float> c_({k, n});
 
 	b = 1;
 	c = 0;
-	c_ = 0;
 
 	BCL::barrier();
-	BCL::gemm(a, b, c_);
-
-	// BCL::rowwise_gemm(a, b, c);
-
+  BCL::print("Multiplying...\n");
+	BCL::gemm(a, b, c);
+	BCL::print("Done multiplying...\n");
 	BCL::barrier();
 
 	BCL::finalize();

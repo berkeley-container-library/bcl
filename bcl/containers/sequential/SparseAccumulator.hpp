@@ -20,6 +20,8 @@
 #ifdef USE_MKL
 #include <mkl.h>
 #include <bcl/containers/detail/mkl/mkl_error_handle.hpp>
+#include <tbb/scalable_allocator.h>
+#include <bcl/containers/detail/mkl/spmatrix.hpp>
 #endif
 
 

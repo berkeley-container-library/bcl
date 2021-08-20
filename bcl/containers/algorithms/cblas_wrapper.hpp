@@ -4,7 +4,11 @@
 
 #pragma once
 
+#ifdef USE_MKL
+#include <mkl.h>
+#else
 #include <cblas.h>
+#endif
 
 namespace BCL {
 namespace experimental {

@@ -18,6 +18,7 @@
 #include <cstring>
 
 #include <bcl/containers/sequential/CSRMatrix.hpp>
+#include <bcl/containers/sequential/CSRMatrixMemoryMapped.hpp>
 #include <bcl/containers/sequential/SparseAccumulator.hpp>
 #include <bcl/containers/detail/Blocking.hpp>
 
@@ -173,8 +174,22 @@ public:
 
   void init(const std::string& fname, Block&& blocking,
             FileFormat format = FileFormat::Unknown) {
-    CSRMatrix<T, index_type> mat(fname, format);
+    if (format == BCL::FileFormat::Unknown) {
+      format = BCL::matrix_io::detect_file_type(fname);
+    }
+    if (format == BCL::FileFormat::Binary) {
+      CSRMatrixMemoryMapped<T, index_type> mat(fname);
+      init_(mat, std::move(blocking));
+    } else if (format == BCL::FileFormat::MatrixMarket) {
+      CSRMatrix<T, index_type> mat(fname, format);
+      init_(mat, std::move(blocking));
+    } else {
+      throw std::runtime_error("SPMatrix: file format not recognized");
+    }
+  }
 
+  template <typename MatrixType>
+  void init_(MatrixType& mat, Block&& blocking) {
     m_ = mat.m_;
     n_ = mat.n_;
     nnz_ = mat.nnz_;
@@ -196,6 +211,8 @@ public:
 
     for (size_t i = 0; i < grid_shape()[0]; i++) {
       for (size_t j = 0; j < grid_shape()[1]; j++) {
+        printf("Iterating through blocks... (%lu, %lu)\n", i, j);
+        fflush(stdout);
         size_t lpi = i % pm_;
         size_t lpj = j % pn_;
         size_t proc = lpj + lpi*pn_;
@@ -205,9 +222,14 @@ public:
         BCL::GlobalPtr<index_type> col_ind;
         BCL::GlobalPtr<index_type> row_ptr;
         if (BCL::rank() == proc) {
+          printf("Getting slice....\n");
+          fflush(stdout);
           auto slc = mat.get_slice_impl_(i*tile_size_m_, (i+1)*tile_size_m_,
                                          j*tile_size_n_, (j+1)*tile_size_n_);
           nnz = slc.nnz_;
+
+          printf("Got slice.\n");
+          fflush(stdout);
           vals = BCL::alloc<T>(std::max<size_t>(1, slc.vals_.size()));
           col_ind = BCL::alloc<index_type>(std::max<size_t>(1, slc.col_ind_.size()));
           row_ptr = BCL::alloc<index_type>(std::max<size_t>(1, slc.row_ptr_.size()));
@@ -216,6 +238,9 @@ public:
             throw std::runtime_error("SMatrix: ran out of memory!");
           }
 
+
+          printf("Memcpying..\n");
+          fflush(stdout);
           std::memcpy(vals.local(), slc.vals_.data(), sizeof(T)*slc.vals_.size());
           std::memcpy(col_ind.local(), slc.col_ind_.data(), sizeof(index_type)*slc.col_ind_.size());
           std::memcpy(row_ptr.local(), slc.row_ptr_.data(), sizeof(index_type)*slc.row_ptr_.size());
@@ -231,6 +256,9 @@ public:
         row_ptr_.push_back(row_ptr);
       }
     }
+
+          printf("Returning..\n");
+          fflush(stdout);
   }
 
   const BCL::Team& team() const {
