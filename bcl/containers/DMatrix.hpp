@@ -198,7 +198,7 @@ public:
 
     for (size_t tile_j = 0; tile_j < grid_shape()[1]; tile_j++) {
       auto remote_ptr = tile_ptr(tile_i, tile_j) + row*tile_shape()[1];
-      size_t copy_length = tile_shape(tile_i, tile_j)[1];
+      size_t copy_length = sizeof(T)*tile_shape(tile_i, tile_j)[1];
       BCL::memcpy(vals.data() + tile_shape()[1]*tile_j, remote_ptr, copy_length);
     }
     return vals;
@@ -534,6 +534,25 @@ public:
     }
 
     return result;
+  }
+
+  T sum() const {
+    T local_sum = 0;
+    for (size_t i = 0; i < grid_shape()[0]; i++) {
+      for (size_t j = 0; j < grid_shape()[1]; j++) {
+        if (tile_locale(i, j) == BCL::rank()) {
+          const T* values = tile_ptr(i, j).local();
+
+          for (size_t i_ = 0; i_ < tile_shape(i, j)[0]; i_++) {
+            for (size_t j_ = 0; j_ < tile_shape(i, j)[1]; j_++) {
+              local_sum += values[i_*tile_shape()[1] + j_];
+            }
+          }
+        }
+      }
+    }
+
+    return BCL::allreduce(local_sum, std::plus<T>{});
   }
 
   template <typename Allocator = BCL::bcl_allocator<T>>

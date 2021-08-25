@@ -45,18 +45,20 @@ int main(int argc, char** argv) {
   using value_type = float;
 	using index_type = long long int;
 
+	BCL::print("Generating blocks...\n");
+
   auto blocks = BCL::block_matmul(m, n, k);
 
   srand48(BCL::rank());
   BCL::print("Generating matrix (%lu x %lu), alpha %lf, nnz_per_row %lu\n",
   	         m, k, alpha, nnz_per_row);
-  auto a = BCL::generate_matrix<value_type, index_type>(m, k, nnz_per_row, alpha, std::move(blocks[0]));
+  auto a = BCL::generate_matrix<value_type, index_type>(m, k, nnz_per_row, alpha, BCL::NewBlockRow{});
+
+	BCL::DMatrix<value_type> b({k, n}, BCL::NewBlockRow{});
+	BCL::DMatrix<value_type> c({m, n}, BCL::NewBlockRow{});
 
 	BCL::print("Generated A (%lu x %lu matrix) with %lu nnz\n",
 		         a.shape()[0], a.shape()[1], a.nnz());
-
-	BCL::DMatrix<value_type> b({k, n}, std::move(blocks[1]));
-	BCL::DMatrix<value_type> c({m, n}, std::move(blocks[2]));
 
 	BCL::print("Multipyling by B (%lu x %lu dense matrix)\n",
 		         b.shape()[0], b.shape()[1]);
@@ -64,7 +66,7 @@ int main(int argc, char** argv) {
 	BCL::print("To produce C (%lu x %lu dense matrix)\n",
 		         c.shape()[0], c.shape()[1]);
 
-	/*
+/*
   if (BCL::rank() == 0) {
   	printf("A:\n");
 		a.print_details();
@@ -75,12 +77,20 @@ int main(int argc, char** argv) {
   }
   */
 
+	size_t real_nnz = a.count_nonzeros_();
+
+	BCL::print("Counted %lu real nonzeros\n", real_nnz);
+
 	b = 1;
 	c = 0;
 
+	size_t cache_size = 128*1024*1024;
+
   BCL::barrier();
 	auto begin = std::chrono::high_resolution_clock::now();
-	BCL::gemm(a, b, c);
+	// BCL::rowwise_gemm(a, b, c);
+	// BCL::cached_rowwise_gemm(a, b, c, cache_size);
+	BCL::batched_rowwise_gemm(a, b, c);
 	BCL::barrier();
 	auto end = std::chrono::high_resolution_clock::now();
 	double duration = std::chrono::duration<double>(end - begin).count();

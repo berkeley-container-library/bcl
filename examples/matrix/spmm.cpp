@@ -29,6 +29,9 @@ int main(int argc, char** argv) {
 		num_columns = std::atoi(argv[2]);
 	}
 
+  using value_type = float;
+	using index_type = long long int;
+
 	BCL::print("Multiplying matrix \"%s\" by %lu columns\n",
 		         fname.c_str(), num_columns);
 
@@ -40,19 +43,25 @@ int main(int argc, char** argv) {
 
   auto blocks = BCL::block_matmul(m, n, k);
 
-  BCL::SPMatrix<float, int> a(fname, std::move(blocks[0]));
+  BCL::SPMatrix<value_type, index_type> a(fname, std::move(blocks[0]));
 
-	BCL::DMatrix<float> b({k, n}, std::move(blocks[1]));
-	BCL::DMatrix<float> c({k, n}, std::move(blocks[2]));
+	BCL::DMatrix<value_type> b({k, n}, std::move(blocks[1]));
+	BCL::DMatrix<value_type> c({k, n}, std::move(blocks[2]));
 
 	b = 1;
 	c = 0;
 
-	BCL::barrier();
   BCL::print("Multiplying...\n");
-	BCL::gemm(a, b, c);
-	BCL::print("Done multiplying...\n");
 	BCL::barrier();
+	auto begin = std::chrono::high_resolution_clock::now();
+	BCL::gemm(a, b, c);
+	BCL::barrier();
+	auto end = std::chrono::high_resolution_clock::now();
+	double duration = std::chrono::duration<double>(end - begin).count();
+
+	BCL::print("Matrix Multiply took %lf s\n", duration);
+
+	BCL::print("Sum is %lf\n", c.sum());
 
 	BCL::finalize();
 

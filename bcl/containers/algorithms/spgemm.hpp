@@ -8,26 +8,57 @@
 #include <bcl/containers/DMatrix.hpp>
 #include <bcl/containers/SPMatrix.hpp>
 
+#include "experimental_gemm.hpp"
+
 namespace BCL {
 
-template <typename T,
-          typename I>
+template <typename T, typename I>
+void spmm_wrapper(size_t m, size_t n, size_t k, size_t nnz, T* c, T* b,
+                  T* a_values, I* a_rowptr, I* a_colind,
+                  size_t ldb, size_t ldc) {
+
+  MKL_INT M = m;
+  MKL_INT N = n;
+  MKL_INT K = k;
+  MKL_INT ldb_ = ldb;
+  MKL_INT ldc_ = ldc;
+  T alpha = 1.0;
+  T beta = 1.0;
+  char matdescra[6];
+  matdescra[0] = 'G';
+  matdescra[3] = 'C';
+  mkl_scsrmm("N", &M, &N, &K, &alpha,
+             matdescra,
+             a_values, a_colind, a_rowptr, a_rowptr+1,
+             b, &ldb_, &beta,
+             c, &ldc_);
+}
+
+template <typename T, typename I>
 void gemm(const SPMatrix<T, I>& a, const DMatrix<T>& b, DMatrix<T>& c) {
-  BCL::print("Hello, guvnah!\n");
-  assert(a.shape()[0] == c.shape()[0]);
-  assert(b.shape()[1] == c.shape()[1]);
-  assert(a.shape()[1] == b.shape()[0]);
-  for (size_t i = 0; i < c.shape()[0]; i++) {
-    for (size_t j = 0; j < c.shape()[1]; j++) {
+  assert(a.grid_shape()[0] == c.grid_shape()[0]);
+  assert(b.grid_shape()[1] == c.grid_shape()[1]);
+  assert(a.grid_shape()[1] == b.grid_shape()[0]);
+  for (size_t i = 0; i < c.grid_shape()[0]; i++) {
+    for (size_t j = 0; j < c.grid_shape()[1]; j++) {
       if (BCL::rank() == c.tile_locale(i, j)) {
-        for (size_t k = 0; k < a.shape()[1]; k++) {
-          auto local_b = b.get_tile(k, j);
-          /*
+        for (size_t k = 0; k < a.grid_shape()[1]; k++) {
+          auto begin = std::chrono::high_resolution_clock::now();
           auto local_a = a.get_tile(i, k);
           auto local_b = b.get_tile(k, j);
-          */
+          auto end = std::chrono::high_resolution_clock::now();
+          double duration = std::chrono::duration<double>(end - begin).count();
+          BCL::row_comm += duration;
 
           // call csrmm
+          T* values = local_a.vals_.data();
+          I* rowptr = local_a.row_ptr_.data();
+          I* colind = local_a.col_ind_.data();
+
+          spmm_wrapper(c.tile_shape(i, j)[0], c.tile_shape(i, j)[1],
+                       a.tile_shape(i, k)[1], a.tile_nnz(i, k),
+                       c.tile_ptr(i, j).local(), local_b.data(),
+                       values, rowptr, colind, b.tile_shape()[1], c.tile_shape()[1]);
         }
       }
     }

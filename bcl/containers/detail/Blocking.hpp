@@ -98,7 +98,7 @@ struct BlockRow : public Block {
   }
 
   BlockRow() {
-    tile_shape_.resize(2, BCL::Tile::div);
+    tile_shape_.resize(1, BCL::Tile::div);
   }
 
   void seed(size_t m, size_t n, size_t nprocs = BCL::nprocs()) {
@@ -238,6 +238,27 @@ struct BlockCustom : public Block {
   std::vector<size_t> tile_shape_;
   std::vector<size_t> grid_shape_;
   size_t nprocs_;
+};
+
+
+struct NewBlockRow : public Block {
+  void seed(size_t m, size_t n, size_t nprocs = BCL::nprocs()) {
+    size_t tile_m = (m + nprocs - 1) / nprocs;
+    tile_shape_ = {tile_m, n};
+
+    grid_shape_ = {nprocs, 1};
+  }
+
+  std::vector<size_t> tile_shape() const override {
+    return tile_shape_;
+  }
+
+  std::vector<size_t> pgrid_shape() const override {
+    return grid_shape_;
+  }
+
+  std::vector<size_t> tile_shape_;
+  std::vector<size_t> grid_shape_;
 };
 
 std::vector<BCL::BlockCustom> block_matmul(size_t m,
