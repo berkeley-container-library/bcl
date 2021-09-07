@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include <helper_cuda.h>
+// #include <helper_cuda.h>
 #include <CSR.hpp>
 #include <HashSpGEMM_volta.hpp>
 
