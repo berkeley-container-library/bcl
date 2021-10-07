@@ -245,7 +245,7 @@ sum_cusparse(CudaCSRMatrix<T, index_type, Allocator>& a,
 
   deallocate_with<char, Allocator>(buffer);
 
-  return CudaCSRMatrix<T, index_type, Allocator>({m, n}, c_nnz, values_c, row_ptr_c, col_ind_c);
+  return BCL::cuda::CudaCSRMatrix<T, index_type, Allocator>({size_t(m), size_t(n)}, c_nnz, values_c, row_ptr_c, col_ind_c);
 }
 
 template <typename T, typename index_type, typename Allocator>
