@@ -25,7 +25,7 @@ std::string hostname() {
   constexpr size_t MH = 2048;
   char buf[MH+1];
   gethostname(buf, MH);
-  return std::string(buf, MH);
+  return std::string(buf);
 }
 
 } // end BCL

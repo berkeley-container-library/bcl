@@ -62,15 +62,16 @@ public:
   std::vector<BCL::UserTeam> column_teams_;
   std::vector<BCL::UserTeam> row_teams_;
 
-  void init(size_t m, size_t n, Block&& blocking) {
-    blocking.seed(m, n, BCL::nprocs(this->team()));
+  template <typename Blocking>
+  void init(size_t m, size_t n, Blocking&& blocking) {
+    blocking.seed(m, n, BCL::nprocs(team()));
     pm_ = blocking.pgrid_shape()[0];
     pn_ = blocking.pgrid_shape()[1];
 
     tile_size_m_ = blocking.tile_shape()[0];
     tile_size_n_ = blocking.tile_shape()[1];
 
-    if (pm_*pn_ > BCL::nprocs(this->team())) {
+    if (pm_*pn_ > BCL::nprocs(team())) {
       throw std::runtime_error("DMatrix: tried to create a DMatrix with a too large p-grid.");
     }
 
@@ -90,10 +91,10 @@ public:
         size_t lpj = j % pn_;
         size_t proc = lpj + lpi*pn_;
         BCL::GlobalPtr<T> ptr;
-        if (this->team().in_team() && BCL::rank(this->team()) == proc) {
+        if (team().in_team() && BCL::rank(team()) == proc) {
           ptr = BCL::alloc<T>(tile_size());
         }
-        ptr = BCL::broadcast(ptr, this->team().to_world(proc));
+        ptr = BCL::broadcast(ptr, team().to_world(proc));
         if (ptr == nullptr) {
           throw std::runtime_error("DMatrix: ran out of memory!");
         }
@@ -142,15 +143,16 @@ public:
     }
   }
 
-  template <typename TeamType>
-  DMatrix(matrix_dim dim, Block&& blocking,
+  template <typename Blocking, typename TeamType>
+  DMatrix(matrix_dim dim, Blocking&& blocking,
           const TeamType& team) : m_(dim[0]), n_(dim[1]), team_ptr_(team.clone()) {
-    init(dim[0], dim[1], std::move(blocking));
+    init(dim[0], dim[1], std::forward<Blocking>(blocking));
   }
 
-  DMatrix(matrix_dim dim, Block&& blocking = BCL::BlockOpt()) : m_(dim[0]), n_(dim[1]),
+  template <typename Blocking>
+  DMatrix(matrix_dim dim, Blocking&& blocking = BCL::BlockOpt()) : m_(dim[0]), n_(dim[1]),
           team_ptr_(new BCL::WorldTeam()) {
-    init(dim[0], dim[1], std::move(blocking));
+    init(dim[0], dim[1], std::forward<Blocking>(blocking));
   }
 
   const BCL::Team& team() const {

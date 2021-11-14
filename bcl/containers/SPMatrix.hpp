@@ -93,24 +93,25 @@ public:
   SPMatrix(const SPMatrix&) = delete;
   SPMatrix(SPMatrix&&) = default;
 
-  template <typename TeamType>
-  SPMatrix(const std::string& fname, Block&& blocking, const TeamType& team,
+  template <typename Blocking, typename TeamType>
+  SPMatrix(const std::string& fname, Blocking&& blocking, const TeamType& team,
            FileFormat format = FileFormat::Unknown) :
            team_ptr_(team.clone()) {
-    init(fname, std::move(blocking), format);
+    init(fname, std::forward<Blocking>(blocking), format);
   }
 
-  SPMatrix(const std::string& fname, Block&& blocking = BCL::BlockOpt(),
+  template <typename Blocking>
+  SPMatrix(const std::string& fname, Blocking&& blocking = BCL::BlockOpt(),
            FileFormat format = FileFormat::Unknown) :
           team_ptr_(new BCL::WorldTeam()) {
-    init(fname, std::move(blocking), format);
+    init(fname, std::forward<Blocking>(blocking), format);
   }
 
   // XXX: in progress, initialize with an empty matrix
-  template <typename TeamType>
-  SPMatrix(size_t m, size_t n, Block&& blocking, const TeamType& team) :
+  template <typename Blocking, typename TeamType>
+  SPMatrix(size_t m, size_t n, Blocking&& blocking, const TeamType& team) :
            team_ptr_(team.clone()) {
-    init_with_zero(m, n, blocking);
+    init_with_zero(m, n, std::forward<Blocking>(blocking));
   }
 
   SPMatrix(size_t m, size_t n, Block&& blocking) :
@@ -123,7 +124,7 @@ public:
     n_ = n;
     nnz_ = 0;
 
-    blocking.seed(m_, n_, BCL::nprocs(this->team()));
+    blocking.seed(m_, n_, BCL::nprocs(team()));
 
     pm_ = blocking.pgrid_shape()[0];
     pn_ = blocking.pgrid_shape()[1];
@@ -131,7 +132,7 @@ public:
     tile_size_m_ = blocking.tile_shape()[0];
     tile_size_n_ = blocking.tile_shape()[1];
 
-    if (pm_*pn_ > BCL::nprocs()) {
+    if (pm_*pn_ > BCL::nprocs(team())) {
       throw std::runtime_error("DMatrix: tried to create a DMatrix with a too large p-grid.");
     }
 
@@ -148,7 +149,7 @@ public:
         BCL::GlobalPtr<T> vals;
         BCL::GlobalPtr<index_type> col_ind;
         BCL::GlobalPtr<index_type> row_ptr;
-        if (BCL::rank() == proc) {
+        if (team().in_team() && BCL::rank(team()) == proc) {
           vals = BCL::alloc<T>(1);
           col_ind = BCL::alloc<index_type>(1);
           row_ptr = BCL::alloc<index_type>(2);
@@ -159,10 +160,10 @@ public:
           row_ptr[1] = 1;
         }
 
-        nnz = BCL::broadcast(nnz, proc);
-        vals = BCL::broadcast(vals, proc);
-        col_ind = BCL::broadcast(col_ind, proc);
-        row_ptr = BCL::broadcast(row_ptr, proc);
+        nnz = BCL::broadcast(nnz, team().to_world(proc));
+        vals = BCL::broadcast(vals, team().to_world(proc));
+        col_ind = BCL::broadcast(col_ind, team().to_world(proc));
+        row_ptr = BCL::broadcast(row_ptr, team().to_world(proc));
 
         nnzs_.push_back(nnz);
         vals_.push_back(vals);
@@ -220,7 +221,7 @@ public:
         BCL::GlobalPtr<T> vals;
         BCL::GlobalPtr<index_type> col_ind;
         BCL::GlobalPtr<index_type> row_ptr;
-        if (BCL::rank() == proc) {
+        if (team().in_team() && BCL::rank(team()) == proc) {
           auto slc = mat.get_slice_impl_(i*tile_size_m_, (i+1)*tile_size_m_,
                                          j*tile_size_n_, (j+1)*tile_size_n_);
           nnz = slc.nnz_;
@@ -238,10 +239,10 @@ public:
           std::memcpy(col_ind.local(), slc.col_ind_.data(), sizeof(index_type)*slc.col_ind_.size());
           std::memcpy(row_ptr.local(), slc.row_ptr_.data(), sizeof(index_type)*slc.row_ptr_.size());
         }
-        nnz = BCL::broadcast(nnz, proc);
-        vals = BCL::broadcast(vals, proc);
-        col_ind = BCL::broadcast(col_ind, proc);
-        row_ptr = BCL::broadcast(row_ptr, proc);
+        nnz = BCL::broadcast(nnz, team().to_world(proc));
+        vals = BCL::broadcast(vals, team().to_world(proc));
+        col_ind = BCL::broadcast(col_ind, team().to_world(proc));
+        row_ptr = BCL::broadcast(row_ptr, team().to_world(proc));
 
         nnzs_.push_back(nnz);
         vals_.push_back(vals);
