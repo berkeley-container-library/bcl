@@ -31,76 +31,132 @@ template <class T, class M> M get_member_type(M T:: *);
   (BCL::reinterpret_pointer_cast <char> (object_ptr) +\
    offsetof(typename std::remove_reference<decltype(object_ptr)>::type::type, item))
 
-template <typename T>
-struct GlobalPtr;
-
 /// Global pointer class.  Provides a way to point to remote memory.
 template <typename T>
 struct GlobalPtr {
-  uint64_t rank = 0;
-  uint64_t ptr = 0;
+
+  // TODO: replace with requires() for C++20
+  static_assert(std::is_trivially_copyable_v<T> || std::is_same_v<T, void>);
+
+  std::size_t rank = 0;
+  std::size_t ptr = 0;
 
   typedef T type;
 
-  using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
   using value_type = T;
   using pointer = BCL::GlobalPtr<T>;
+  using const_pointer = BCL::GlobalPtr<std::add_const_t<T>>;
   using reference = BCL::GlobalRef<T>;
   using iterator_category = std::random_access_iterator_tag;
 
-  GlobalPtr(const GlobalPtr <T> &ptr) = default;
-  GlobalPtr <T> &operator=(const GlobalPtr <T> &ptr) = default;
+  GlobalPtr() = default;
+  ~GlobalPtr() = default;
+  GlobalPtr(const GlobalPtr &) = default;
+  GlobalPtr &operator=(const GlobalPtr &) = default;
+  GlobalPtr(GlobalPtr&&) = default;
+  GlobalPtr& operator=(GlobalPtr&&) = default;
 
-  // This allows us to use normal move constructors.
-  GlobalPtr(GlobalPtr&& other) : rank(std::move(other.rank)), ptr(std::move(other.ptr)) {
-    other = nullptr;
-  }
+  GlobalPtr(std::size_t rank, std::size_t ptr) : rank(rank), ptr(ptr) {}
 
-  GlobalPtr& operator=(GlobalPtr&& other) {
-    rank = std::move(other.rank);
-    ptr = std::move(other.ptr);
-    other = nullptr;
-    return *this;
-  }
-
-  GlobalPtr(const uint64_t rank = 0, const uint64_t ptr = 0) :
-    rank(rank), ptr(ptr) {}
-
-  GlobalPtr(const std::nullptr_t null) {
-    this->rank = 0;
-    this->ptr = 0;
-  }
-
-  GlobalPtr <T> &operator=(const std::nullptr_t null) {
-    this->rank = 0;
-    this->ptr = 0;
-    return *this;
-  }
-
-  bool operator==(const std::nullptr_t null) const {
-    return (rank == 0 && ptr == 0);
-  }
-
-  bool operator!=(const std::nullptr_t null) const {
-    return !(*this == null);
-  }
+  GlobalPtr(std::nullptr_t null) : rank(0), ptr(0) {}
 
   operator GlobalPtr<void>() const noexcept {
     return GlobalPtr<void>(rank, ptr);
   }
 
+  operator const_pointer() const noexcept {
+    return const_pointer(rank, ptr);
+  }
+
+  GlobalPtr& operator=(std::nullptr_t null) {
+    rank = 0;
+    ptr = 0;
+    return *this;
+  }
+
+  bool operator==(pointer other) const noexcept {
+    return (rank == other.rank && ptr == other.ptr);
+  }
+
+  bool operator!=(pointer other) const noexcept {
+    return !(*this == other);
+  }
+
+  bool operator==(std::nullptr_t null) const noexcept {
+    return (rank == 0 && ptr == 0);
+  }
+
+  bool operator!=(std::nullptr_t null) const noexcept {
+    return !(*this == null);
+  }
+
+  /// Dereference the global pointer, returning a global reference `GlobalRef`
+  /// that can be used to read or write to the memory location.
+  reference operator*() const noexcept {
+    return reference(*this);
+  }
+
+  reference operator[](difference_type offset) const noexcept {
+    return *(*this + offset);
+  }
+
+  pointer operator+(difference_type offset) const noexcept {
+    return pointer(rank, ptr + offset*sizeof(T));
+  }
+
+  pointer operator-(difference_type offset) const noexcept {
+    return pointer(rank, ptr - offset*sizeof(T));
+  }
+
+  difference_type operator-(pointer other) const noexcept {
+    return (ptr - difference_type(other.ptr)) / sizeof(T);
+  }
+
+  pointer& operator++() noexcept {
+    ptr += sizeof(T);
+    return *this;
+  }
+
+  pointer operator++(int) noexcept {
+    pointer other(*this);
+    ++(*this);
+    return other;
+  }
+
+  pointer& operator--() noexcept {
+    ptr -= sizeof(T);
+    return *this;
+  }
+
+  pointer operator--(int) noexcept {
+    pointer other(*this);
+    --(*this);
+    return other;
+  }
+
+  pointer& operator+=(difference_type offset) noexcept {
+    ptr += offset*sizeof(T);
+    return *this;
+  }
+
+  pointer& operator-=(difference_type offset) noexcept {
+    ptr -= offset*sizeof(T);
+    return *this;
+  }
+
   /// Check if `GlobalPtr` points to memory on the local rank.
-  bool is_local() const {
+  bool is_local() const noexcept {
     return rank == BCL::rank();
   }
 
   // Local pointer to somewhere in my shared memory segment.
   // XXX: should we alloc result to be undefined if called on remote pointer?
   //      Currently defined to nullptr.
-  /// Return a local pointer to the memory pointed to by the global pointer.
-  /// Only valid if called on a `GlobalPtr` that is pointing to memory on the
-  /// local rank.  If not pointing to local memory, will return `nullptr`.
+  /// Return a local pointer of type T* to the location pointed to by the
+  /// global pointer.
+  /// 
+  /// If pointer is pointing to remove memory, returns `nullptr`.
   T *local() const {
     if (rank != BCL::rank()) {
       BCL_DEBUG(throw debug_error("calling local() on a remote GlobalPtr\n"));
@@ -113,118 +169,8 @@ struct GlobalPtr {
   // Pointer to shared memory segment on another node.
   // Users should not use this unless they're writing
   // custom SHMEM.
-  T *rptr() const {
+  T *rptr() const noexcept {
     return (T *) (((char *) BCL::smem_base_ptr) + ptr);
-  }
-
-  /// Dereference the global pointer, returning a global reference `GlobalRef`
-  /// that can be used to read or write to the memory location.
-  GlobalRef<T> operator*() {
-    return GlobalRef<T>(*this);
-  }
-
-  const GlobalRef<T> operator*() const {
-    return GlobalRef<T>(*this);
-  }
-
-  GlobalRef<T> operator[](size_type idx) {
-    return *(*this + idx);
-  }
-
-  const GlobalRef<T> operator[](size_type idx) const {
-    return *(*this + idx);
-  }
-
-  GlobalPtr <T> operator+(difference_type offset) {
-    return GlobalPtr <T> (rank, ptr + offset*sizeof(T));
-  }
-
-  const GlobalPtr <T> operator+(difference_type offset) const {
-    return GlobalPtr <T> (rank, ptr + offset*sizeof(T));
-  }
-
-  GlobalPtr <T> operator-(difference_type offset) {
-    return GlobalPtr <T> (rank, ptr - offset*sizeof(T));
-  }
-
-  const GlobalPtr <T> operator-(difference_type offset) const {
-    return GlobalPtr <T> (rank, ptr - offset*sizeof(T));
-  }
-
-  difference_type operator-(const GlobalPtr <T> &ptr) const {
-    return (this->ptr - ptr.ptr) / sizeof(T);
-  }
-
-  GlobalPtr <T> &operator++(int) {
-    ptr += sizeof(T);
-    return *this;
-  }
-
-  GlobalPtr <T> &operator++() {
-    ptr += sizeof(T);
-    return *this;
-  }
-
-  GlobalPtr <T> &operator--(int) {
-    ptr -= sizeof(T);
-    return *this;
-  }
-
-  GlobalPtr <T> &operator--() {
-    ptr -= sizeof(T);
-    return *this;
-  }
-
-  GlobalPtr <T> &operator+=(difference_type offset) {
-    ptr += offset*sizeof(T);
-    return *this;
-  }
-
-  GlobalPtr <T> &operator-=(difference_type offset) {
-    ptr -= offset*sizeof(T);
-    return *this;
-  }
-
-  bool operator==(const GlobalPtr <T> &ptr) const {
-    return (this->ptr == ptr.ptr && this->rank == ptr.rank);
-  }
-
-  bool operator!=(const GlobalPtr <T> &ptr) const {
-    return this->ptr != ptr.ptr || this->rank != ptr.rank;
-  }
-
-  template <typename U>
-  class CallHandler {
-  public:
-    CallHandler(const BCL::GlobalPtr<U>& ptr) : ptr_(ptr) {}
-
-    U* operator->() {
-      // *reinterpret_cast<U*>(obj_) = *ptr_;
-      BCL::rget(ptr_, reinterpret_cast<U*>(obj_), 1);
-      return reinterpret_cast<U*>(obj_);
-    }
-
-    // TODO: does not currently support -> with const
-    const U* operator->() const {
-      // *reinterpret_cast<U*>(obj_) = *ptr_;
-      BCL::rget(ptr_, reinterpret_cast<U*>(obj_), 1);
-      return reinterpret_cast<U*>(obj_);
-    }
-
-    ~CallHandler() {
-      *ptr_ = *reinterpret_cast<U*>(obj_);
-    }
-
-    BCL::GlobalPtr<U> ptr_;
-    char obj_[sizeof(U)];
-  };
-
-  CallHandler<T> operator->() {
-    return CallHandler<T>(*this);
-  }
-
-  const CallHandler<T> operator->() const {
-    return CallHandler<T>(*this);
   }
 
   std::string str() const {
@@ -242,8 +188,8 @@ struct GlobalPtr {
 
 /// Cast a `GlobalPtr` to point to memory of another type.
 template <typename T, typename U>
-inline GlobalPtr <T> reinterpret_pointer_cast(const GlobalPtr <U> &ptr) noexcept {
-  return GlobalPtr <T> (ptr.rank, ptr.ptr);
+inline GlobalPtr<T> reinterpret_pointer_cast(GlobalPtr<U> ptr) noexcept {
+  return GlobalPtr<T>(ptr.rank, ptr.ptr);
 }
 
 } // end BCL
