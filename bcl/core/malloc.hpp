@@ -8,17 +8,10 @@
 #include <cstdio>
 #include <cstdlib>
 
-#include <bcl/bcl.hpp>
+#include <bcl/core/global_state.hpp>
 #include <bcl/core/GlobalPtr.hpp>
 
 namespace BCL {
-
-extern uint64_t shared_segment_size;
-extern void *smem_base_ptr;
-
-extern bool bcl_finalized;
-
-std::mutex malloc_mutex;
 
 typedef struct chunk_t {
   size_t size;
@@ -26,7 +19,7 @@ typedef struct chunk_t {
   struct chunk_t *next = NULL;
 } chunk_t;
 
-const size_t SMALLEST_MEM_UNIT = 64;
+constexpr size_t SMALLEST_MEM_UNIT = 64;
 
 // Round sizeof(chunk_t) to 64 bytes so
 // malloc'd memory region is aligned

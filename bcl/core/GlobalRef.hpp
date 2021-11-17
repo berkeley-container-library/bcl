@@ -4,19 +4,10 @@
 
 #pragma once
 
-#include <stdexcept>
-
 namespace BCL {
-
 
 template <typename T>
 struct GlobalPtr;
-
-template <typename T>
-extern inline T rget(const GlobalPtr <T> &src);
-
-template <typename T>
-extern inline void rput(const T &src, const GlobalPtr <T> &dst);
 
 template <typename T>
 class GlobalRef {

@@ -6,6 +6,9 @@
 
 #include <mpi.h>
 
+#include <bcl/core/global_state.hpp>
+#include <bcl/core/malloc.hpp>
+
 #include "alloc.hpp"
 #include "comm.hpp"
 #include "ops.hpp"
@@ -15,53 +18,46 @@
 
 namespace BCL {
 
-extern uint64_t shared_segment_size;
-extern void *smem_base_ptr;
-
-extern inline void init_malloc();
-
-MPI_Comm comm;
-MPI_Win win;
-MPI_Info info;
-
-bool we_initialized;
-bool bcl_finalized;
-
-uint64_t my_rank;
-uint64_t my_nprocs;
-
 namespace backend {
 
-uint64_t rank() {
-  return BCL::my_rank;
+inline MPI_Comm comm;
+inline MPI_Win win;
+inline MPI_Info info;
+
+inline bool we_initialized;
+inline bool bcl_finalized;
+
+inline std::size_t rank_;
+inline std::size_t nprocs_;
+
+inline std::size_t rank() {
+  return rank_;
 }
 
-uint64_t nprocs() {
-  return BCL::my_nprocs;
+inline std::size_t nprocs() {
+  return nprocs_;
 }
 
-} // end backend
-
-bool mpi_finalized() {
+inline bool mpi_finalized() {
   int flag;
   MPI_Finalized(&flag);
   return flag;
 }
 
-bool mpi_initialized() {
+inline bool mpi_initialized() {
   int flag;
   MPI_Initialized(&flag);
   return flag;
 }
 
-void barrier() {
+inline void barrier() {
   int error_code = MPI_Win_flush_all(win);
   BCL_DEBUG(
           if (error_code != MPI_SUCCESS) {
             throw debug_error("BCL barrier(): MPI_Win_lock_all returned error code " + std::to_string(error_code));
           }
   )
-  error_code = MPI_Barrier(BCL::comm);
+  error_code = MPI_Barrier(comm);
   BCL_DEBUG(
           if (error_code != MPI_SUCCESS) {
             throw debug_error("BCL barrier(): MPI_Barrier returned error code " + std::to_string(error_code));
@@ -69,15 +65,15 @@ void barrier() {
   )
 }
 
-void flush() {
+inline void flush() {
   MPI_Win_flush_all(win);
 }
 
 // MPI communicator, shared_segment_size in MB,
 // and whether to start the progress thread.
-void init(uint64_t shared_segment_size = 256, bool thread_safe = false) {
+inline void init(std::size_t shared_segment_size = 256, bool thread_safe = false) {
   BCL::comm = MPI_COMM_WORLD;
-  BCL::shared_segment_size = 1024*1024*shared_segment_size;
+  BCL::global_state::shared_segment_size = 1024*1024*shared_segment_size;
 
   if (!mpi_initialized()) {
     if (!thread_safe) {
@@ -86,18 +82,18 @@ void init(uint64_t shared_segment_size = 256, bool thread_safe = false) {
       int provided;
       MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
       if (provided < MPI_THREAD_MULTIPLE) {
-        throw BCL::error("BCL Asked for MPI_THREAD_MULTIPLE, but was denied. "
-                         "You need a thread-safe MPI implementation.");
+        throw BCL::error("BCL asked for MPI_THREAD_MULTIPLE, but was denied. "
+                         "You need to use a thread-safe MPI implementation.");
       }
     }
     we_initialized = true;
   }
 
   int rank, nprocs;
-  MPI_Comm_rank(BCL::comm, &rank);
-  MPI_Comm_size(BCL::comm, &nprocs);
-  BCL::my_rank = rank;
-  BCL::my_nprocs = nprocs;
+  MPI_Comm_rank(comm, &rank);
+  MPI_Comm_size(comm, &nprocs);
+  rank_ = rank;
+  nprocs_ = nprocs;
 
   MPI_Info_create(&info);
   MPI_Info_set(info, "accumulate_ordering", "none");
@@ -118,7 +114,7 @@ void init(uint64_t shared_segment_size = 256, bool thread_safe = false) {
 }
 
 void finalize() {
-  BCL::barrier();
+  barrier();
   MPI_Win_unlock_all(win);
   MPI_Info_free(&info);
   MPI_Win_free(&win);
@@ -128,4 +124,5 @@ void finalize() {
   bcl_finalized = true;
 }
 
+} // end backend
 } // end BCL

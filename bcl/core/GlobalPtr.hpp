@@ -15,11 +15,6 @@
 
 namespace BCL {
 
-extern uint64_t shared_segment_size;
-extern void *smem_base_ptr;
-
-extern inline size_t rank(BCL::Team &&team);
-
 template <class T, class M> M get_member_type(M T:: *);
 #define GET_MEMBER_TYPE(mem) decltype(BCL::get_member_type(mem))
 
@@ -189,6 +184,7 @@ struct GlobalPtr {
 /// Cast a `GlobalPtr` to point to memory of another type.
 template <typename T, typename U>
 inline GlobalPtr<T> reinterpret_pointer_cast(GlobalPtr<U> ptr) noexcept {
+  static_assert(!std::is_const_v<U> || std::is_const_v<T>);
   return GlobalPtr<T>(ptr.rank, ptr.ptr);
 }
 
