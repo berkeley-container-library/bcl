@@ -66,6 +66,8 @@ template <typename T, typename I = int>
 class SPMatrix {
 public:
 
+  using matrix_dim = index<std::size_t>;
+
   using size_type = size_t;
   using index_type = I;
 
@@ -100,8 +102,8 @@ public:
     init(fname, std::forward<Blocking>(blocking), format);
   }
 
-  template <typename Blocking>
-  SPMatrix(const std::string& fname, Blocking&& blocking = BCL::BlockOpt(),
+  template <typename Blocking = decltype(BCL::BlockOpt())>
+  SPMatrix(std::string fname, Blocking&& blocking = BCL::BlockOpt(),
            FileFormat format = FileFormat::Unknown) :
           team_ptr_(new BCL::WorldTeam()) {
     init(fname, std::forward<Blocking>(blocking), format);
@@ -109,14 +111,22 @@ public:
 
   // XXX: in progress, initialize with an empty matrix
   template <typename Blocking, typename TeamType>
-  SPMatrix(size_t m, size_t n, Blocking&& blocking, const TeamType& team) :
+  SPMatrix(matrix_dim dim, Blocking&& blocking, const TeamType& team) :
            team_ptr_(team.clone()) {
-    init_with_zero(m, n, std::forward<Blocking>(blocking));
+    init_with_zero(dim[0], dim[1], std::forward<Blocking>(blocking));
   }
 
-  SPMatrix(size_t m, size_t n, Block&& blocking) :
+  template <typename U, typename Blocking = decltype(BCL::BlockOpt()),
+             __BCL_REQUIRES(std::is_integral_v<U>)>
+  SPMatrix(std::initializer_list<U> dim, Blocking&& blocking = BCL::BlockOpt()) :
            team_ptr_(new BCL::WorldTeam()) {
-    init_with_zero(m, n, std::move(blocking));
+    init_with_zero(*dim.begin(), *(dim.begin() + 1), std::forward<Blocking>(blocking));
+  }
+
+  template <typename Blocking = decltype(BCL::BlockOpt())>
+  SPMatrix(matrix_dim dim, Blocking&& blocking = BCL::BlockOpt()) :
+           team_ptr_(new BCL::WorldTeam()) {
+    init_with_zero(dim[0], dim[1], std::forward<Blocking>(blocking));
   }
 
   void init_with_zero(size_t m, size_t n, Block&& blocking) {
@@ -257,11 +267,11 @@ public:
   }
 
   template <typename Allocator>
-  void assign_tile(size_t i, size_t j,
-                    const CSRMatrix<T, index_type, Allocator>& mat,
-                    bool allow_redistribute = false) {
+  void assign_tile(matrix_dim index,
+                   const CSRMatrix<T, index_type, Allocator>& mat,
+                   bool allow_redistribute = false) {
     if (!allow_redistribute) {
-      assert(vals_[j + i*grid_shape()[1]].is_local());
+      assert(vals_[index[0]*grid_shape()[1] + index[1]].is_local());
     }
 
     BCL::GlobalPtr<T> vals = BCL::alloc<T>(std::max<size_t>(1, mat.vals_.size()));
@@ -276,10 +286,10 @@ public:
     std::copy(mat.col_ind_.begin(), mat.col_ind_.end(), col_ind.local());
     std::copy(mat.row_ptr_.begin(), mat.row_ptr_.end(), row_ptr.local());
 
-    std::swap(vals, vals_[j + i*grid_shape()[1]]);
-    std::swap(col_ind, col_ind_[j + i*grid_shape()[1]]);
-    std::swap(row_ptr, row_ptr_[j + i*grid_shape()[1]]);
-    nnzs_[j + i*grid_shape()[1]] = mat.nnz_;
+    std::swap(vals, vals_[index[0]*grid_shape()[1] + index[1]]);
+    std::swap(col_ind, col_ind_[index[0]*grid_shape()[1] + index[1]]);
+    std::swap(row_ptr, row_ptr_[index[0]*grid_shape()[1] + index[1]]);
+    nnzs_[index[0]*grid_shape()[1] + index[1]] = mat.nnz_;
 
     // TODO: deal with this properly
     if (vals.is_local()) {
@@ -338,31 +348,31 @@ public:
     nnz_ = std::accumulate(nnzs_.begin(), nnzs_.end(), size_type(0));
   }
 
-  std::array<size_t, 2> shape() const noexcept {
+  matrix_dim shape() const noexcept {
     return {m_, n_};
   }
 
-  std::array<size_t, 2> grid_shape() const noexcept {
+  matrix_dim grid_shape() const noexcept {
     return {grid_dim_m_, grid_dim_n_};
   }
 
-  std::array<size_t, 2> tile_shape() const noexcept {
+  matrix_dim tile_shape() const noexcept {
     return {tile_size_m_, tile_size_n_};
   }
 
-  std::array<size_t, 2> pgrid_shape() const noexcept {
+  matrix_dim pgrid_shape() const noexcept {
     return {pm_, pn_};
   }
 
-  size_t tile_rank(size_t i, size_t j) const noexcept {
-    return vals_[i*grid_shape()[1] + j].rank;
+  std::size_t tile_rank(matrix_dim index) const noexcept {
+    return vals_[index[0]*grid_shape()[1] + index[1]].rank;
   }
 
-  size_t nnz() const noexcept {
+  std::size_t nnz() const noexcept {
     return nnz_;
   }
 
-  size_t tile_size() const noexcept {
+  std::size_t tile_size() const noexcept {
     return tile_shape()[0] * tile_shape()[1];
   }
 
@@ -378,21 +388,17 @@ public:
                             {pgrid_shape()[0], pgrid_shape()[1]});
   }
 
-  std::array<size_t, 2> tile_shape(size_t i, size_t j) const noexcept {
-    size_t m_size = std::min(tile_shape()[0], shape()[0] - i*tile_shape()[0]);
-    size_t n_size = std::min(tile_shape()[1], shape()[1] - j*tile_shape()[1]);
+  matrix_dim tile_shape(matrix_dim index) const noexcept {
+    size_t m_size = std::min(tile_shape()[0], shape()[0] - index[0]*tile_shape()[0]);
+    size_t n_size = std::min(tile_shape()[1], shape()[1] - index[1]*tile_shape()[1]);
     return {m_size, n_size};
   }
 
-  size_type tile_nnz(size_type i, size_type j) const noexcept {
-    return nnzs_[i*grid_shape()[1] + j];
+  size_type tile_nnz(matrix_dim index) const noexcept {
+    return nnzs_[index[0]*grid_shape()[1] + index[1]];
   }
 
   using fetch_allocator = BCL::bcl_allocator<T>;
-
-  size_t tile_locale(size_t i, size_t j) const {
-    return vals_[j + i*grid_shape()[1]].rank;
-  }
 
   template <typename U>
   bool intervals_overlap_(const std::pair<U, U>& a, const std::pair<U, U>& b) const noexcept {
@@ -407,7 +413,7 @@ public:
   }
 
   CSRMatrix<T, index_type> get_slice_impl_(size_t mmin, size_t mmax,
-                                                      size_t nmin, size_t nmax) const {
+                                           size_t nmin, size_t nmax) const {
     mmax = std::min(mmax, shape()[0]);
     nmax = std::min(nmax, shape()[1]);
 
@@ -418,7 +424,7 @@ public:
 
     BCL::SparseHashAccumulator<T, index_type, Allocator> acc;
 
-    std::vector<std::pair<decltype(arget_tile(0, 0)),
+    std::vector<std::pair<decltype(arget_tile({0, 0})),
                           std::pair<index_type, index_type>
                           >
                 > tiles;
@@ -432,7 +438,7 @@ public:
                                  std::make_pair(grid_j*tile_shape()[1], (grid_j+1)*tile_shape()[1]))
               ) {
             // We need to grab and accumulate tile [grid_i, grid_j].
-            auto tile = arget_tile(grid_i, grid_j);
+            auto tile = arget_tile({grid_i, grid_j});
             // Shift tile coordinates to *real* coordinates
             index_type offset_i = grid_i*tile_shape()[0];
             index_type offset_j = grid_j*tile_shape()[1];
@@ -458,18 +464,18 @@ public:
   }
 
   template <typename Allocator = fetch_allocator>
-  CSRMatrix<T, index_type, Allocator> get_tile(size_t i, size_t j) const {
+  CSRMatrix<T, index_type, Allocator> get_tile(matrix_dim index) const {
     using allocator_traits = std::allocator_traits<Allocator>;
     using IAllocator = typename allocator_traits:: template rebind_alloc<index_type>;
     size_t m, n, nnz;
-    m = tile_shape(i, j)[0];
-    n = tile_shape(i, j)[1];
+    m = tile_shape(index)[0];
+    n = tile_shape(index)[1];
 
-    nnz = tile_nnz(i, j);
+    nnz = tile_nnz(index);
 
-    auto vals = BCL::arget<T, Allocator>(vals_[j + i*grid_shape()[1]], nnz);
-    auto col_ind = BCL::arget<index_type, IAllocator>(col_ind_[j + i*grid_shape()[1]], nnz);
-    auto row_ptr = BCL::arget<index_type, IAllocator>(row_ptr_[j + i*grid_shape()[1]], m+1);
+    auto vals = BCL::arget<T, Allocator>(vals_[index[0]*grid_shape()[1] + index[1]], nnz);
+    auto col_ind = BCL::arget<index_type, IAllocator>(col_ind_[index[0]*grid_shape()[1] + index[1]], nnz);
+    auto row_ptr = BCL::arget<index_type, IAllocator>(row_ptr_[index[0]*grid_shape()[1] + index[1]], m+1);
 
     return CSRMatrix<T, index_type, Allocator> (m, n, nnz,
                                      std::move(vals.get()),
@@ -478,18 +484,18 @@ public:
   }
 
   template <typename Allocator = fetch_allocator>
-  future<CSRMatrix<T, index_type, Allocator>> arget_tile(size_t i, size_t j) const {
+  future<CSRMatrix<T, index_type, Allocator>> arget_tile(matrix_dim index) const {
     using allocator_traits = std::allocator_traits<Allocator>;
     using IAllocator = typename allocator_traits:: template rebind_alloc<index_type>;
     size_t m, n, nnz;
-    m = tile_shape(i, j)[0];
-    n = tile_shape(i, j)[1];
+    m = tile_shape(index)[0];
+    n = tile_shape(index)[1];
 
-    nnz = tile_nnz(i, j);
+    nnz = tile_nnz(index);
 
-    auto vals = BCL::arget<T, Allocator>(vals_[j + i*grid_shape()[1]], nnz);
-    auto row_ptr = BCL::arget<index_type, IAllocator>(row_ptr_[j + i*grid_shape()[1]], m+1);
-    auto col_ind = BCL::arget<index_type, IAllocator>(col_ind_[j + i*grid_shape()[1]], nnz);
+    auto vals = BCL::arget<T, Allocator>(vals_[index[0]*grid_shape()[1] + index[1]], nnz);
+    auto row_ptr = BCL::arget<index_type, IAllocator>(row_ptr_[index[0]*grid_shape()[1] + index[1]], m+1);
+    auto col_ind = BCL::arget<index_type, IAllocator>(col_ind_[index[0]*grid_shape()[1] + index[1]], nnz);
 
     return future<CSRMatrix<T, index_type, Allocator>>(m, n, nnz,
                                             std::move(vals),
@@ -510,7 +516,7 @@ public:
     for (size_t i = 0; i < grid_shape()[0]; i++) {
       local_tiles[i].reserve(grid_shape()[1]);
       for (size_t j = 0; j < grid_shape()[1]; j++) {
-        local_tiles[i].emplace_back(std::move(arget_tile<Allocator>(i, j)));
+        local_tiles[i].emplace_back(std::move(arget_tile<Allocator>({i, j})));
       }
     }
 
@@ -534,7 +540,7 @@ public:
     size_t num_nonzeros = 0;
     for (size_t i = 0; i < grid_shape()[0]; i++) {
       for (size_t j = 0; j < grid_shape()[1]; j++) {
-        auto my_tile = get_tile(i, j);
+        auto my_tile = get_tile({i, j});
         for (size_t i_ = 0; i_ < my_tile.m_; i_++) {
           for (size_t j_ = my_tile.row_ptr_[i_]; j_ < my_tile.row_ptr_[i_+1]; j_++) {
             num_nonzeros++;

@@ -12,6 +12,7 @@
 
 namespace BCL {
 
+#ifdef USE_MKL
 template <typename T, typename I>
 void spmm_wrapper(size_t m, size_t n, size_t k, size_t nnz, T* c, T* b,
                   T* a_values, I* a_rowptr, I* a_colind,
@@ -33,6 +34,24 @@ void spmm_wrapper(size_t m, size_t n, size_t k, size_t nnz, T* c, T* b,
              b, &ldb_, &beta,
              c, &ldc_);
 }
+#else
+template <typename T, typename I>
+void spmm_wrapper(size_t m, size_t n, size_t k, size_t nnz, T* c, T* b,
+                  T* a_values, I* a_rowptr, I* a_colind,
+                  size_t ldb, size_t ldc) {
+  for (std::size_t i = 0; i < m; i++) {
+    for (I k_ptr = a_rowptr[i]; k_ptr < a_rowptr[i+1]; k_ptr++) {
+      auto&& v = a_values[k_ptr];
+      auto&& k_ = a_colind[k_ptr];
+
+      for (size_t j = 0; j < n; j++) {
+        // c[i, j] += a[i, k] * b[k, j]
+        c[i*ldc + j] += v * b[k_*ldb + j];
+      }
+    }
+  }
+}
+#endif
 
 template <typename T, typename I>
 void gemm(const SPMatrix<T, I>& a, const DMatrix<T>& b, DMatrix<T>& c) {

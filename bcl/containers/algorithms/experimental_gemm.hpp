@@ -86,12 +86,12 @@ void rowwise_gemm(const BCL::SPMatrix<T, I>& a, const BCL::DMatrix<T>& b, BCL::D
 
 	for (size_t i = 0; i < a.grid_shape()[0]; i++) {
 		for (size_t k = 0; k < a.grid_shape()[1]; k++) {
-			if (a.tile_locale(i, k) == BCL::rank()) {
+			if (a.tile_rank({i, k}) == BCL::rank()) {
 				T* values = a.vals_[i*a.grid_shape()[1] + k].local();
 				I* row_ptr = a.row_ptr_[i*a.grid_shape()[1] + k].local();
 				I* col_ind = a.col_ind_[i*a.grid_shape()[1] + k].local();
-				T* local_c = c.tile_ptr(i, 0).local();
-				for (size_t i_ = 0; i_ < a.tile_shape(i, k)[0]; i_++) {
+				T* local_c = c.tile_ptr({i, 0}).local();
+				for (size_t i_ = 0; i_ < a.tile_shape({i, k})[0]; i_++) {
 					for (size_t j_ptr = row_ptr[i_]; j_ptr < row_ptr[i_+1]; j_ptr++) {
 						size_t k_ = col_ind[j_ptr];
 
@@ -127,12 +127,12 @@ void cached_rowwise_gemm(const BCL::SPMatrix<T, I>& a, const BCL::DMatrix<T>& b,
 
 	for (size_t i = 0; i < a.grid_shape()[0]; i++) {
 		for (size_t k = 0; k < a.grid_shape()[1]; k++) {
-			if (a.tile_locale(i, k) == BCL::rank()) {
+			if (a.tile_rank({i, k}) == BCL::rank()) {
 				T* values = a.vals_[i*a.grid_shape()[1] + k].local();
 				I* row_ptr = a.row_ptr_[i*a.grid_shape()[1] + k].local();
 				I* col_ind = a.col_ind_[i*a.grid_shape()[1] + k].local();
-				T* local_c = c.tile_ptr(i, 0).local();
-				for (size_t i_ = 0; i_ < a.tile_shape(i, k)[0]; i_++) {
+				T* local_c = c.tile_ptr({i, 0}).local();
+				for (size_t i_ = 0; i_ < a.tile_shape({i, k})[0]; i_++) {
 					for (size_t j_ptr = row_ptr[i_]; j_ptr < row_ptr[i_+1]; j_ptr++) {
 						size_t k_ = col_ind[j_ptr];
 
@@ -164,13 +164,13 @@ void batched_rowwise_gemm(const BCL::SPMatrix<T, I>& a, const BCL::DMatrix<T>& b
 
 	for (size_t i = 0; i < a.grid_shape()[0]; i++) {
 		for (size_t k = 0; k < a.grid_shape()[1]; k++) {
-			if (a.tile_locale(i, k) == BCL::rank()) {
+			if (a.tile_rank({i, k}) == BCL::rank()) {
 				std::vector<std::tuple<size_t, size_t, T>> indices;
 				T* values = a.vals_[i*a.grid_shape()[1] + k].local();
 				I* row_ptr = a.row_ptr_[i*a.grid_shape()[1] + k].local();
 				I* col_ind = a.col_ind_[i*a.grid_shape()[1] + k].local();
-				T* local_c = c.tile_ptr(i, 0).local();
-				for (size_t i_ = 0; i_ < a.tile_shape(i, k)[0]; i_++) {
+				T* local_c = c.tile_ptr({i, 0}).local();
+				for (size_t i_ = 0; i_ < a.tile_shape({i, k})[0]; i_++) {
 					for (size_t j_ptr = row_ptr[i_]; j_ptr < row_ptr[i_+1]; j_ptr++) {
 						size_t k_ = col_ind[j_ptr];
 

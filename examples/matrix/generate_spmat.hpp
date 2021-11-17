@@ -60,19 +60,19 @@ BCL::SPMatrix<T, I> generate_matrix(size_t m, size_t n, size_t nnz_per_row,
 	                                  double alpha, Blocking&& block) {
 	using value_type = T;
 	using index_type = I;
-  BCL::SPMatrix<value_type, index_type> matrix(m, n, std::move(block));
+  BCL::SPMatrix<value_type, index_type> matrix({m, n}, std::move(block));
 
   for (size_t i = 0; i < matrix.grid_shape()[0]; i++) {
   	for (size_t j = 0; j < matrix.grid_shape()[1]; j++) {
-  		if (matrix.tile_rank(i, j) == BCL::rank()) {
+  		if (matrix.tile_rank({i, j}) == BCL::rank()) {
 
   			std::vector<value_type> values;
-  			std::vector<index_type> rowptr(matrix.tile_shape(i, j)[0] + 1, 0);
+  			std::vector<index_type> rowptr(matrix.tile_shape({i, j})[0] + 1, 0);
   			std::vector<index_type> colind;
 
   			size_t nnz = 0;
 
-  			for (size_t i_ = 0; i_ < matrix.tile_shape(i, j)[0]; i_++) {
+  			for (size_t i_ = 0; i_ < matrix.tile_shape({i, j})[0]; i_++) {
   				size_t nnz_row = std::max<size_t>(1, drand48()*(nnz_per_row*2));
 
   				for (size_t nz_ = 0; nz_ < nnz_row; nz_++) {
@@ -85,7 +85,7 @@ BCL::SPMatrix<T, I> generate_matrix(size_t m, size_t n, size_t nnz_per_row,
   					}
 
   					if (j_ >= matrix.tile_shape()[1]*j &&
-  						  j_ < matrix.tile_shape()[1]*j + matrix.tile_shape(i, j)[1]) {
+  						  j_ < matrix.tile_shape()[1]*j + matrix.tile_shape({i, j})[1]) {
   						nnz++;
   					  colind.push_back(j_ - matrix.tile_shape()[1]*j);
   					}
@@ -96,14 +96,14 @@ BCL::SPMatrix<T, I> generate_matrix(size_t m, size_t n, size_t nnz_per_row,
 
   			values.resize(nnz, 1);
 
-	  		BCL::CSRMatrix<value_type, index_type> local_mat(matrix.tile_shape(i, j)[0],
-	  			                                               matrix.tile_shape(i, j)[1],
+	  		BCL::CSRMatrix<value_type, index_type> local_mat(matrix.tile_shape({i, j})[0],
+	  			                                               matrix.tile_shape({i, j})[1],
 	  			                                               nnz,
 	  			                                               std::move(values),
 	  			                                               std::move(rowptr),
 	  			                                               std::move(colind));
 
-	  		matrix.assign_tile(i, j, local_mat);
+	  		matrix.assign_tile({i, j}, local_mat);
   		}
   	}
   }

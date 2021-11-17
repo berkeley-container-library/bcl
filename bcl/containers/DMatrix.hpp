@@ -10,12 +10,70 @@
 #include <iostream>
 #include <list>
 #include <memory>
+#include <execution>
 
 #include <bcl/containers/algorithms/gemm.hpp>
 #include <bcl/containers/detail/Blocking.hpp>
 
 namespace BCL
 {
+
+template <typename T = std::size_t,
+          __BCL_REQUIRES(std::is_integral_v<T> && !std::is_reference_v<T>)>
+class index {
+public:
+  using index_type = T;
+
+  using first_type = T;
+  using second_type = T;
+
+  index_type operator[](index_type dim) const noexcept {
+    if (dim == 0) {
+      return first;
+    } else {
+      return second;
+    }
+  }
+
+  template <typename U,
+            __BCL_REQUIRES(std::is_integral_v<U> &&
+                 std::numeric_limits<U>::max() >= std::numeric_limits<T>::max())
+            >
+  operator index<U>() const noexcept {
+    return index<U>(first, second);
+  }
+
+  index(index_type first, index_type second) : first(first), second(second) {}
+
+  bool operator==(index other) const noexcept {
+    return first == other.first && second == other.second;
+  }
+
+  index() = default;
+  ~index() = default;
+  index(const index&) = default;
+  index& operator=(const index&) = default;
+  index(index&&) = default;
+  index& operator=(index&&) = default;
+
+  index_type first;
+  index_type second;
+};
+
+} // end BCL
+
+namespace std {
+
+template <std::size_t I, typename T,
+          __BCL_REQUIRES(I <= 1)>
+size_t get(BCL::index<T> idx)
+{
+  return idx[I];
+}
+
+} // end std
+
+namespace BCL {
 
 template <typename E>
 class DExpr;
@@ -29,16 +87,7 @@ template <typename T>
 class DMatrix : public DExpr<DMatrix<T>> {
 public:
 
-  struct matrix_dim {
-    size_t m, n;
-    size_t operator[](size_t dim_num) {
-      if (dim_num == 0) {
-        return m;
-      } else {
-        return n;
-      }
-    }
-  };
+  using matrix_dim = index<std::size_t>;
 
   using value_type = T;
 
@@ -117,7 +166,7 @@ public:
     for (size_t i = 0; i < grid_shape()[0]; i++) {
       std::vector<size_t> row_procs;
       for (size_t j = 0; j < grid_shape()[1]; j++) {
-        row_procs.push_back(tile_ptr(i, j).rank);
+        row_procs.push_back(tile_ptr({i, j}).rank);
       }
       /*
       if (BCL::rank() == 0) {
@@ -131,7 +180,7 @@ public:
     for (size_t j = 0; j < grid_shape()[1]; j++) {
       std::vector<size_t> column_procs;
       for (size_t i = 0; i < grid_shape()[0]; i++) {
-        column_procs.push_back(tile_ptr(i, j).rank);
+        column_procs.push_back(tile_ptr({i, j}).rank);
       }
       /*
       if (BCL::rank() == 0) {
@@ -149,7 +198,7 @@ public:
     init(dim[0], dim[1], std::forward<Blocking>(blocking));
   }
 
-  template <typename Blocking>
+  template <typename Blocking = decltype(BCL::BlockOpt())>
   DMatrix(matrix_dim dim, Blocking&& blocking = BCL::BlockOpt()) : m_(dim[0]), n_(dim[1]),
           team_ptr_(new BCL::WorldTeam()) {
     init(dim[0], dim[1], std::forward<Blocking>(blocking));
@@ -159,33 +208,33 @@ public:
     return *team_ptr_;
   }
 
-  BCL::GlobalPtr<T> tile_ptr(size_t i, size_t j) {
-    return ptrs_[j + i*grid_shape()[1]];
+  BCL::GlobalPtr<T> tile_ptr(matrix_dim index) {
+    return ptrs_[index[0]*grid_shape()[1] + index[1]];
   }
 
-  const BCL::GlobalPtr<T> tile_ptr(size_t i, size_t j) const {
-    return ptrs_[j + i*grid_shape()[1]];
+  BCL::GlobalPtr<const T> tile_ptr(matrix_dim index) const {
+    return ptrs_[index[0]*grid_shape()[1] + index[1]];
   }
 
   template <typename Allocator = BCL::bcl_allocator<T>>
-  auto arget_tile(size_t i, size_t j) const {
-    return std::make_tuple(BCL::arget<T, Allocator>(tile_ptr(i, j), tile_size()), is_transpose());
+  auto arget_tile(matrix_dim index) const {
+    return std::make_tuple(BCL::arget<T, Allocator>(tile_ptr(index), tile_size()), is_transpose());
   }
 
   template <typename Allocator>
-  auto arput_tile(size_t i, size_t j, std::vector<T, Allocator>&& tile) {
-    return BCL::arput(tile_ptr(i, j), std::move(tile));
+  auto arput_tile(matrix_dim index, std::vector<T, Allocator>&& tile) {
+    return BCL::arput(tile_ptr(index), std::move(tile));
   }
 
-  std::vector<T> get_tile(size_t i, size_t j) const {
+  std::vector<T> get_tile(matrix_dim index) const {
     std::vector<T> vals(tile_size());
-    BCL::rget(tile_ptr(i, j), vals.data(), tile_size());
+    BCL::rget(tile_ptr(index), vals.data(), tile_size());
     return vals;
   }
 
-  std::vector<T> get_tile_row(size_t i, size_t j, size_t row) const {
-    std::vector<T> vals(tile_shape(i, j)[1]);
-    BCL::rget(tile_ptr(i, j) + row*tile_shape()[1], vals.data(), vals.size());
+  std::vector<T> get_tile_row(matrix_dim index, size_t row) const {
+    std::vector<T> vals(tile_shape(index)[1]);
+    BCL::rget(tile_ptr(index) + row*tile_shape()[1], vals.data(), vals.size());
     return vals;
   }
 
@@ -199,8 +248,8 @@ public:
     size_t row_length = tile_shape()[1];
 
     for (size_t tile_j = 0; tile_j < grid_shape()[1]; tile_j++) {
-      auto remote_ptr = tile_ptr(tile_i, tile_j) + row*tile_shape()[1];
-      size_t copy_length = sizeof(T)*tile_shape(tile_i, tile_j)[1];
+      auto remote_ptr = tile_ptr({tile_i, tile_j}) + row*tile_shape()[1];
+      size_t copy_length = sizeof(T)*tile_shape({tile_i, tile_j})[1];
       BCL::memcpy(vals.data() + tile_shape()[1]*tile_j, remote_ptr, copy_length);
     }
     return vals;
@@ -208,29 +257,29 @@ public:
 
   template <typename Allocator = BCL::bcl_allocator<T>>
   auto arget_tile_row(size_t i, size_t j, size_t row) const {
-    return BCL::arget<T, Allocator>(tile_ptr(i, j) + row*tile_shape()[1], tile_shape(i, j)[1]);
+    return BCL::arget<T, Allocator>(tile_ptr({i, j}) + row*tile_shape()[1], tile_shape(i, j)[1]);
   }
 
-  GlobalRef<T> operator()(size_t i, size_t j) {
-    size_t pi = i / tile_shape()[0];
-    size_t pj = j / tile_shape()[1];
-    size_t p = pj + pi*grid_shape()[1];
+  GlobalRef<T> operator[](matrix_dim index) {
+    size_t pi = index[0] / tile_shape()[0];
+    size_t pj = index[1] / tile_shape()[1];
+    size_t local_i = index[0] % tile_shape()[0];
+    size_t local_j = index[1] % tile_shape()[1];
 
-    size_t local_i = i - pi*tile_shape()[0];
-    size_t local_j = j - pj*tile_shape()[1];
-    size_t local_idx = local_j + local_i*tile_shape()[1];
-    return GlobalRef<T>(ptrs_[p] + local_idx);
+    size_t p = pi*grid_shape()[1] + pj;
+    size_t local_idx = local_i*tile_shape()[1] + local_j;
+    return *(ptrs_[p] + local_idx);
   }
 
-  const GlobalRef<T> operator()(size_t i, size_t j) const {
-    size_t pi = i / tile_shape()[0];
-    size_t pj = j / tile_shape()[1];
-    size_t p = pj + pi*grid_shape()[1];
+  GlobalRef<const T> operator[](matrix_dim index) const {
+    size_t pi = index[0] / tile_shape()[0];
+    size_t pj = index[1] / tile_shape()[1];
+    size_t local_i = index[0] % tile_shape()[0];
+    size_t local_j = index[1] % tile_shape()[1];
 
-    size_t local_i = i - pi*tile_shape()[0];
-    size_t local_j = j - pj*tile_shape()[1];
-    size_t local_idx = local_j + local_i*tile_shape()[1];
-    return GlobalRef<T>(ptrs_[p] + local_idx);
+    size_t p = pi*grid_shape()[1] + pj;
+    size_t local_idx = local_i*tile_shape()[1] + local_j;
+    return *(ptrs_[p] + local_idx);
   }
 
   template <typename U>
@@ -238,10 +287,12 @@ public:
     for (size_t i = 0; i < ptrs_.size(); i++) {
       if (ptrs_[i].is_local()) {
         T* lptr = ptrs_[i].local();
-        for (size_t j = 0; j < tile_size(); j++) {
-          // ptrs_[i].local()[j] = value;
-          lptr[j] = value;
-        }
+        std::transform(std::execution::par_unseq,
+                       lptr, lptr + tile_size(),
+                       lptr,
+                       [&](auto&& elem) {
+                         return value;
+                       });
       }
     }
     return *this;
@@ -290,13 +341,16 @@ public:
   }
 
   template <typename Fn>
-  DMatrix& apply_inplace(const Fn& fn) {
+  DMatrix& apply_inplace(Fn&& fn) {
     for (size_t i = 0; i < ptrs_.size(); i++) {
       if (ptrs_[i].is_local()) {
         T* lptr = ptrs_[i].local();
-        for (size_t j = 0; j < tile_size(); j++) {
-          lptr[j] = fn(lptr[j]);
-        }
+        std::transform(std::execution::par_unseq,
+                       lptr, lptr + tile_size(),
+                       lptr,
+                       [&](auto&& elem) {
+                         return fn(elem);
+                       });
       }
     }
     return *this;
@@ -307,17 +361,20 @@ public:
   }
 
   template <typename Fn>
-  DMatrix<T> apply(const Fn& fn) const {
-    DMatrix<T> result(shape()[0], shape()[1],
+  [[nodiscard]] DMatrix<T> apply(Fn&& fn) const {
+    DMatrix<T> result({shape()[0], shape()[1]},
                       BCL::BlockCustom({tile_shape()[0], tile_shape()[1]},
                                        {pm(), pn()}), *team_ptr_);
     for (size_t i = 0; i < ptrs_.size(); i++) {
       if (ptrs_[i].is_local()) {
         T* lptr = ptrs_[i].local();
         T* rptr = result.ptrs_[i].local();
-        for (size_t j = 0; j < tile_size(); j++) {
-          rptr[j] = fn(lptr[j]);
-        }
+        std::transform(std::execution::par_unseq,
+                       lptr, lptr + tile_size(),
+                       rptr,
+                       [&](auto&& elem) {
+                         return fn(elem);
+                       });
       }
     }
     return result;
@@ -412,9 +469,9 @@ public:
   }
 
 
-  matrix_dim tile_shape(size_t i, size_t j) const noexcept {
-    size_t m_size = std::min(tile_size_m_, m_ - i*tile_size_m_);
-    size_t n_size = std::min(tile_size_n_, n_ - j*tile_size_n_);
+  matrix_dim tile_shape(matrix_dim index) const noexcept {
+    size_t m_size = std::min(tile_size_m_, m_ - index[0]*tile_size_m_);
+    size_t n_size = std::min(tile_size_n_, n_ - index[1]*tile_size_n_);
     return {m_size, n_size};
   }
 
@@ -422,8 +479,8 @@ public:
     return tile_shape()[0]*tile_shape()[1];
   }
 
-  size_t tile_locale(size_t i, size_t j) const noexcept {
-    return tile_ptr(i, j).rank;
+  size_t tile_rank(matrix_dim index) const noexcept {
+    return tile_ptr(index).rank;
   }
 
   size_t pm() const noexcept {
@@ -474,7 +531,7 @@ public:
       for (size_t i = 0; i < grid_shape()[0]; i++) {
         printf("   ");
         for (size_t j = 0; j < grid_shape()[1]; j++) {
-          printf("%2lu ", tile_ptr(i, j).rank);
+          printf("%2lu ", tile_ptr({i, j}).rank);
         }
         printf("\n");
       }
@@ -482,23 +539,15 @@ public:
   }
 
   template <typename Allocator = BCL::bcl_allocator<T>>
-  BCL::future<std::vector<T, Allocator>> arslice(std::initializer_list<size_t> mslice,
-                                    std::initializer_list<size_t> nslice) const {
-    assert(mslice.size() == 2);
-    assert(nslice.size() == 2);
-    std::vector<size_t> mslice_ = mslice;
-    std::vector<size_t> nslice_ = nslice;
-    return arslice_impl_(mslice_[0], mslice_[1], nslice_[0], nslice_[1]);
+  BCL::future<std::vector<T, Allocator>> arslice(matrix_dim row_slice,
+                                                 matrix_dim col_slice) const {
+    return arslice_impl_(row_slice[0], row_slice[1], col_slice[0], col_slice[1]);
   }
 
   template <typename Allocator = BCL::bcl_allocator<T>>
-  std::vector<T, Allocator> slice(std::initializer_list<size_t> mslice,
-                                  std::initializer_list<size_t> nslice) const {
-    assert(mslice.size() == 2);
-    assert(nslice.size() == 2);
-    std::vector<size_t> mslice_ = mslice;
-    std::vector<size_t> nslice_ = nslice;
-    return slice_impl_(mslice_[0], mslice_[1], nslice_[0], nslice_[1]);
+  std::vector<T, Allocator> slice(matrix_dim row_slice,
+                                  matrix_dim col_slice) const {
+    return slice_impl_(row_slice[0], row_slice[1], col_slice[0], col_slice[1]);
   }
 
   // Get slice of [mmin, mmax), [nmin, nmax)
@@ -542,11 +591,11 @@ public:
     T local_sum = 0;
     for (size_t i = 0; i < grid_shape()[0]; i++) {
       for (size_t j = 0; j < grid_shape()[1]; j++) {
-        if (tile_locale(i, j) == BCL::rank()) {
-          const T* values = tile_ptr(i, j).local();
+        if (tile_rank({i, j}) == BCL::rank()) {
+          const T* values = tile_ptr({i, j}).local();
 
-          for (size_t i_ = 0; i_ < tile_shape(i, j)[0]; i_++) {
-            for (size_t j_ = 0; j_ < tile_shape(i, j)[1]; j_++) {
+          for (size_t i_ = 0; i_ < tile_shape({i, j})[0]; i_++) {
+            for (size_t j_ = 0; j_ < tile_shape({i, j})[1]; j_++) {
               local_sum += values[i_*tile_shape()[1] + j_];
             }
           }
@@ -594,12 +643,12 @@ template<typename T, typename U>
 void fill_range(DMatrix<T>& mat, U bound) {
   for (size_t gi = 0; gi < mat.grid_shape()[0]; gi++) {
     for (size_t gj = 0; gj < mat.grid_shape()[1]; gj++) {
-      if (mat.tile_ptr(gi, gj).is_local()) {
+      if (mat.tile_ptr({gi, gj}).is_local()) {
         for (size_t i = 0; i < mat.tile_shape()[0]; i++) {
           for (size_t j = 0; j < mat.tile_shape()[1]; j++) {
             size_t i_ = gi * mat.tile_shape()[0] + i;
             size_t j_ = gj * mat.tile_shape()[1] + j;
-            mat.tile_ptr(gi, gj).local()[i*mat.tile_shape()[1] + j] = ((i_*mat.shape()[1] + j_) % bound);
+            mat.tile_ptr({gi, gj}).local()[i*mat.tile_shape()[1] + j] = ((i_*mat.shape()[1] + j_) % bound);
           }
         }
       }

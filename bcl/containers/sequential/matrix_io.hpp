@@ -15,7 +15,7 @@ enum FileFormat {
 
 namespace matrix_io {
 
-auto detect_file_type(const std::string& fname) {
+inline auto detect_file_type(const std::string& fname) {
   size_t suffix_spot = 0;
 
   for (int64_t i = fname.size()-1; i >= 0; i--) {
@@ -42,11 +42,11 @@ struct matrix_shape {
   size_t nnz;
 };
 
-matrix_shape matrix_market_info(const std::string& fname, bool one_indexed = true);
-matrix_shape binary_info(const std::string& fname);
+inline matrix_shape matrix_market_info(const std::string& fname, bool one_indexed = true);
+inline matrix_shape binary_info(const std::string& fname);
 
-matrix_shape matrix_info(const std::string& fname,
-                         BCL::FileFormat format = BCL::FileFormat::Unknown) {
+inline matrix_shape matrix_info(const std::string& fname,
+                                BCL::FileFormat format = BCL::FileFormat::Unknown) {
   if (format == FileFormat::Unknown) {
     format = detect_file_type(fname);
   }
@@ -63,7 +63,7 @@ matrix_shape matrix_info(const std::string& fname,
   }
 }
 
-matrix_shape matrix_market_info(const std::string& fname, bool one_indexed) {
+inline matrix_shape matrix_market_info(const std::string& fname, bool one_indexed) {
   std::ifstream f;
 
   f.open(fname.c_str());
@@ -97,7 +97,7 @@ matrix_shape matrix_market_info(const std::string& fname, bool one_indexed) {
   return matrix_shape{{m, n}, nnz};
 }
 
-matrix_shape binary_info(const std::string& fname) {
+inline matrix_shape binary_info(const std::string& fname) {
   FILE* f = fopen(fname.c_str(), "r");
   size_t m, n, nnz;
   assert(f != NULL);

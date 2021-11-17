@@ -11,11 +11,11 @@
 namespace BCL {
 
 template <typename ...Args>
-void print(std::string format, Args... args) {
+void print(const char* format, Args... args) {
   fflush(stdout);
   BCL::barrier();
   if (BCL::rank() == 0) {
-    printf(format.c_str(), args...);
+    printf(format, args...);
   }
   fflush(stdout);
   BCL::barrier();

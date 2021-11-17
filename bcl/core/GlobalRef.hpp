@@ -13,10 +13,10 @@ template <typename T>
 struct GlobalPtr;
 
 template <typename T>
-extern inline T rget(const GlobalPtr <T> &src);
+extern inline std::remove_const_t<T> rget(GlobalPtr<T> src);
 
 template <typename T>
-extern inline void rput(const T &src, const GlobalPtr <T> &dst);
+extern inline void rput(const T &src, GlobalPtr<T> dst);
 
 template <typename T>
 class GlobalRef {
