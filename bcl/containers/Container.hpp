@@ -139,11 +139,8 @@ namespace BCL {
       set(val, rank);
     }
 
-    Container (const Container &container) {
-      val = container.val;
-    }
-
-    Container() {};
+    Container(const Container&) = default;
+    Container() = default;
 
     void free() {}
 

@@ -189,6 +189,8 @@ struct GlobalPtr {
 /// Cast a `GlobalPtr` to point to memory of another type.
 template <typename T, typename U>
 inline GlobalPtr<T> reinterpret_pointer_cast(GlobalPtr<U> ptr) noexcept {
+  // TODO: replace with requires() for C++20
+  static_assert(!std::is_const_v<U> || std::is_const_v<T>);
   return GlobalPtr<T>(ptr.rank, ptr.ptr);
 }
 
