@@ -74,14 +74,14 @@ inline BCL::request arput(const GlobalPtr<T>& dst,
   return async_write(src, dst, n_elem);
 }
 
-inline void memcpy(const GlobalPtr<void>& dst, const void* src, size_t n) {
+inline void memcpy(GlobalPtr<void> dst, const void* src, size_t n) {
   BCL::write(static_cast<const char*>(src),
              BCL::reinterpret_pointer_cast<char>(dst),
              n);
 }
 
-inline void memcpy(void* dst, const GlobalPtr<void>& src, size_t n) {
-  BCL::read(BCL::reinterpret_pointer_cast<char>(src),
+inline void memcpy(void* dst, GlobalPtr<const void> src, size_t n) {
+  BCL::read(BCL::reinterpret_pointer_cast<const char>(src),
             static_cast<char*>(dst),
             n);
 }

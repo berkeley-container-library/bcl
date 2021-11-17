@@ -36,7 +36,7 @@ template <typename T>
 struct GlobalPtr {
 
   // TODO: replace with requires() for C++20
-  static_assert(std::is_trivially_copyable_v<T> || std::is_same_v<T, void>);
+  static_assert(std::is_trivially_copyable_v<T> || std::is_same_v<std::decay_t<T>, void>);
 
   std::size_t rank = 0;
   std::size_t ptr = 0;
@@ -61,10 +61,19 @@ struct GlobalPtr {
 
   GlobalPtr(std::nullptr_t null) : rank(0), ptr(0) {}
 
+  // TODO: convert SFINAE to requires() for C++20
+  template <__BCL_REQUIRES(!std::is_same_v<std::decay_t<T>, void> && !std::is_const_v<T>)>
   operator GlobalPtr<void>() const noexcept {
     return GlobalPtr<void>(rank, ptr);
   }
 
+  // TODO: convert SFINAE to requires() for C++20
+  template <__BCL_REQUIRES(!std::is_same_v<std::decay_t<T>, void>)>
+  operator GlobalPtr<const void>() const noexcept {
+    return GlobalPtr<const void>(rank, ptr);
+  }
+
+  template <__BCL_REQUIRES(!std::is_const_v<T>)>
   operator const_pointer() const noexcept {
     return const_pointer(rank, ptr);
   }

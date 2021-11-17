@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <bcl/core/detail/detail.hpp>
 #include <bcl/core/except.hpp>
 #include <bcl/core/GlobalPtr.hpp>
 #include <bcl/core/malloc.hpp>
