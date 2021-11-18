@@ -50,13 +50,13 @@ int main(int argc, char** argv) {
   srand48(BCL::rank());
   BCL::print("Generating matrix (%lu x %lu), alpha %lf, nnz_per_row %lu\n",
   	         m, k, alpha, nnz_per_row);
-  auto a = BCL::generate_matrix<value_type, index_type>(m, k, nnz_per_row, alpha, std::move(blocks[0]));
+  auto a = BCL::generate_matrix<value_type, index_type>(m, k, nnz_per_row, alpha, locks[0]);
 
 	BCL::print("Generated A (%lu x %lu matrix) with %lu nnz\n",
 		         a.shape()[0], a.shape()[1], a.nnz());
 
-	BCL::DMatrix<value_type> b({k, n}, std::move(blocks[1]));
-	BCL::DMatrix<value_type> c({m, n}, std::move(blocks[2]));
+	BCL::DMatrix<value_type> b({k, n}, blocks[1]);
+	BCL::DMatrix<value_type> c({m, n}, blocks[2]);
 
 	BCL::print("Multipyling by B (%lu x %lu dense matrix)\n",
 		         b.shape()[0], b.shape()[1]);

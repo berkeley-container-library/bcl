@@ -6,6 +6,12 @@
 
 #include <mpi.h>
 
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <unistd.h>
+
 #include "alloc.hpp"
 #include "comm.hpp"
 #include "ops.hpp"
@@ -31,6 +37,8 @@ uint64_t my_rank;
 uint64_t my_nprocs;
 
 namespace backend {
+
+int shm_fd;
 
 uint64_t rank() {
   return BCL::my_rank;
@@ -105,8 +113,42 @@ void init(uint64_t shared_segment_size = 256, bool thread_safe = false) {
   MPI_Info_set(info, "same_size", "true");
   MPI_Info_set(info, "same_disp_unit", "true");
 
+  // Begin new SHM code
+
+  std::string shm_name = "BCL_Segment_" + std::to_string(BCL::rank());
+  // printf("Creating %s\n", shm_name.c_str());
+  fflush(stdout);
+  MPI_Barrier(BCL::comm);
+  BCL::backend::shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR | O_TRUNC, 0666);
+  if (BCL::backend::shm_fd == -1) {
+    throw std::runtime_error("shm_open failed");
+  }
+  ftruncate(BCL::backend::shm_fd, BCL::shared_segment_size);
+
+  // printf("Running on fd %d\n", BCL::backend::shm_fd);
+  fflush(stdout);
+  MPI_Barrier(BCL::comm);
+
+  smem_base_ptr = mmap(nullptr, BCL::shared_segment_size, PROT_READ | PROT_WRITE, MAP_SHARED, BCL::backend::shm_fd, 0);
+  if (smem_base_ptr == MAP_FAILED) {
+    throw std::runtime_error("mmap failed in init");
+  }
+  MPI_Barrier(BCL::comm);
+  // smem_base_ptr = malloc(BCL::shared_segment_size);
+
+  // printf("Got base ptr %p\n", smem_base_ptr);
+  fflush(stdout);
+  // usleep(100);
+  MPI_Barrier(BCL::comm);
+
+  MPI_Win_create(smem_base_ptr, BCL::shared_segment_size, 1, info, BCL::comm, &win);
+
+  // End
+
+/*
   MPI_Win_allocate(BCL::shared_segment_size, 1, info, BCL::comm,
     &smem_base_ptr, &win);
+    */
 
   bcl_finalized = false;
 
@@ -122,6 +164,14 @@ void finalize() {
   MPI_Win_unlock_all(win);
   MPI_Info_free(&info);
   MPI_Win_free(&win);
+
+  // Begin new SHM code
+  munmap(BCL::smem_base_ptr, BCL::shared_segment_size);
+  close(BCL::backend::shm_fd);
+  std::string shm_name = "BCL_Segment_" + std::to_string(BCL::rank());
+  shm_unlink(shm_name.c_str());
+  // End
+
   if (we_initialized && !mpi_finalized()) {
     MPI_Finalize();
   }

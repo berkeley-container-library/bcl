@@ -3,9 +3,13 @@
 #include <map>
 #include <unordered_map>
 #include <limits>
+#include <execution>
+#include <algorithm>
+#include <omp.h>
 
 namespace BCL {
 
+size_t num_fetches = 0;
 double row_comm = 0;
 
 template <typename T, typename MatrixType>
@@ -80,7 +84,6 @@ struct row_cache {
 
 template <typename T, typename I>
 void rowwise_gemm(const BCL::SPMatrix<T, I>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& c) {
-
 	// Because of local c opt.
 	assert(c.grid_shape()[1] == 1);
 
@@ -91,6 +94,7 @@ void rowwise_gemm(const BCL::SPMatrix<T, I>& a, const BCL::DMatrix<T>& b, BCL::D
 				I* row_ptr = a.row_ptr_[i*a.grid_shape()[1] + k].local();
 				I* col_ind = a.col_ind_[i*a.grid_shape()[1] + k].local();
 				T* local_c = c.tile_ptr(i, 0).local();
+				// #pragma omp parallel for shared(BCL::row_comm, BCL::num_fetches)
 				for (size_t i_ = 0; i_ < a.tile_shape(i, k)[0]; i_++) {
 					for (size_t j_ptr = row_ptr[i_]; j_ptr < row_ptr[i_+1]; j_ptr++) {
 						size_t k_ = col_ind[j_ptr];
@@ -104,14 +108,15 @@ void rowwise_gemm(const BCL::SPMatrix<T, I>& a, const BCL::DMatrix<T>& b, BCL::D
 						auto row = b.get_row(k__);
             auto end = std::chrono::high_resolution_clock::now();
             double duration = std::chrono::duration<double>(end - begin).count();
-            row_comm += duration;
+            BCL::row_comm += duration;
+            BCL::num_fetches++;
 
 						for (size_t j_ = 0; j_ < row.size(); j_++) {
 							// c(i__, j_) = c(i__, j_) + row[j_]*value;
 							local_c[i_*c.tile_shape()[1] + j_] += row[j_]*value;
 						}
 					}
-				}
+			  }
 			}
 		}
 	}
@@ -161,6 +166,7 @@ template <typename T, typename I>
 void batched_rowwise_gemm(const BCL::SPMatrix<T, I>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& c) {
 	// Because of local c opt.
 	assert(c.grid_shape()[1] == 1);
+	// assert(b.shape()[1] == 1);
 
 	for (size_t i = 0; i < a.grid_shape()[0]; i++) {
 		for (size_t k = 0; k < a.grid_shape()[1]; k++) {
@@ -183,12 +189,19 @@ void batched_rowwise_gemm(const BCL::SPMatrix<T, I>& a, const BCL::DMatrix<T>& b
 					}
 				}
 
+/*
+				std::sort(std::execution::par_unseq, indices.begin(), indices.end(), [](auto a, auto b) {
+					return std::get<1>(a) < std::get<1>(b);
+				});
+				*/
+
 				std::sort(indices.begin(), indices.end(), [](auto a, auto b) {
 					return std::get<1>(a) < std::get<1>(b);
 				});
 
         std::vector<T> row;
         size_t current_row = std::numeric_limits<size_t>::max();
+        // #pragma omp parallel for private(row, current_row)
 				for (const auto& v : indices) {
 					auto&& [i_, k_, value] = v;
 
@@ -198,6 +211,7 @@ void batched_rowwise_gemm(const BCL::SPMatrix<T, I>& a, const BCL::DMatrix<T>& b
 						auto end = std::chrono::high_resolution_clock::now();
 						double duration = std::chrono::duration<double>(end - begin).count();
 						row_comm += duration;
+						num_fetches++;
 						current_row = k_;
 					}
 

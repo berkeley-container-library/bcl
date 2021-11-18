@@ -53,10 +53,10 @@ int main(int argc, char** argv) {
   srand48(BCL::rank());
   BCL::print("Generating matrix (%lu x %lu), alpha %lf, nnz_per_row %lu\n",
   	         m, k, alpha, nnz_per_row);
-  auto a = BCL::generate_matrix<value_type, index_type>(m, k, nnz_per_row, alpha, BCL::NewBlockRow{});
+  auto a = BCL::generate_matrix<value_type, index_type>(m, k, nnz_per_row, alpha, blocks[0]);
 
-	BCL::DMatrix<value_type> b({k, n}, BCL::NewBlockRow{});
-	BCL::DMatrix<value_type> c({m, n}, BCL::NewBlockRow{});
+	BCL::DMatrix<value_type> b({k, n}, blocks[1]);
+	BCL::DMatrix<value_type> c({m, n}, blocks[2]);
 
 	BCL::print("Generated A (%lu x %lu matrix) with %lu nnz\n",
 		         a.shape()[0], a.shape()[1], a.nnz());
@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
 
 	BCL::print("Counted %lu real nonzeros\n", real_nnz);
 
-	size_t number_of_samples = 5;
+	size_t number_of_samples = 1;
 
 	std::vector<double> times;
 
@@ -96,9 +96,7 @@ int main(int argc, char** argv) {
 
 	  BCL::barrier();
 		auto begin = std::chrono::high_resolution_clock::now();
-		// BCL::rowwise_gemm(a, b, c);
-		// BCL::cached_rowwise_gemm(a, b, c, cache_size);
-		BCL::batched_rowwise_gemm(a, b, c);
+		BCL::gemm(a, b, c);
 		BCL::barrier();
 		auto end = std::chrono::high_resolution_clock::now();
 		double duration = std::chrono::duration<double>(end - begin).count();
@@ -113,22 +111,22 @@ int main(int argc, char** argv) {
 
 		size_t bytes_fetched = BCL::num_fetches*n*sizeof(value_type);
 		double gb_s = (1.0e-9*bytes_fetched) / BCL::row_comm;
-		/*
 		fprintf(stderr, "(%lu) %lf GB/s %lu bytes fetched from in %lf seconds\n",
 			      BCL::rank(), gb_s, bytes_fetched, BCL::row_comm);
     fflush(stderr);
-    BCL::barrier();
-    fflush(stderr);
-    usleep(100);
-    BCL::barrier();
-    */
 		times.push_back(duration);
 	}
 
 	BCL::barrier();
+	fflush(stdout);
+	fflush(stderr);
+	BCL::barrier();
+	usleep(10);
+	BCL::barrier();
 
 	std::sort(times.begin(), times.end());
 
+	BCL::print("Matrix Multiply took %lf s (median)\n", times[times.size()/2]);
 
 	size_t total_lookups = a.nnz();
 	size_t lookup_bytes = sizeof(value_type)*b.shape()[1];
@@ -140,7 +138,6 @@ int main(int argc, char** argv) {
 	double actual_gb = 1e-9*actual_lookup_bytes;
 	double actual_gb_s = actual_gb / BCL::row_comm;
 
-	BCL::print("Matrix Multiply took %lf s (median)\n", times[times.size()/2]);
 	BCL::print("%lu lookups of %lu bytes (%lf GB/s) (~%lu actual lookups for %lf GB/s [%lf / proc])\n",
 		         total_lookups, lookup_bytes, gb_s,
 		         actual_lookup_bytes / (n*sizeof(value_type)), actual_gb_s, actual_gb_s / BCL::nprocs());
