@@ -41,7 +41,7 @@ inline std::remove_const_t<T> rget(GlobalPtr<T> src) {
 }
 
 template <typename T, typename Allocator = BCL::bcl_allocator<T>>
-inline future<std::vector<T, Allocator>> arget(GlobalPtr<T> src, size_t size) {
+inline future<std::vector<T, Allocator>> arget(GlobalPtr<std::add_const_t<T>> src, size_t size) {
   std::vector<T, Allocator> dst(size);
   BCL::request request = async_read(src, dst.data(), size);
   return BCL::future<std::vector<T, Allocator>>(std::move(dst), std::move(request));

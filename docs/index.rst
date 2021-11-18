@@ -46,3 +46,6 @@ Data Structures
 
 .. doxygenclass:: BCL::DMatrix
   :members:
+
+.. doxygenclass:: BCL::SPMatrix
+  :members:

@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
 		  size_t row_num = i % matrix.tile_shape()[0];
 		  printf("Getting row %lu, which should be row %lu within tile %lu:\n",
 		  	     i, row_num, tile_num);
-		  std::vector<float> row = matrix.get_tile_row(tile_num, 0, row_num);
+		  std::vector<float> row = matrix.get_tile_row({tile_num, 0}, row_num);
 		  print_vec(row);
 	  }
   }

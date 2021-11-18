@@ -81,7 +81,7 @@ class DExpr;
 template <typename E>
 class DTranspose;
 
-/// Distributed dense matrix data structure.
+/// Distributed dense matrix data structure storing elements of type `T`.
 template <typename T>
 class DMatrix : public DExpr<DMatrix<T>> {
 public:
@@ -255,7 +255,7 @@ public:
 
   template <typename Allocator = BCL::bcl_allocator<T>>
   auto arget_tile_row(size_t i, size_t j, size_t row) const {
-    return BCL::arget<T, Allocator>(tile_ptr({i, j}) + row*tile_shape()[1], tile_shape(i, j)[1]);
+    return BCL::arget<T, Allocator>(tile_ptr({i, j}) + row*tile_shape()[1], tile_shape({i, j})[1]);
   }
 
   /// Return a reference to element `index[0]`, `index[1]` of the matrix.

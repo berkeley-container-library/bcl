@@ -62,6 +62,8 @@ public:
   }
 };
 
+/// Distributed sparse matrix data structure storing elements of type `T`.
+/// Indices are stored using integral type `I`.
 template <typename T, typename I = int>
 class SPMatrix {
 public:
@@ -95,38 +97,41 @@ public:
   SPMatrix(const SPMatrix&) = delete;
   SPMatrix(SPMatrix&&) = default;
 
-  template <typename Blocking, typename TeamType>
-  SPMatrix(const std::string& fname, Blocking&& blocking, const TeamType& team,
-           FileFormat format = FileFormat::Unknown) :
+  /// Construct a distributed sparse matrix matching the
+  /// sparse matrix stored in the file at path `fname`.
+  /// The optional arguments `blocking` and `team` determine the tile distribution
+  /// strategy and set of processes among which the matrix is distributed, respectively.
+  /// The optional argument `format` describes the storage format of the file.
+  template <typename Blocking = BCL::BlockOpt, typename TeamType = BCL::WorldTeam>
+  SPMatrix(std::string fname, Blocking&& blocking = BCL::BlockOpt(),
+           TeamType&& team = BCL::WorldTeam(), FileFormat format = FileFormat::Unknown) :
            team_ptr_(team.clone()) {
     init(fname, std::forward<Blocking>(blocking), format);
   }
 
-  template <typename Blocking = decltype(BCL::BlockOpt())>
+/*
+  template <typename Blocking = BCL::BlockOpt>
   SPMatrix(std::string fname, Blocking&& blocking = BCL::BlockOpt(),
            FileFormat format = FileFormat::Unknown) :
           team_ptr_(new BCL::WorldTeam()) {
     init(fname, std::forward<Blocking>(blocking), format);
   }
+  */
 
-  // XXX: in progress, initialize with an empty matrix
-  template <typename Blocking, typename TeamType>
-  SPMatrix(matrix_dim dim, Blocking&& blocking, const TeamType& team) :
+  /// Constructed a distributed sparse matrix of dimension `dim[0] x dim[1]`.
+  /// The optional arguments `blocking` and `team` determine the tile distribution
+  /// strategy and set of processes among which the matrix is distributed, respectively.
+  template <typename Blocking = BCL::BlockOpt, typename TeamType = BCL::WorldTeam>
+  SPMatrix(matrix_dim dim, Blocking&& blocking = Blocking(), TeamType&& team = TeamType()) :
            team_ptr_(team.clone()) {
     init_with_zero(dim[0], dim[1], std::forward<Blocking>(blocking));
   }
 
-  template <typename U, typename Blocking = decltype(BCL::BlockOpt()),
+  template <typename U, typename Blocking = BCL::BlockOpt,
              __BCL_REQUIRES(std::is_integral_v<U>)>
   SPMatrix(std::initializer_list<U> dim, Blocking&& blocking = BCL::BlockOpt()) :
            team_ptr_(new BCL::WorldTeam()) {
     init_with_zero(*dim.begin(), *(dim.begin() + 1), std::forward<Blocking>(blocking));
-  }
-
-  template <typename Blocking = decltype(BCL::BlockOpt())>
-  SPMatrix(matrix_dim dim, Blocking&& blocking = BCL::BlockOpt()) :
-           team_ptr_(new BCL::WorldTeam()) {
-    init_with_zero(dim[0], dim[1], std::forward<Blocking>(blocking));
   }
 
   void init_with_zero(size_t m, size_t n, Block&& blocking) {
@@ -348,6 +353,7 @@ public:
     nnz_ = std::accumulate(nnzs_.begin(), nnzs_.end(), size_type(0));
   }
 
+  /// Return the shape of the sparse matrix
   matrix_dim shape() const noexcept {
     return {m_, n_};
   }
@@ -368,6 +374,7 @@ public:
     return vals_[index[0]*grid_shape()[1] + index[1]].rank;
   }
 
+  /// Return the number of nonzero elements stored in the sparse matrix
   std::size_t nnz() const noexcept {
     return nnz_;
   }
