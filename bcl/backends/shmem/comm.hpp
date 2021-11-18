@@ -18,7 +18,7 @@ namespace BCL {
 // Read size T's from src -> dst
 // Blocks until dst is ready.
 template <typename T>
-inline void read(const GlobalPtr <T> &src, T *dst, const size_t size) {
+inline void read(GlobalPtr <std::add_const_t<T>> src, T* dst, std::size_t size) {
   BCL_DEBUG(
     if (src.rank > BCL::backend::nprocs()) {
       throw debug_error("BCL read(): request to read from rank " +
@@ -35,7 +35,7 @@ inline void read(const GlobalPtr <T> &src, T *dst, const size_t size) {
 // Read size T's from src -> dst
 // Blocks until dst is ready.
 template <typename T>
-inline void atomic_read(const GlobalPtr <T> &src, T *dst, const size_t size) {
+inline void atomic_read(GlobalPtr<std::add_const_t<T>> src, T* dst, std::size_t size) {
   BCL_DEBUG(
     if (src.rank > BCL::backend::nprocs()) {
       throw debug_error("atomic_read(): request to read from rank "
@@ -51,7 +51,7 @@ inline void atomic_read(const GlobalPtr <T> &src, T *dst, const size_t size) {
 // guarantee that memop is complete
 // until BCL::barrier()
 template <typename T>
-inline void write(const T *src, const GlobalPtr <T> &dst, const size_t size) {
+inline void write(const T *src, GlobalPtr<T> dst, std::size_t size) {
   BCL_DEBUG(
     if (dst.rank > BCL::backend::nprocs()) {
         throw debug_error("BCL write(): request to write to rank " +
@@ -66,13 +66,13 @@ inline void write(const T *src, const GlobalPtr <T> &dst, const size_t size) {
 }
 
 template <typename T>
-inline BCL::request async_read(const GlobalPtr<T>& src, T* dst, size_t size) {
+inline BCL::request async_read(GlobalPtr<std::add_const_t<T>> src, T* dst, std::size_t size) {
   shmem_getmem_nbi(dst, src.rptr(), sizeof(T)*size, src.rank);
   return BCL::request();
 }
 
 template <typename T>
-inline BCL::request async_write(const T* src, const GlobalPtr<T>& dst, size_t size) {
+inline BCL::request async_write(const T* src, GlobalPtr<T> dst, std::size_t size) {
   shmem_putmem_nbi(dst.rptr(), src, size*sizeof(T), dst.rank);
   return BCL::request();
 }
@@ -151,12 +151,12 @@ inline int allreduce(const int &val, std::plus <int> op) {
 }
 
 template <typename T>
-T fetch_and_op(const GlobalPtr <T> ptr, const T &val, const atomic_op <T> &op) {
+T fetch_and_op(GlobalPtr<T> ptr, const T &val, const atomic_op <T> &op) {
   return op.shmem_atomic_op(ptr, val);
 }
 
 template <typename T>
-future<T> arfetch_and_op(const GlobalPtr <T> ptr, const T &val, const atomic_op <T> &op) {
+future<T> arfetch_and_op(GlobalPtr<T> ptr, const T &val, const atomic_op <T> &op) {
   static_assert(std::is_same<T, int32_t>::value);
   future<T> future;
   int rv =  op.shmem_atomic_op(ptr, val);
@@ -164,7 +164,7 @@ future<T> arfetch_and_op(const GlobalPtr <T> ptr, const T &val, const atomic_op 
   return std::move(future);
 }
 
-int int_compare_and_swap(const GlobalPtr <int> ptr, int old_val,
+int int_compare_and_swap(GlobalPtr<int> ptr, int old_val,
   const int new_val) {
   old_val = shmem_int_cswap(ptr.rptr(), old_val, new_val, ptr.rank);
   return old_val;
@@ -178,7 +178,7 @@ short short_compare_and_swap(const GlobalPtr <short> ptr, short old_val,
 }
 */
 
-uint64_t uint64_compare_and_swap(const GlobalPtr <uint64_t> ptr, uint64_t old_val,
+uint64_t uint64_compare_and_swap(GlobalPtr<uint64_t> ptr, uint64_t old_val,
   const uint64_t new_val) {
   long long ov = *((long long *) &old_val);
   long long nv = *((long long *) &old_val);

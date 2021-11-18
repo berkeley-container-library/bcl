@@ -27,7 +27,7 @@ extern void barrier();
 // Read size T's from src -> dst
 // Blocks until dst is ready.
 template <typename T>
-inline void read(GlobalPtr<std::add_const_t<T>> src, T *dst, const size_t size) {
+inline void read(GlobalPtr<std::add_const_t<T>> src, T *dst, std::size_t size) {
   BCL_DEBUG(
     if (src.rank > BCL::backend::nprocs()) {
       throw debug_error("BCL read(): request to read from rank " +
@@ -66,7 +66,7 @@ inline void read(GlobalPtr<std::add_const_t<T>> src, T *dst, const size_t size) 
 // Read size T's from src -> dst
 // Blocks until dst is ready.
 template <typename T>
-inline void atomic_read(GlobalPtr<std::add_const_t<T>> src, T *dst, size_t size) {
+inline void atomic_read(GlobalPtr<std::add_const_t<T>> src, T *dst, std::size_t size) {
   BCL_DEBUG(
     if (src.rank > BCL::backend::nprocs()) {
       throw debug_error("atomic_read(): request to read from rank "
