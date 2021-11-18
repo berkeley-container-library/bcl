@@ -22,4 +22,27 @@ Communication
 
 .. doxygenfunction:: BCL::dealloc
 
-.. doxygenfunction:: BCL::reinterpret_pointer_cast(const GlobalPtr<U>&)
+.. doxygenfunction:: BCL::reinterpret_pointer_cast(GlobalPtr<U>)
+
+Example
+~~~~~~~
+
+.. code-block:: C++
+
+   #include <bcl/bcl.hpp>
+   int main(int argc, char** argv) {
+     BCL::init();
+     BCL::GlobalPtr<char> cptr = BCL::alloc<char>(100);
+
+     BCL::GlobalPtr<int> iptr = BCL::reinterpret_pointer_cast<int>(cptr);
+
+     BCL::finalize();
+     return 0;
+   }
+
+
+Data Structures
+---------------
+
+.. doxygenclass:: BCL::DMatrix
+  :members:

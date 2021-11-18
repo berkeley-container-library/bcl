@@ -32,6 +32,7 @@ public:
   using value_type = T;
   using pointer = GlobalPtr<T>;
   using reference = GlobalRef<T>;
+  using const_reference = GlobalRef<std::add_const_t<T>>;
 
   GlobalRef(BCL::GlobalPtr<T> ptr) : ptr_(ptr) {
     BCL_DEBUG(
@@ -39,6 +40,11 @@ public:
         throw debug_error("GlobalRef() constructor created a null reference.");
       }
     )
+  }
+
+  template <__BCL_REQUIRES(!std::is_const_v<T>)>
+  operator const_reference() const {
+    return const_reference(ptr_);
   }
 
   operator T() const {

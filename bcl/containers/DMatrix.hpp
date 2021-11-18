@@ -81,8 +81,7 @@ class DExpr;
 template <typename E>
 class DTranspose;
 
-// TODO: properly handle LDA.
-
+/// Distributed dense matrix data structure.
 template <typename T>
 class DMatrix : public DExpr<DMatrix<T>> {
 public:
@@ -192,15 +191,14 @@ public:
     }
   }
 
-  template <typename Blocking, typename TeamType>
-  DMatrix(matrix_dim dim, Blocking&& blocking,
-          const TeamType& team) : m_(dim[0]), n_(dim[1]), team_ptr_(team.clone()) {
-    init(dim[0], dim[1], std::forward<Blocking>(blocking));
-  }
-
-  template <typename Blocking = decltype(BCL::BlockOpt())>
-  DMatrix(matrix_dim dim, Blocking&& blocking = BCL::BlockOpt()) : m_(dim[0]), n_(dim[1]),
-          team_ptr_(new BCL::WorldTeam()) {
+  /// Construct a distributed dense matrix of dimension `dim[0]` x `dim[1]`.
+  /// The optional argument `blocking` describes how the matrix should be distributed, and
+  /// the optional argument `team` controls on which subset of processes the matrix is stored.
+  template <typename Blocking = BCL::BlockOpt,
+            typename TeamType = BCL::WorldTeam>
+  DMatrix(matrix_dim dim, Blocking&& blocking = Blocking(),
+          TeamType&& team = TeamType()) : m_(dim[0]), n_(dim[1]),
+          team_ptr_(team.clone()) {
     init(dim[0], dim[1], std::forward<Blocking>(blocking));
   }
 
@@ -260,6 +258,7 @@ public:
     return BCL::arget<T, Allocator>(tile_ptr({i, j}) + row*tile_shape()[1], tile_shape(i, j)[1]);
   }
 
+  /// Return a reference to element `index[0]`, `index[1]` of the matrix.
   GlobalRef<T> operator[](matrix_dim index) {
     size_t pi = index[0] / tile_shape()[0];
     size_t pj = index[1] / tile_shape()[1];
@@ -323,8 +322,10 @@ public:
                                {pgrid_shape()[0], pgrid_shape()[1]}), *team_ptr_);
   }
 
+  /// Multiply the matrix by another matrix or symbolic matrix view, returning
+  /// the result as a new matrix.
   template <typename U>
-  DMatrix<value_type> dot(const DExpr<U>& other) const {
+  [[nodiscard]] DMatrix<value_type> dot(const DExpr<U>& other) const {
     // Inner dimensions must match.
     assert(shape()[1] == other.shape()[0]);
     // Inner dimensions of the tiles we're multiplying must match.
@@ -340,6 +341,7 @@ public:
     return result;
   }
 
+  /// Apply the functor `fn` in place on each element of the matrix.
   template <typename Fn>
   DMatrix& apply_inplace(Fn&& fn) {
     for (size_t i = 0; i < ptrs_.size(); i++) {
@@ -356,10 +358,13 @@ public:
     return *this;
   }
 
+  /// Return a symbolic *transpose view* of the matrix.
   DTranspose<DMatrix<T>> transpose() {
     return DTranspose<DMatrix<T>>(*this);
   }
 
+  /// Return a new matrix equal to the current matrix with `fn` applied to each
+  /// element.
   template <typename Fn>
   [[nodiscard]] DMatrix<T> apply(Fn&& fn) const {
     DMatrix<T> result({shape()[0], shape()[1]},
@@ -380,8 +385,10 @@ public:
     return result;
   }
 
+  /// Create a new matrix equal to the result of the binary operation `fn` applied
+  /// element-wise to the elements of the current matrix and matrix `other`.
   template <typename Fn>
-  DMatrix<T> binary_op(const DMatrix<T>& other, const Fn& bin_op) const {
+  DMatrix<T> binary_op(const DMatrix<T>& other, Fn&& fn) const {
     assert(shape() == other.shape());
     assert(tile_shape() == other.tile_shape());
     assert(pm() == pn());
@@ -396,15 +403,17 @@ public:
         T* bptr = other.ptrs_[i].local();
         T* cptr = result.ptrs_[i].local();
         for (size_t j = 0; j < tile_size(); j++) {
-          cptr[j] = bin_op(aptr[j], bptr[j]);
+          cptr[j] = fn(aptr[j], bptr[j]);
         }
       }
     }
     return result;
   }
 
+  /// Apply the binary operation `fn` elementwise to the current matrix and
+  /// `other`, storing the result in the current matrix.
   template <typename Fn>
-  DMatrix<T>& binary_op_inplace(const DMatrix<T>& other, const Fn& bin_op) {
+  DMatrix<T>& binary_op_inplace(const DMatrix<T>& other, Fn&& fn) {
     if (!team().in_team()) {
       return *this;
     }
@@ -417,7 +426,7 @@ public:
         T* aptr = ptrs_[i].local();
         T* bptr = other.ptrs_[i].local();
         for (size_t j = 0; j < tile_size(); j++) {
-          aptr[j] = bin_op(aptr[j], bptr[j]);
+          aptr[j] = fn(aptr[j], bptr[j]);
         }
       }
     }
@@ -452,6 +461,7 @@ public:
     return false;
   }
 
+  /// Return the shape of the matrix
   matrix_dim shape() const noexcept {
     return {m_, n_};
   }
@@ -504,12 +514,15 @@ public:
     return my_matrix;
   }
 
+  /// Print the matrix to the terminal
   void print() const {
-    for (size_t i = 0; i < shape()[0]; i++) {
-      for (size_t j = 0; j < shape()[1]; j++) {
-        std::cout << (*this)(i, j) << " ";
+    if (BCL::rank() == 0) {
+      for (size_t i = 0; i < shape()[0]; i++) {
+        for (size_t j = 0; j < shape()[1]; j++) {
+          std::cout << (*this)[{i, j}] << " ";
+        }
+        std::cout << std::endl;
       }
-      std::cout << std::endl;
     }
   }
 
