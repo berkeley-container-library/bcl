@@ -45,9 +45,9 @@ inline constexpr bool is_distributed_sparse_matrix_v = is_a_spmatrix_impl_<std::
 template <typename AMatrixType,
           typename BMatrixType,
           typename CMatrixType,
-          __BCL_REQUIRES(is_distributed_sparse_matrix_v<AMatrixType> &&
-                        is_distributed_sparse_matrix_v<BMatrixType> &&
-                        is_distributed_sparse_matrix_v<CMatrixType>)>
+          __BCL_REQUIRES(is_distributed_dense_matrix_v<AMatrixType> &&
+                         is_distributed_dense_matrix_v<BMatrixType> &&
+                         is_distributed_dense_matrix_v<CMatrixType>)>
 inline void gemm_cowns(AMatrixType&& a, BMatrixType&& b, CMatrixType&& c) {
   static_assert(std::is_same_v<typename std::decay_t<AMatrixType>::scalar_type,
                                typename std::decay_t<BMatrixType>::scalar_type>);
