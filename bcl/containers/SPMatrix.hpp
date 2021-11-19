@@ -575,6 +575,29 @@ public:
     printf("  Forming a %lu x %lu tile grid\n", grid_shape()[0], grid_shape()[1]);
     printf("  On a %lu x %lu processor grid\n", pgrid_shape()[0], pgrid_shape()[1]);
   }
+
+  /// Print distributed sparse matrix data structure
+  void print() const {
+    BCL::barrier();
+    if (BCL::rank() == 0) {
+      for (size_t g_i = 0; g_i < grid_shape()[0]; g_i++) {
+        for (size_t g_j = 0; g_j < grid_shape()[1]; g_j++) {
+          auto x = get_tile({g_i, g_j});
+
+          for (size_t i_ = 0; i_ < tile_shape({g_i, g_j})[0]; i_++) {
+            for (I j_ptr = x.row_ptr_[i_]; j_ptr < x.row_ptr_[i_+1]; j_ptr++) {
+              I j_ = x.col_ind_[j_ptr];
+              T v = x.vals_[j_ptr];
+              size_t i = i_ + tile_shape()[0]*g_i;
+              I j = j_ + tile_shape()[1]*g_j;
+              std::cout << "(" << i << ", " << j << "): " << v << std::endl;
+            }
+          }
+        }
+      }
+    }
+    BCL::barrier();
+  }
 };
 
 }
