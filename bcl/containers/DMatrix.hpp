@@ -14,64 +14,7 @@
 
 #include <bcl/containers/algorithms/gemm.hpp>
 #include <bcl/containers/detail/Blocking.hpp>
-
-namespace BCL
-{
-
-template <typename T = std::size_t,
-          __BCL_REQUIRES(std::is_integral_v<T> && !std::is_reference_v<T>)>
-class index {
-public:
-  using index_type = T;
-
-  using first_type = T;
-  using second_type = T;
-
-  index_type operator[](index_type dim) const noexcept {
-    if (dim == 0) {
-      return first;
-    } else {
-      return second;
-    }
-  }
-
-  template <typename U,
-            __BCL_REQUIRES(std::is_integral_v<U> &&
-                 std::numeric_limits<U>::max() >= std::numeric_limits<T>::max())
-            >
-  operator index<U>() const noexcept {
-    return index<U>(first, second);
-  }
-
-  index(index_type first, index_type second) : first(first), second(second) {}
-
-  bool operator==(index other) const noexcept {
-    return first == other.first && second == other.second;
-  }
-
-  index() = default;
-  ~index() = default;
-  index(const index&) = default;
-  index& operator=(const index&) = default;
-  index(index&&) = default;
-  index& operator=(index&&) = default;
-
-  index_type first;
-  index_type second;
-};
-
-} // end BCL
-
-namespace std {
-
-template <std::size_t I, typename T,
-          __BCL_REQUIRES(I <= 1)>
-size_t get(BCL::index<T> idx)
-{
-  return idx[I];
-}
-
-} // end std
+#include <bcl/containers/detail/index.hpp>
 
 namespace BCL {
 
@@ -79,7 +22,7 @@ template <typename E>
 class DExpr;
 
 template <typename E>
-class DTranspose;
+class DTransposeView;
 
 /// Distributed dense matrix data structure storing elements of type `T`.
 template <typename T>
@@ -88,7 +31,7 @@ public:
 
   using matrix_dim = index<std::size_t>;
 
-  using value_type = T;
+  using scalar_type = T;
 
   std::vector<BCL::GlobalPtr<T>> ptrs_;
 
@@ -194,7 +137,7 @@ public:
   /// Construct a distributed dense matrix of dimension `dim[0]` x `dim[1]`.
   /// The optional argument `blocking` describes how the matrix should be distributed, and
   /// the optional argument `team` controls on which subset of processes the matrix is stored.
-  template <typename Blocking = BCL::BlockOpt,
+  template <typename Blocking = BCL::BlockSquare,
             typename TeamType = BCL::WorldTeam>
   DMatrix(matrix_dim dim, Blocking&& blocking = Blocking(),
           TeamType&& team = TeamType()) : m_(dim[0]), n_(dim[1]),
@@ -302,43 +245,31 @@ public:
                             {pgrid_shape()[1], pgrid_shape()[0]});
   }
 
-  DMatrix<value_type> complementary(size_t m, size_t n) const {
+  DMatrix<T> complementary(size_t m, size_t n) const {
     assert(m == shape()[1]);
-    return DMatrix<value_type>(m, n,
-                              BCL::BlockCustom({tile_shape()[1], tile_shape()[0]},
-                              {pgrid_shape()[1], pgrid_shape()[0]}), *team_ptr_);
+    return DMatrix<T>(m, n,
+                      BCL::BlockCustom({tile_shape()[1], tile_shape()[0]},
+                      {pgrid_shape()[1], pgrid_shape()[0]}), *team_ptr_);
   }
 
   template <typename U>
-  DMatrix<value_type> dry_product(const DExpr<U>& other) const {
+  DMatrix<T> dry_product(const DExpr<U>& other) const {
     // Inner dimensions must match.
     assert(shape()[1] == other.shape()[0]);
     // Inner dimensions of the tiles we're multiplying must match.
     assert(grid_shape()[1] == other.grid_shape()[0]);
     assert(tile_shape()[1] == other.tile_shape()[0]);
 
-    return DMatrix<value_type>(shape()[0], other.shape()[1],
-                               BCL::BlockCustom({tile_shape()[0], other.tile_shape()[1]},
-                               {pgrid_shape()[0], pgrid_shape()[1]}), *team_ptr_);
+    return DMatrix<T>(shape()[0], other.shape()[1],
+                      BCL::BlockCustom({tile_shape()[0], other.tile_shape()[1]},
+                      {pgrid_shape()[0], pgrid_shape()[1]}), *team_ptr_);
   }
 
   /// Multiply the matrix by another matrix or symbolic matrix view, returning
   /// the result as a new matrix.
-  template <typename U>
-  [[nodiscard]] DMatrix<value_type> dot(const DExpr<U>& other) const {
-    // Inner dimensions must match.
-    assert(shape()[1] == other.shape()[0]);
-    // Inner dimensions of the tiles we're multiplying must match.
-    assert(grid_shape()[1] == other.grid_shape()[0]);
-    assert(tile_shape()[1] == other.tile_shape()[0]);
-
-    DMatrix<value_type> result(shape()[0], other.shape()[1],
-                               pgrid_shape()[0], pgrid_shape()[1],
-                               tile_shape()[0], other.tile_shape()[1]);
-    result = 0;
-
-    BCL::experimental::gemm(*this, other, result);
-    return result;
+  template <typename MatrixType>
+  [[nodiscard]] auto dot(MatrixType&& other) const {
+    return BCL::experimental::gemm_two_args_impl_(*this, std::forward<MatrixType>(other));
   }
 
   /// Apply the functor `fn` in place on each element of the matrix.
@@ -359,8 +290,8 @@ public:
   }
 
   /// Return a symbolic *transpose view* of the matrix.
-  DTranspose<DMatrix<T>> transpose() {
-    return DTranspose<DMatrix<T>>(*this);
+  DTransposeView<DMatrix<T>> transpose() {
+    return DTransposeView<DMatrix<T>>(*this);
   }
 
   /// Return a new matrix equal to the current matrix with `fn` applied to each
@@ -516,6 +447,7 @@ public:
 
   /// Print the matrix to the terminal
   void print() const {
+    BCL::barrier();
     if (BCL::rank() == 0) {
       for (size_t i = 0; i < shape()[0]; i++) {
         for (size_t j = 0; j < shape()[1]; j++) {
@@ -524,6 +456,7 @@ public:
         std::cout << std::endl;
       }
     }
+    BCL::barrier();
   }
 
   void print_details() const {
@@ -710,43 +643,38 @@ public:
 };
 
 template <typename E>
-class DTranspose : public DExpr<DTranspose<E>> {
+class DTransposeView : public DExpr<DTransposeView<E>> {
 public:
-  using value_type = typename E::value_type;
+  using scalar_type = typename E::scalar_type;
 
-  DTranspose(const E& mat) : mat_(mat) {}
+  DTransposeView(const E& mat) : mat_(mat) {}
 
-  auto shape() const {
+  index<std::size_t> shape() const {
     auto shp = mat_.shape();
-    std::swap(shp[0], shp[1]);
-    return shp;
+    return {shp[1], shp[0]};
   }
 
-  auto tile_shape() const {
+  index<std::size_t> tile_shape() const {
     auto shp = mat_.tile_shape();
-    std::swap(shp[0], shp[1]);
-    return shp;
+    return {shp[1], shp[0]};
   }
 
-  auto grid_shape() const {
+  index<std::size_t> grid_shape() const {
     auto shp = mat_.grid_shape();
-    std::swap(shp[0], shp[1]);
-    return shp;
+    return {shp[1], shp[0]};
   }
 
-  auto pgrid_shape() const {
+  index<std::size_t> pgrid_shape() const {
     auto shp = mat_.pgrid_shape();
-    std::swap(shp[0], shp[1]);
-    return shp;
+    return {shp[1], shp[0]};
   }
 
-  auto tile_shape(size_t i, size_t j) const {
-    auto shp = mat_.tile_shape(j, i);
-    std::swap(shp[0], shp[1]);
-    return shp;
+  index<std::size_t> tile_shape(index<std::size_t> idx) const {
+    auto shp = mat_.tile_shape({idx[1], idx[0]});
+    return {shp[1], shp[0]};
   }
 
-  auto transpose() const {
+  decltype(auto) transpose() const {
     return mat_;
   }
 
@@ -755,26 +683,15 @@ public:
   }
 
   // TODO: must signify transpose
-  auto arget_tile(size_t i, size_t j) const {
-    auto tupl = mat_.arget_tile(j, i);
+  auto arget_tile(index<std::size_t> index) const {
+    auto tupl = mat_.arget_tile({index[1], index[0]});
     std::get<1>(tupl) = is_transpose();
     return tupl;
   }
 
-  template <typename U>
-  DMatrix<value_type> dot(const DExpr<U>& other) const {
-    // Inner dimensions must match.
-    assert(shape()[1] == other.shape()[0]);
-    // Inner dimensions of the tiles we're multiplying must match.
-    assert(tile_shape()[1] == other.tile_shape()[0]);
-
-    DMatrix<value_type> result(shape()[0], other.shape()[1],
-                               pgrid_shape()[0], pgrid_shape()[1],
-                               tile_shape()[0], other.tile_shape()[1]);
-    result = 0;
-
-    BCL::experimental::gemm(*this, other, result);
-    return result;
+  template <typename MatrixType>
+  [[nodiscard]] auto dot(MatrixType&& other) const {
+    return BCL::experimental::gemm_two_args_impl_(*this, std::forward<MatrixType>(other));
   }
 
 private:

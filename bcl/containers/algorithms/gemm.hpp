@@ -5,9 +5,10 @@
 #pragma once
 
 #include <bcl/bcl.hpp>
-#include <bcl/containers/DMatrix.hpp>
+#include <bcl/containers/detail/Blocking.hpp>
 
 #include <bcl/containers/algorithms/cblas_wrapper.hpp>
+#include <bcl/containers/algorithms/spgemm.hpp>
 
 #include <cassert>
 
@@ -15,6 +16,9 @@ namespace BCL {
 
 template <typename T>
 class DMatrix;
+
+template <typename T, typename I>
+class SPMatrix;
 
 template <typename E>
 class DExpr;
@@ -26,33 +30,45 @@ enum BlasTrans {
   trans
 };
 
-template <typename T, typename E, typename V>
-void gemm_notrans_impl_(const BCL::DExpr<E>& a, const BCL::DExpr<V>& b, BCL::DMatrix<T>& c);
+template <typename T>
+inline constexpr bool is_distributed_dense_matrix_v = std::is_base_of_v<DExpr<std::decay_t<T>>, std::decay_t<T>>;
 
-template <typename T, typename E, typename V>
-void gemm(const BCL::DExpr<E>& a, const BCL::DExpr<V>& b, BCL::DMatrix<T>& c) {
-  gemm_notrans_impl_(a, b, c);
-}
+template <typename T>
+struct is_a_spmatrix_impl_ { static constexpr bool value = false; };
 
-template <typename T, typename E, typename V>
-void gemm_notrans_impl_(const BCL::DExpr<E>& a, const BCL::DExpr<V>& b, BCL::DMatrix<T>& c) {
-  assert(a.shape()[1] == b.shape()[0]);
+template <typename... Args>
+struct is_a_spmatrix_impl_<BCL::SPMatrix<Args...>> { static constexpr bool value = true; };
+
+template <typename T>
+inline constexpr bool is_distributed_sparse_matrix_v = is_a_spmatrix_impl_<std::decay_t<T>>::value;
+
+template <typename AMatrixType,
+          typename BMatrixType,
+          typename CMatrixType,
+          __BCL_REQUIRES(is_distributed_sparse_matrix_v<AMatrixType> &&
+                        is_distributed_sparse_matrix_v<BMatrixType> &&
+                        is_distributed_sparse_matrix_v<CMatrixType>)>
+inline void gemm_cowns(AMatrixType&& a, BMatrixType&& b, CMatrixType&& c) {
+  static_assert(std::is_same_v<typename std::decay_t<AMatrixType>::scalar_type,
+                               typename std::decay_t<BMatrixType>::scalar_type>);
+  static_assert(std::is_same_v<typename std::decay_t<BMatrixType>::scalar_type,
+                               typename std::decay_t<CMatrixType>::scalar_type>);
+
   // Inner dimensions of the tiles we're multiplying must match.
-  assert(a.grid_shape()[1] == b.grid_shape()[0]);
-  assert(a.tile_shape()[1] == b.tile_shape()[0]);
+  using T = typename std::decay_t<AMatrixType>::scalar_type;
 
-  if (!(a.shape()[0] == c.shape()[0] && a.shape()[1] == b.shape()[0] && b.shape()[1] == c.shape()[1])) {
-    throw std::runtime_error("SUMMA: ruh roh, you gave me matrices with mismatched dimensions.");
-  }
+  assert(a.grid_shape()[0] == c.grid_shape()[0] &&
+         a.grid_shape()[1] == b.grid_shape()[0] &&
+         b.grid_shape()[1] == c.grid_shape()[1]);
 
   for (size_t i = 0; i < c.grid_shape()[0]; i++) {
     for (size_t j = 0; j < c.grid_shape()[1]; j++) {
-      if (c.tile_ptr(i, j).is_local()) {
+      if (c.tile_ptr({i, j}).is_local()) {
 
         size_t k_offset = i + j;
-        auto buf_a = a.arget_tile(i, k_offset % a.grid_shape()[1]);
-        auto buf_b = b.arget_tile(k_offset % a.grid_shape()[1], j);
-        BCL::GlobalPtr<T> my_c = c.tile_ptr(i, j);
+        auto buf_a = a.arget_tile({i, k_offset % a.grid_shape()[1]});
+        auto buf_b = b.arget_tile({k_offset % a.grid_shape()[1], j});
+        BCL::GlobalPtr<T> my_c = c.tile_ptr({i, j});
         for (size_t k_ = 0; k_ < a.grid_shape()[1]; k_++) {
           size_t k = (k_ + k_offset) % a.grid_shape()[1];
 
@@ -63,8 +79,8 @@ void gemm_notrans_impl_(const BCL::DExpr<E>& a, const BCL::DExpr<V>& b, BCL::DMa
           bool b_trans = std::get<1>(buf_b);
 
           if (k_+1 < a.grid_shape()[1]) {
-            buf_a = a.arget_tile(i, (k+1) % a.grid_shape()[1]);
-            buf_b = b.arget_tile((k+1) % a.grid_shape()[1], j);
+            buf_a = a.arget_tile({i, (k+1) % a.grid_shape()[1]});
+            buf_b = b.arget_tile({(k+1) % a.grid_shape()[1], j});
           }
 
           CBLAS_TRANSPOSE transa, transb;
@@ -80,9 +96,9 @@ void gemm_notrans_impl_(const BCL::DExpr<E>& a, const BCL::DExpr<V>& b, BCL::DMa
           size_t lda = a.tile_shape()[1];
           size_t ldb = b.tile_shape()[1];
           size_t ldc = c.tile_shape()[1];
-          M = c.tile_shape(i, j)[0];
-          N = c.tile_shape(i, j)[1];
-          K = a.tile_shape(i, k)[1];
+          M = c.tile_shape({i, j})[0];
+          N = c.tile_shape({i, j})[1];
+          K = a.tile_shape({i, k})[1];
 
           cblas_gemm_wrapper_(CblasRowMajor, transa, transb,
                               M, N, K,
@@ -95,8 +111,26 @@ void gemm_notrans_impl_(const BCL::DExpr<E>& a, const BCL::DExpr<V>& b, BCL::DMa
   }
 }
 
+template <typename AMatrixType,
+          typename BMatrixType,
+          typename CMatrixType>
+inline void gemm(AMatrixType&& a, BMatrixType&& b, CMatrixType&& c) {
+  static_assert(std::is_same_v<typename std::decay_t<AMatrixType>::scalar_type,
+                               typename std::decay_t<BMatrixType>::scalar_type>);
+  static_assert(std::is_same_v<typename std::decay_t<BMatrixType>::scalar_type,
+                               typename std::decay_t<CMatrixType>::scalar_type>);
+
+  if (!(a.shape()[0] == c.shape()[0] && a.shape()[1] == b.shape()[0] && b.shape()[1] == c.shape()[1])) {
+    throw std::runtime_error("gemm: Attempting to multiply matrices with incompatible dimensions");
+  }
+
+  gemm_cowns(std::forward<AMatrixType>(a),
+             std::forward<BMatrixType>(b),
+             std::forward<CMatrixType>(c));
+}
+
 template <typename T>
-void slicing_gemm(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& c) {
+inline void slicing_gemm(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& c) {
   assert(a.shape()[0] == c.shape()[0]);
   assert(b.shape()[1] == c.shape()[1]);
   assert(a.shape()[1] == b.shape()[0]);
@@ -164,8 +198,8 @@ void slicing_gemm(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatr
 }
 
 template <typename T>
-void a_owns_gemm(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& c,
-                 std::vector<BCL::DMatrix<T>>& c_acc) {
+inline void a_owns_gemm(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& c,
+                        std::vector<BCL::DMatrix<T>>& c_acc) {
   assert(a.shape()[1] == b.shape()[0]);
   // Inner dimensions of the tiles we're multiplying must match.
   assert(a.grid_shape()[1] == b.grid_shape()[0]);
@@ -233,7 +267,7 @@ void a_owns_gemm(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatri
 }
 
 template <typename T>
-void summa(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& c) {
+inline void summa(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& c) {
   assert(a.shape()[1] == b.shape()[0]);
   // Inner dimensions of the tiles we're multiplying must match.
   assert(a.grid_shape()[1] == b.grid_shape()[0]);
@@ -303,13 +337,15 @@ void summa(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& 
 }
 
 template <typename T>
-void async_summa(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& c) {
+inline void async_summa(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatrix<T>& c) {
   assert(a.shape()[1] == b.shape()[0]);
   // Inner dimensions of the tiles we're multiplying must match.
   assert(a.grid_shape()[1] == b.grid_shape()[0]);
   assert(a.tile_shape()[1] == b.tile_shape()[0]);
 
-  if (!(a.shape()[0] == c.shape()[0] && a.shape()[1] == b.shape()[0] && b.shape()[1] == c.shape()[1])) {
+  if (!(a.shape()[0] == c.shape()[0] &&
+        a.shape()[1] == b.shape()[0] &&
+        b.shape()[1] == c.shape()[1])) {
     throw std::runtime_error("SUMMA: ruh roh, you gave me matrices with mismatched dimensions.");
   }
 
@@ -412,5 +448,49 @@ void async_summa(const BCL::DMatrix<T>& a, const BCL::DMatrix<T>& b, BCL::DMatri
   }
 }
 
+
+template <typename AMatrixType,
+          typename BMatrixType>
+inline auto gemm_two_args_impl_(AMatrixType&& a, BMatrixType&& b) {
+  static_assert(std::is_same_v<typename std::decay_t<AMatrixType>::scalar_type,
+                               typename std::decay_t<BMatrixType>::scalar_type>);
+
+  // Inner dimensions must match.
+  assert(a.shape()[1] == b.shape()[0]);
+  using T = typename std::decay_t<AMatrixType>::scalar_type;
+
+  if constexpr(is_distributed_dense_matrix_v<std::decay_t<AMatrixType>> &&
+               is_distributed_dense_matrix_v<std::decay_t<BMatrixType>>) {
+
+    DMatrix<T> result({a.shape()[0], b.shape()[1]},
+                      BCL::BlockCustom({a.tile_shape()[0], b.tile_shape()[1]},
+                                       {a.pgrid_shape()[0], b.pgrid_shape()[1]}));
+    result = 0;
+
+    BCL::experimental::gemm(std::forward<AMatrixType>(a), std::forward<BMatrixType>(b), result);
+    return result;
+  } else if (is_distributed_dense_matrix_v<std::decay_t<BMatrixType>>) {
+    // Sparse times dense
+    DMatrix<T> result({a.shape()[0], b.shape()[1]},
+                      BCL::BlockCustom({a.tile_shape()[0], b.tile_shape()[1]},
+                                       {a.pgrid_shape()[0], b.pgrid_shape()[1]}));
+    result = 0;
+
+    BCL::gemm_cowns(std::forward<AMatrixType>(a), std::forward<BMatrixType>(b), result);
+    return result;
+    assert(a.shape()[1] == b.shape()[0]);
+  } else if (is_distributed_dense_matrix_v<std::decay_t<AMatrixType>>) {
+    assert(false);
+    // Dense times sparse
+    // (Not implemented)
+  } else {
+    assert(false);
+    // Sparse times sparse
+  }
+  static_assert(!(is_distributed_dense_matrix_v<std::decay_t<AMatrixType>> &&
+                  is_distributed_sparse_matrix_v<std::decay_t<BMatrixType>>),
+                "Dense times sparse matrix multiplication not yet implemented.");
 }
-}
+
+} // end experimental
+} // end BCL

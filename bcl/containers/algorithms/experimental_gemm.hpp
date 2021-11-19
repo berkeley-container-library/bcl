@@ -3,6 +3,8 @@
 #include <map>
 #include <unordered_map>
 #include <limits>
+#include <bcl/containers/SPMatrix.hpp>
+#include <bcl/containers/DMatrix.hpp>
 
 namespace BCL {
 

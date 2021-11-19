@@ -19,8 +19,10 @@
 
 #include <bcl/containers/sequential/CSRMatrix.hpp>
 #include <bcl/containers/sequential/CSRMatrixMemoryMapped.hpp>
-#include <bcl/containers/sequential/SparseAccumulator.hpp>
+#include <bcl/containers/sequential/SparseHashAccumulator.hpp>
 #include <bcl/containers/detail/Blocking.hpp>
+#include <bcl/containers/detail/index.hpp>
+#include <bcl/containers/algorithms/gemm.hpp>
 
 namespace BCL
 {
@@ -68,10 +70,11 @@ template <typename T, typename I = int>
 class SPMatrix {
 public:
 
-  using matrix_dim = index<std::size_t>;
+  using matrix_dim = BCL::index<std::size_t>;
 
   using size_type = size_t;
   using index_type = I;
+  using scalar_type = T;
 
   // NOTE: vals_[i], col_ind_[i] are of size nnz_[i];
   std::vector<BCL::GlobalPtr<T>> vals_;
@@ -102,8 +105,8 @@ public:
   /// The optional arguments `blocking` and `team` determine the tile distribution
   /// strategy and set of processes among which the matrix is distributed, respectively.
   /// The optional argument `format` describes the storage format of the file.
-  template <typename Blocking = BCL::BlockOpt, typename TeamType = BCL::WorldTeam>
-  SPMatrix(std::string fname, Blocking&& blocking = BCL::BlockOpt(),
+  template <typename Blocking = BCL::BlockSquare, typename TeamType = BCL::WorldTeam>
+  SPMatrix(std::string fname, Blocking&& blocking = Blocking(),
            TeamType&& team = BCL::WorldTeam(), FileFormat format = FileFormat::Unknown) :
            team_ptr_(team.clone()) {
     init(fname, std::forward<Blocking>(blocking), format);
@@ -121,15 +124,15 @@ public:
   /// Constructed a distributed sparse matrix of dimension `dim[0] x dim[1]`.
   /// The optional arguments `blocking` and `team` determine the tile distribution
   /// strategy and set of processes among which the matrix is distributed, respectively.
-  template <typename Blocking = BCL::BlockOpt, typename TeamType = BCL::WorldTeam>
+  template <typename Blocking = BCL::BlockSquare, typename TeamType = BCL::WorldTeam>
   SPMatrix(matrix_dim dim, Blocking&& blocking = Blocking(), TeamType&& team = TeamType()) :
            team_ptr_(team.clone()) {
     init_with_zero(dim[0], dim[1], std::forward<Blocking>(blocking));
   }
 
-  template <typename U, typename Blocking = BCL::BlockOpt,
+  template <typename U, typename Blocking = BCL::BlockSquare,
              __BCL_REQUIRES(std::is_integral_v<U>)>
-  SPMatrix(std::initializer_list<U> dim, Blocking&& blocking = BCL::BlockOpt()) :
+  SPMatrix(std::initializer_list<U> dim, Blocking&& blocking = Blocking()) :
            team_ptr_(new BCL::WorldTeam()) {
     init_with_zero(*dim.begin(), *(dim.begin() + 1), std::forward<Blocking>(blocking));
   }
@@ -540,6 +543,13 @@ public:
 
     auto mat = acc.get_matrix(shape()[0], shape()[1]);
     return std::move(mat);
+  }
+
+  /// Multiply the matrix by another matrix or symbolic matrix view, returning
+  /// the result as a new matrix.
+  template <typename MatrixType>
+  [[nodiscard]] auto dot(MatrixType&& other) const {
+    return BCL::experimental::gemm_two_args_impl_(*this, std::forward<MatrixType>(other));
   }
 
   // Sanity check: count the number of nonzeros

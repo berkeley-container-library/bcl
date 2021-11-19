@@ -298,87 +298,46 @@ struct CSRMatrix {
 // NOTE: this does not work with random newlines at the end of the file.
 template <typename T, typename index_type, typename Allocator>
 void CSRMatrix<T, index_type, Allocator>::read_MatrixMarket(const std::string& fname, bool one_indexed) {
-  std::ifstream f;
 
-  f.open(fname.c_str());
+  auto matrix = matrix_io::mmread<T, index_type>(fname, one_indexed);
 
-  if (!f.is_open()) {
-    throw std::runtime_error("CSRMatrix::read_MatrixMarket cannot open " + fname);
-  }
-
-  std::string buf;
-
-  bool outOfComments = false;
-
-  while (!outOfComments) {
-    getline(f, buf);
-    regex_t regex;
-    int reti;
-
-    reti = regcomp(&regex, "^%", 0);
-    reti = regexec(&regex, buf.c_str(), 0, NULL, 0);
-
-    if (reti == REG_NOMATCH) {
-      outOfComments = true;
-    }
-  }
-
-  size_t m, n, nnz;
-  sscanf(buf.c_str(), "%lu %lu %lu", &m, &n, &nnz);
-
-  m_ = m;
-  n_ = n;
-  nnz_ = nnz;
-
-  vals_.resize(nnz_);
-  row_ptr_.resize(m_+1);
+  m_ = matrix.shape()[0];
+  n_ = matrix.shape()[1];
+  nnz_ = matrix.size();
+  row_ptr_.resize(shape()[0]+1);
   col_ind_.resize(nnz_);
+  vals_.resize(nnz_);
 
   row_ptr_[0] = 0;
-  size_t r = 0;
-  size_t c = 0;
-  size_t i0 = 0;
-  size_t j0 = 0;
-  while (getline(f, buf)) {
-    size_t i, j;
-    double v;
-    sscanf(buf.c_str(), "%lu %lu %lf", &i, &j, &v);
-    if (one_indexed) {
-      i--;
-      j--;
-    }
+  
+  size_type r = 0;
+  size_type c = 0;
+  for (auto iter = matrix.begin(); iter != matrix.end(); ++iter) {
+    auto&& [index, value] = *iter;
+    auto&& [i, j] = index;
 
-    if ((i == i0 && j < j0) || i < i0) {
-      throw std::runtime_error("CSRMatrix::read_MatrixMarket " + fname + " is not sorted.");
-    }
-    i0 = i;
-    j0 = j;
-
-    assert(c < nnz_);
-
-    vals_[c] = v;
+    vals_[c] = value;
     col_ind_[c] = j;
 
     while (r < i) {
-      if (r+1 >= m_+1) {
-        printf("Trying to write to %lu >= %lu\n", r+1, m_+1);
-        printf("Trying to write to %lu >= %lu indices %lu, %lu\n",
-               r+1, m_+1,
-               i, j);
-        fflush(stdout);
+      if (r+1 > m_) {
+        // TODO: exception?
+        // throw std::runtime_error("csr_matrix_impl_: given invalid matrix");
       }
-      assert(r+1 < m_+1);
       row_ptr_[r+1] = c;
       r++;
     }
     c++;
+
+    if (c > nnz_) {
+      // TODO: exception?
+      // throw std::runtime_error("csr_matrix_impl_: given invalid matrix");
+    }
   }
 
   for ( ; r < m_; r++) {
     row_ptr_[r+1] = nnz_;
   }
-
-  f.close();
 }
 
 template <typename T, typename index_type, typename Allocator>
