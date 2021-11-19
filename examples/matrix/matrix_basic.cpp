@@ -4,24 +4,30 @@
 
 #include <bcl/bcl.hpp>
 #include <bcl/containers/DMatrix.hpp>
+#include <bcl/containers/SPMatrix.hpp>
+
+float multiply_by_two(float x) {
+  return 2 * x;
+}
 
 int main(int argc, char** argv) {
-	// How big to make each process' shared segment, in MB.
-	size_t segment_size = 1024;
+  BCL::init();
 
-	BCL::init(segment_size);
+  BCL::DMatrix<float> a({8, 8});
+  BCL::DMatrix<float> b({8, 8});
 
-  // Create a distributed matrix of size 1024 x 1024
-	BCL::DMatrix<float> matrix({1024, 1024});
+  a = 1;
 
-  // Print information about tile size and distribution.
-  if (BCL::rank() == 0) {
-  	printf("Just created a %lu x %lu matrix.  Here's some info:\n",
-  		     matrix.shape()[0], matrix.shape()[1]);
-	  matrix.print_info();
-  }
+  BCL::print("Initial matrix contents:\n");
+  a.print();
 
-	BCL::finalize();
+  a.apply_inplace([](float x) { return x*23; });
 
-	return 0;
+  BCL::print("After multiplying by two:\n");
+  a.print();
+
+  a.apply_inplace([](float x) { return x*23; });
+
+  BCL::finalize();
+  return 0;
 }

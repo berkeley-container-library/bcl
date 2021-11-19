@@ -13,6 +13,7 @@
 #include <numeric>
 
 #include <bcl/core/detail/hash_functions.hpp>
+#include <bcl/containers/sequential/CSRMatrix.hpp>
 
 #include <bcl/containers/sequential/SimpleHash.hpp>
 

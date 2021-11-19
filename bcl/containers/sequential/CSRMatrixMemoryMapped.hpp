@@ -4,6 +4,7 @@
 #include <bcl/containers/sequential/CSRMatrix.hpp>
 
 #include <stdexcept>
+#include <memory>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -103,8 +104,8 @@ public:
   CSRMatrix<T, index_type> get_slice_impl_(size_type imin, size_type imax,
   	                                       size_type jmin,
                                            size_type jmax) {
-    using rebind_type = typename Allocator:: template rebind<index_type>;
-    using IAllocator = typename rebind_type::other;
+    // using rebind_type = typename Allocator:: template rebind<index_type>;
+    using IAllocator = typename std::allocator_traits<Allocator>:: template rebind_alloc<index_type>;
     std::vector<T, Allocator> vals;
     std::vector<index_type, IAllocator> row_ptr;
     std::vector<index_type, IAllocator> col_ind;

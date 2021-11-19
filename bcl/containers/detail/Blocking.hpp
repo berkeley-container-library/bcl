@@ -69,6 +69,8 @@ struct BlockSquare : public Block {
     tile_shape_ = tile_shape;
   }
 
+  BlockSquare() = default;
+
   std::vector<size_t> tile_shape() const override {
     return tile_shape_;
   }
@@ -78,6 +80,7 @@ struct BlockSquare : public Block {
   }
 
   void seed(size_t m, size_t n, size_t nprocs = BCL::nprocs()) {
+    tile_shape_ = {m, n};
     nprocs_ = nprocs;
     // XXX: this line causes Intel compiler to crash...
     // pgrid_shape_ = {std::sqrt(nprocs_), std::sqrt(nprocs_)};

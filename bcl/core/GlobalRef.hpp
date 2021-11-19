@@ -13,16 +13,26 @@ template <typename T>
 struct GlobalPtr;
 
 template <typename T>
-extern inline T rget(const GlobalPtr <T> &src);
+extern inline std::remove_const_t<T> rget(GlobalPtr<T> src);
 
 template <typename T>
-extern inline void rput(const T &src, const GlobalPtr <T> &dst);
+extern inline void rput(const T &src, GlobalPtr<T> dst);
 
 template <typename T>
 class GlobalRef {
 public:
 
-  BCL::GlobalPtr<T> ptr_;
+  GlobalRef() = delete;
+  ~GlobalRef() = default;
+  GlobalRef(const GlobalRef&) = default;
+  GlobalRef& operator=(const GlobalRef&) = default;
+  GlobalRef(GlobalRef&&) = default;
+  GlobalRef& operator=(GlobalRef&&) = default;
+
+  using value_type = T;
+  using pointer = GlobalPtr<T>;
+  using reference = GlobalRef<T>;
+  using const_reference = GlobalRef<std::add_const_t<T>>;
 
   GlobalRef(BCL::GlobalPtr<T> ptr) : ptr_(ptr) {
     BCL_DEBUG(
@@ -32,22 +42,28 @@ public:
     )
   }
 
+  template <__BCL_REQUIRES(!std::is_const_v<T>)>
+  operator const_reference() const {
+    return const_reference(ptr_);
+  }
+
   operator T() const {
     return BCL::rget(ptr_);
   }
 
-  GlobalRef &operator=(const T& value) {
+  reference operator=(const T& value) const {
+    // TODO: replace static_assert with requires() for C++20
+    static_assert(!std::is_const_v<T>);
     BCL::rput(value, ptr_);
     return *this;
   }
 
-  BCL::GlobalPtr<T> operator&() {
+  pointer operator&() const noexcept {
     return ptr_;
   }
 
-  const BCL::GlobalPtr<T> operator&() const {
-    return ptr_;
-  }
+private:
+  BCL::GlobalPtr<T> ptr_ = nullptr;
 };
 
 }

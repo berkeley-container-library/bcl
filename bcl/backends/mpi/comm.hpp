@@ -27,7 +27,7 @@ extern void barrier();
 // Read size T's from src -> dst
 // Blocks until dst is ready.
 template <typename T>
-inline void read(const GlobalPtr <T> &src, T *dst, const size_t size) {
+inline void read(GlobalPtr<std::add_const_t<T>> src, T *dst, std::size_t size) {
   BCL_DEBUG(
     if (src.rank > BCL::backend::nprocs()) {
       throw debug_error("BCL read(): request to read from rank " +
@@ -66,7 +66,7 @@ inline void read(const GlobalPtr <T> &src, T *dst, const size_t size) {
 // Read size T's from src -> dst
 // Blocks until dst is ready.
 template <typename T>
-inline void atomic_read(const GlobalPtr <T> &src, T *dst, size_t size) {
+inline void atomic_read(GlobalPtr<std::add_const_t<T>> src, T *dst, std::size_t size) {
   BCL_DEBUG(
     if (src.rank > BCL::backend::nprocs()) {
       throw debug_error("atomic_read(): request to read from rank "
@@ -98,7 +98,7 @@ inline void atomic_read(const GlobalPtr <T> &src, T *dst, size_t size) {
 // guarantee that memop is complete
 // until BCL::barrier()
 template <typename T>
-inline void write(const T *src, const GlobalPtr <T> &dst, size_t size) {
+inline void write(const T *src, GlobalPtr<T> dst, size_t size) {
   BCL_DEBUG(
     if (dst.rank > BCL::backend::nprocs()) {
       throw debug_error("BCL write(): request to write to rank " +
@@ -130,7 +130,7 @@ inline void write(const T *src, const GlobalPtr <T> &dst, size_t size) {
 }
 
 template <typename T>
-inline BCL::request async_read(const GlobalPtr<T>& src, T* dst, size_t size) {
+inline BCL::request async_read(GlobalPtr<std::add_const_t<T>> src, T* dst, size_t size) {
   MPI_Request request;
 
   int error_code = MPI_Rget(dst, size*sizeof(T), MPI_CHAR,
@@ -145,7 +145,7 @@ inline BCL::request async_read(const GlobalPtr<T>& src, T* dst, size_t size) {
 }
 
 template <typename T>
-inline BCL::request async_write(const T* src, const GlobalPtr<T>& dst, size_t size) {
+inline BCL::request async_write(const T* src, GlobalPtr<T> dst, size_t size) {
   MPI_Request request;
 
   int error_code = MPI_Rput(src, size*sizeof(T), MPI_CHAR,

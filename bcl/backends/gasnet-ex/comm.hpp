@@ -24,13 +24,13 @@ template <typename T>
 extern void* gasnet_resolve_address(const GlobalPtr<T> ptr);
 
 template <typename T>
-inline void read(const GlobalPtr <T> &src, T* dst, const size_t size) {
+inline void read(GlobalPtr<std::add_const_t<T>> src, T* dst, std::size_t size) {
   void* src_ptr = gasnet_resolve_address(src);
   gex_RMA_GetBlocking(tm, dst, src.rank, src_ptr, size*sizeof(T), 0);
 }
 
 template <typename T>
-inline void atomic_read(const GlobalPtr<T>& src, T* dst, size_t size) {
+inline void atomic_read(GlobalPtr<std::add_const_t<T>> src, T* dst, std::size_t size) {
   assert(size == 1);
   static_assert(std::is_same<T, int32_t>::value);
   void* src_ptr = gasnet_resolve_address(src);
@@ -41,20 +41,20 @@ inline void atomic_read(const GlobalPtr<T>& src, T* dst, size_t size) {
 }
 
 template <typename T>
-inline void write(const T *src, const GlobalPtr <T> &dst, const size_t size) {
+inline void write(const T *src, GlobalPtr<T> dst, std::size_t size) {
   void* dst_ptr = gasnet_resolve_address(dst);
   gex_RMA_PutBlocking(tm, dst.rank, dst_ptr, (T *) src, size*sizeof(T), 0);
 }
 
 template <typename T>
-inline BCL::request async_read(const GlobalPtr<T>& src, T* dst, size_t size) {
+inline BCL::request async_read(GlobalPtr<std::add_const_t<T>> src, T* dst, std::size_t size) {
   void* src_ptr = gasnet_resolve_address(src);
   gex_Event_t request = gex_RMA_GetNB(tm, dst, src.rank, src_ptr, size*sizeof(T), 0);
   return BCL::request(request);
 }
 
 template <typename T>
-inline BCL::request async_write(const T* src, const GlobalPtr<T>& dst, size_t size) {
+inline BCL::request async_write(const T* src, GlobalPtr<T> dst, std::size_t size) {
   void* dst_ptr = gasnet_resolve_address(dst);
   // TODO: remove const_cast (after GASNet-EX fixes)
   gex_Event_t request = gex_RMA_PutNB(tm, dst.rank, dst_ptr, const_cast<T*>(src),

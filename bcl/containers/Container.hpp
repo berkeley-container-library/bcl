@@ -139,11 +139,12 @@ namespace BCL {
       set(val, rank);
     }
 
-    Container (const Container &container) {
-      val = container.val;
-    }
-
-    Container() {};
+    Container() = default;
+    ~Container() = default;
+    Container(const Container&) = default;
+    Container(Container&&) = default;
+    Container& operator=(const Container&) = default;
+    Container& operator=(Container&&) = default;
 
     void free() {}
 
@@ -173,12 +174,12 @@ namespace BCL {
       set(val, rank);
     }
 
-    Container(const Container &container) {
-      ptr = container.ptr;
-      len = container.len;
-    }
-
-    Container() {};
+    Container() = default;
+    ~Container() = default;
+    Container(const Container&) = default;
+    Container(Container&&) = default;
+    Container& operator=(const Container&) = default;
+    Container& operator=(Container&&) = default;
 
     void free() {
       // TODO: memory leak.
