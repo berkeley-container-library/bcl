@@ -71,7 +71,7 @@ void spmm_wrapper(size_t m, size_t n, size_t k, size_t nnz, T* c, T* b,
 
 
 template <typename T, typename I>
-void gemm_cowns(const SPMatrix<T, I>& a, const DMatrix<T>& b, DMatrix<T>& c) {
+void gemm(const SPMatrix<T, I>& a, const DMatrix<T>& b, DMatrix<T>& c) {
   assert(a.grid_shape()[0] == c.grid_shape()[0]);
   assert(b.grid_shape()[1] == c.grid_shape()[1]);
   assert(a.grid_shape()[1] == b.grid_shape()[0]);

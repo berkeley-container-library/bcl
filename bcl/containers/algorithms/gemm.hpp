@@ -476,7 +476,7 @@ inline auto gemm_two_args_impl_(AMatrixType&& a, BMatrixType&& b) {
                                        {a.pgrid_shape()[0], b.pgrid_shape()[1]}));
     result = 0;
 
-    BCL::gemm_cowns(std::forward<AMatrixType>(a), std::forward<BMatrixType>(b), result);
+    BCL::gemm(std::forward<AMatrixType>(a), std::forward<BMatrixType>(b), result);
     return result;
     assert(a.shape()[1] == b.shape()[0]);
   } else if (is_distributed_dense_matrix_v<std::decay_t<AMatrixType>>) {
