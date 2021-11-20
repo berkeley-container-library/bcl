@@ -14,13 +14,11 @@ int main(int argc, char** argv) {
   BCL::init();
 
   BCL::SPMatrix<float> a("1138_bus.mtx");
-  BCL::DMatrix<float> b({a.shape()[1], 8});
-
-  b = 1;
+  BCL::SPMatrix<float> b("1138_bus.mtx");
 
   auto c = a.dot(b);
 
-  BCL::print("Result of multiply A and B:\n");
+  BCL::print("Printing out C matrix:\n");
   c.print();
 
   BCL::finalize();

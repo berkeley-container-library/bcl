@@ -31,13 +31,14 @@ namespace BCL {
 
 template <
           typename T,
-          typename index_t = int,
+          typename I = int,
           typename Allocator = std::allocator<T>
           >
 struct CSRMatrix {
 
   using size_type = size_t;
   using value_type = T;
+  using index_t = I;
   using index_type = index_t;
 
   using allocator_traits = std::allocator_traits<Allocator>;
@@ -102,6 +103,67 @@ struct CSRMatrix {
     return *this;
   }
 
+  template <typename InputIt>
+  void assign(InputIt first, InputIt last) {
+    std::vector<std::pair<std::pair<I, I>, T>> tuples(first, last);
+
+    auto sort_fn = [](auto&& a, auto&& b) {
+                     auto&& [a_index, a_value] = a;
+                     auto&& [b_index, b_value] = b;
+                     auto&& [a_i, a_j] = a_index;
+                     auto&& [b_i, b_j] = b_index;
+                     if (a_i < b_i) {
+                       return true;
+                     }
+                     else if (a_i == b_i) {
+                       if (a_j < b_j) {
+                        return true;
+                       }
+                     }
+                     return false;
+                   };
+    std::sort(tuples.begin(), tuples.end(), sort_fn);
+
+    nnz_ = tuples.size();
+    vals_.resize(nnz_);
+    col_ind_.resize(nnz_);
+    row_ptr_.resize(m_+1);
+
+    for (auto&& [index, v] : tuples) {
+      auto&& [i, j] = index;
+    }
+
+    row_ptr_[0] = 0;
+    
+    size_type r = 0;
+    size_type c = 0;
+    for (auto&& [index, value] : tuples) {
+      auto&& [i, j] = index;
+
+      vals_[c] = value;
+      col_ind_[c] = j;
+
+      while (r < i) {
+        if (r+1 > m_) {
+          // TODO: exception?
+          // throw std::runtime_error("csr_matrix_impl_: given invalid matrix");
+        }
+        row_ptr_[r+1] = c;
+        r++;
+      }
+      c++;
+
+      if (c > nnz_) {
+        // TODO: exception?
+        // throw std::runtime_error("csr_matrix_impl_: given invalid matrix");
+      }
+    }
+
+    for ( ; r < m_; r++) {
+      row_ptr_[r+1] = nnz_;
+    }
+  }
+
   bool operator==(const CSRMatrix& other) const {
     if (m_ != other.m_ || n_ != other.n_ || nnz_ != other.nnz_) {
       return false;
@@ -162,6 +224,14 @@ struct CSRMatrix {
       throw std::runtime_error("CSRMatrix: Could not detect file format for \""
                                + fname + "\"");
     }
+  }
+
+  template <typename OtherAllocator>
+  [[nodiscard]] CSRMatrix<T, I> dot(const CSRMatrix<T, I, OtherAllocator>& other) const {
+    CSRMatrix result(shape()[0], other.shape()[1]);
+    gemm(*this, other, result);
+
+    return result;
   }
 
   // Return a CSRMatrix representing the submatrix at coordinates [imin, imax), [jmin, jmax)

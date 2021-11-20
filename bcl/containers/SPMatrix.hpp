@@ -569,11 +569,22 @@ public:
   }
 
   void print_details() const {
-    printf("%lu x %lu matrix.\n", shape()[0], shape()[1]);
-    printf("  Split among %lu %lu x %lu tiles\n", grid_shape()[0]*grid_shape()[1],
-           tile_shape()[0], tile_shape()[1]);
-    printf("  Forming a %lu x %lu tile grid\n", grid_shape()[0], grid_shape()[1]);
-    printf("  On a %lu x %lu processor grid\n", pgrid_shape()[0], pgrid_shape()[1]);
+    BCL::barrier();
+    if (BCL::rank() == 0) {
+      printf("%lu x %lu matrix.\n", shape()[0], shape()[1]);
+      printf("  Split among %lu %lu x %lu tiles\n",
+             grid_shape()[0]*grid_shape()[1],
+             tile_shape()[0], tile_shape()[1]);
+      printf("  Forming a %lu x %lu tile grid\n", grid_shape()[0], grid_shape()[1]);
+      printf("  On a %lu x %lu processor grid\n", pgrid_shape()[0], pgrid_shape()[1]);
+      for (size_t i = 0; i < grid_shape()[0]; i++) {
+        for (size_t j = 0; j < grid_shape()[1]; j++) {
+          printf("(%3lu)", tile_rank({i, j}));
+        }
+        printf("\n");
+      }
+    }
+    BCL::barrier();
   }
 
   /// Print distributed sparse matrix data structure

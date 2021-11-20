@@ -80,13 +80,14 @@ struct BlockSquare : public Block {
   }
 
   void seed(size_t m, size_t n, size_t nprocs = BCL::nprocs()) {
-    tile_shape_ = {m, n};
     nprocs_ = nprocs;
     // XXX: this line causes Intel compiler to crash...
     // pgrid_shape_ = {std::sqrt(nprocs_), std::sqrt(nprocs_)};
     pgrid_shape_.resize(2);
     pgrid_shape_[0] = std::sqrt(nprocs_);
     pgrid_shape_[1] = std::sqrt(nprocs_);
+    tile_shape_ = {(m + pgrid_shape_[0] - 1) / pgrid_shape_[0],
+                   (n + pgrid_shape_[1] - 1) / pgrid_shape_[1]};
   }
 
   std::vector<size_t> tile_shape_;

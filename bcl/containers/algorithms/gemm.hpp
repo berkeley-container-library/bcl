@@ -469,7 +469,7 @@ inline auto gemm_two_args_impl_(AMatrixType&& a, BMatrixType&& b) {
 
     BCL::experimental::gemm(std::forward<AMatrixType>(a), std::forward<BMatrixType>(b), result);
     return result;
-  } else if (is_distributed_dense_matrix_v<std::decay_t<BMatrixType>>) {
+  } else if constexpr(is_distributed_dense_matrix_v<std::decay_t<BMatrixType>>) {
     // Sparse times dense
     DMatrix<T> result({a.shape()[0], b.shape()[1]},
                       BCL::BlockCustom({a.tile_shape()[0], b.tile_shape()[1]},
@@ -479,13 +479,21 @@ inline auto gemm_two_args_impl_(AMatrixType&& a, BMatrixType&& b) {
     BCL::gemm(std::forward<AMatrixType>(a), std::forward<BMatrixType>(b), result);
     return result;
     assert(a.shape()[1] == b.shape()[0]);
-  } else if (is_distributed_dense_matrix_v<std::decay_t<AMatrixType>>) {
+  } else if constexpr (is_distributed_dense_matrix_v<std::decay_t<AMatrixType>>) {
     assert(false);
     // Dense times sparse
     // (Not implemented)
   } else {
-    assert(false);
     // Sparse times sparse
+    static_assert(std::is_same_v<typename std::decay_t<AMatrixType>::index_type,
+                                 typename std::decay_t<BMatrixType>::index_type>);
+    using I = typename std::decay_t<AMatrixType>::index_type;
+    SPMatrix<T, I> result({a.shape()[0], b.shape()[1]},
+                           BCL::BlockCustom({a.tile_shape()[0], b.tile_shape()[1]},
+                                            {a.pgrid_shape()[0], b.pgrid_shape()[1]}));
+
+    BCL::gemm(std::forward<AMatrixType>(a), std::forward<BMatrixType>(b), result);
+    return result;
   }
   static_assert(!(is_distributed_dense_matrix_v<std::decay_t<AMatrixType>> &&
                   is_distributed_sparse_matrix_v<std::decay_t<BMatrixType>>),
