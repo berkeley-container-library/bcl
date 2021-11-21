@@ -130,6 +130,14 @@ struct GlobalPtr {
     return ptr > other.ptr;
   }
 
+  bool operator<=(const_pointer other) const noexcept {
+    return ptr <= other.ptr;
+  }
+
+  bool operator>=(const_pointer other) const noexcept {
+    return ptr >= other.ptr;
+  }
+
   pointer& operator++() noexcept {
     ptr += sizeof(T);
     return *this;
@@ -200,6 +208,10 @@ struct GlobalPtr {
   }
   void print() const {
     printf("%s\n", str().c_str());
+  }
+
+  friend pointer operator+(difference_type n, pointer iter) {
+    return iter + n;
   }
 };
 
