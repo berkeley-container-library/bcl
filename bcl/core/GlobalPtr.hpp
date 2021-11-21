@@ -84,11 +84,11 @@ struct GlobalPtr {
     return *this;
   }
 
-  bool operator==(pointer other) const noexcept {
+  bool operator==(const_pointer other) const noexcept {
     return (rank == other.rank && ptr == other.ptr);
   }
 
-  bool operator!=(pointer other) const noexcept {
+  bool operator!=(const_pointer other) const noexcept {
     return !(*this == other);
   }
 
@@ -118,8 +118,16 @@ struct GlobalPtr {
     return pointer(rank, ptr - offset*sizeof(T));
   }
 
-  difference_type operator-(pointer other) const noexcept {
+  difference_type operator-(const_pointer other) const noexcept {
     return (ptr - difference_type(other.ptr)) / sizeof(T);
+  }
+
+  bool operator<(const_pointer other) const noexcept {
+    return ptr < other.ptr;
+  }
+
+  bool operator>(const_pointer other) const noexcept {
+    return ptr > other.ptr;
   }
 
   pointer& operator++() noexcept {

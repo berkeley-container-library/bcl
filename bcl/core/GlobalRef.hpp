@@ -8,7 +8,6 @@
 
 namespace BCL {
 
-
 template <typename T>
 struct GlobalPtr;
 
@@ -66,4 +65,11 @@ private:
   BCL::GlobalPtr<T> ptr_ = nullptr;
 };
 
+template <typename T>
+void swap(BCL::GlobalRef<T> a, BCL::GlobalRef<T> b) {
+  T first = a;
+  a = (T) b;
+  b = first;
 }
+
+} // end BCL
