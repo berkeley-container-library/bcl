@@ -1,11 +1,7 @@
-// SPDX-FileCopyrightText: 2021 Benjamin Brock
-//
-// SPDX-License-Identifier: BSD-3-Clause
-
 # NOTE: uncomment these three lines to use the GASNet-EX backend.
 #       Note that the environment variable `gasnet_prefix`
 #       must be set.
-#       (You also need to set `BACKEND` to `-DGASNET_EX` below.
+#       (You also need to set `BACKEND` to `-DBCL_BACKEND_GASNET_EX` below.
 # include $(gasnet_prefix)/include/aries-conduit/aries-par.mak
 # GASNET_FLAGS = $(GASNET_CXXCPPFLAGS) $(GASNET_CXXFLAGS)
 # GASNET_BACKEND_LIB_FLAGS = $(GASNET_LDFLAGS) $(GASNET_LIBS)
@@ -27,9 +23,9 @@ TARGETS := $(patsubst %.cpp, %, $(SOURCES))
 
 # SHMEM and GASNet-EX tend to perform the best.
 # MPI is default
-BACKEND = 
-# BACKEND = '-DSHMEM'
-# BACKEND = '-DGASNET_EX' $(GASNET_FLAGS)
+BACKEND = -DBCL_BACKEND_MPI
+# BACKEND = -DBCL_BACKEND_SHMEM
+# BACKEND = -DBCL_BACKEND_GASNET_EX $(GASNET_FLAGS)
 LD_FLAGS = $(GASNET_BACKEND_LIB_FLAGS)
 
 # If you compile off of Cori, you will need to link with `-lcblas`.

@@ -1,24 +1,20 @@
-// SPDX-FileCopyrightText: 2021 Benjamin Brock
-//
-// SPDX-License-Identifier: BSD-3-Clause
-
 # XXX: Modify BCLROOT if you move this Makefile
 #      out of an examples/* directory.
 BCLROOT=$(PWD)/../../../../
 
 # XXX: To compile with MPI
-#BCLFLAGS = -I$(BCLROOT)
+#BCLFLAGS = -I$(BCLROOT) -DBCL_BACKEND_MPI
 #CXX=mpic++
 
 # XXX: To compile with OpenSHMEM
-BCLFLAGS = -DSHMEM -I$(BCLROOT)
+BCLFLAGS = -DBCL_BACKEND_SHMEM -I$(BCLROOT)
 # CXX=oshc++
 CXX=CC
 
 # XXX: Compiling with GASNet-EX varies
 #      depending on conduit.  See your
 #      GASNet documentation.
-# BCLFLAGS = -DGASNET_EX -I$(BCLROOT)
+# BCLFLAGS = -DBCL_BACKEND_GASNET_EX -I$(BCLROOT)
 # CXX=$(GASNET_CXX) ...
 
 CXXFLAGS = -std=gnu++17 -O3 $(BCLFLAGS)

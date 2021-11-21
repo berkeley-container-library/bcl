@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2021 Benjamin Brock
-//
-// SPDX-License-Identifier: BSD-3-Clause
-
 SHELL='bash'
 
 # XXX: Modify BCLROOT if you move this Makefile
@@ -14,7 +10,7 @@ TIMER_CMD=time
 
 ifeq ($(BACKEND),SHMEM)
   BACKEND=SHMEM
-  BCLFLAGS = -lpthread -DSHMEM -I$(BCLROOT)
+  BCLFLAGS = -lpthread -DBCL_BACKEND_SHMEM -I$(BCLROOT)
   CXX=oshc++
 
   BCL_RUN=oshrun -n 4
@@ -23,13 +19,13 @@ else ifeq ($(BACKEND),GASNET_EX)
   # XXX: Allow selection of conduit.
   include $(gasnet_prefix)/include/mpi-conduit/mpi-par.mak
 
-  BCLFLAGS = -lpthread $(GASNET_CXXCPPFLAGS) $(GASNET_CXXFLAGS) $(GASNET_LDFLAGS) $(GASNET_LIBS) -DGASNET_EX -I$(BCLROOT)
+  BCLFLAGS = -lpthread $(GASNET_CXXCPPFLAGS) $(GASNET_CXXFLAGS) $(GASNET_LDFLAGS) $(GASNET_LIBS) -DBCL_BACKEND_GASNET_EX -I$(BCLROOT)
   CXX = mpic++
 
   BCL_RUN=mpirun --oversubscribe -n 4
 else
   BACKEND=MPI
-  BCLFLAGS = -lpthread -I$(BCLROOT)
+  BCLFLAGS = -lpthread -I$(BCLROOT) -DBCL_BACKEND_MPI
   CXX=mpic++
 
   BCL_RUN=mpirun --oversubscribe -n 4
