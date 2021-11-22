@@ -10,7 +10,6 @@
 #include <iostream>
 #include <list>
 #include <memory>
-#include <execution>
 
 #include <bcl/containers/algorithms/gemm.hpp>
 #include <bcl/containers/detail/Blocking.hpp>
@@ -229,7 +228,9 @@ public:
     for (size_t i = 0; i < ptrs_.size(); i++) {
       if (ptrs_[i].is_local()) {
         T* lptr = ptrs_[i].local();
-        std::transform(std::execution::par_unseq,
+        // TODO: removed std::execution::par_unseq
+        //       due to old Intel compiler on Cori.
+        std::transform(
                        lptr, lptr + tile_size(),
                        lptr,
                        [&](auto&& elem) {
@@ -278,7 +279,7 @@ public:
     for (size_t i = 0; i < ptrs_.size(); i++) {
       if (ptrs_[i].is_local()) {
         T* lptr = ptrs_[i].local();
-        std::transform(std::execution::par_unseq,
+        std::transform(
                        lptr, lptr + tile_size(),
                        lptr,
                        [&](auto&& elem) {
@@ -305,7 +306,7 @@ public:
       if (ptrs_[i].is_local()) {
         T* lptr = ptrs_[i].local();
         T* rptr = result.ptrs_[i].local();
-        std::transform(std::execution::par_unseq,
+        std::transform(
                        lptr, lptr + tile_size(),
                        rptr,
                        [&](auto&& elem) {
