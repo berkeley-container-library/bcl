@@ -62,13 +62,18 @@ struct GlobalPtr {
   GlobalPtr(std::nullptr_t null) : rank(0), ptr(0) {}
 
   // TODO: convert SFINAE to requires() for C++20
-  template <__BCL_REQUIRES(!std::is_same_v<std::decay_t<T>, void> && !std::is_const_v<T>)>
+  template <__BCL_REQUIRES(!std::is_same_v<std::decay_t<T>, void> &&
+                           !std::is_const_v<T> &&
+                           !std::is_same_v<T, void>)>
   operator GlobalPtr<void>() const noexcept {
     return GlobalPtr<void>(rank, ptr);
   }
 
   // TODO: convert SFINAE to requires() for C++20
-  template <__BCL_REQUIRES(!std::is_same_v<std::decay_t<T>, void>)>
+  //       Extra checks for Intel compiler
+  template <__BCL_REQUIRES(!std::is_same_v<std::decay_t<T>, void> &&
+                           !std::is_same_v<T, void> &&
+                           !std::is_same_v<T, const void>)>
   operator GlobalPtr<const void>() const noexcept {
     return GlobalPtr<const void>(rank, ptr);
   }
