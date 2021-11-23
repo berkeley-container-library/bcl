@@ -53,13 +53,4 @@ public:
   }
 };
 
-template <
-  typename Key,
-  typename T,
-  typename KeySerialize,
-  typename ValSerialize
->
-struct serialize <HashMapEntry <Key, T, KeySerialize, ValSerialize>>
-  : public BCL::identity_serialize <HashMapEntry <Key, T, KeySerialize, ValSerialize>> {};
-
 }

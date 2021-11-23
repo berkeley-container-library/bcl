@@ -12,6 +12,7 @@
 #include <bcl/bcl.hpp>
 
 namespace BCL {
+
   template <typename T, size_t N>
   struct serial_blob {
     T val[N];
@@ -99,19 +100,12 @@ namespace BCL {
     }
   };
 
-  // TODO: this is not really what we want; would be prefer
-  //       std::is_trivially_copyable<T>, but missing from
-  //       icc.
   template <typename T>
-  struct serialize <T, 0, BCL::enable_if_t<std::is_trivially_copyable<T>::value>> :
+  struct serialize <T, 0, std::enable_if_t<std::is_trivially_copyable_v<T>>> :
     public identity_serialize<T>{};
 
-  template <typename T>
-  struct serialize <BCL::GlobalPtr <T>>
-    : public identity_serialize <BCL::GlobalPtr <T>> {};
-
   template <size_t N>
-  struct serialize <std::string, N, void> {
+  struct serialize <std::string, N> {
     serial_blob <char, N> operator()(const std::string &string) const noexcept {
       serial_blob <char, N> blob;
 
@@ -129,7 +123,7 @@ namespace BCL {
   template <typename T, typename Serialize, typename Enabler = void>
   class Container {
   public:
-    using serialized_type = typename std::result_of<Serialize(T)>::type;
+    using serialized_type = std::result_of_t<Serialize(T)>;
 
     serialized_type val;
 
@@ -159,7 +153,7 @@ namespace BCL {
 
   template <typename T, typename Serialize>
   class Container <T, Serialize,
-     BCL::enable_if_t <is_serial_ptr<typename std::result_of <Serialize(T)>::type>::value>> {
+                   BCL::enable_if_t<is_serial_ptr<std::result_of_t<Serialize(T)>>::value>> {
   public:
     using TS = typename std::result_of <Serialize(T)>::type;
     using SPT = typename TS::type;
