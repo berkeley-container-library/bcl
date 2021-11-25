@@ -11,8 +11,8 @@
 namespace BCL {
 
 namespace backend {
-  extern uint64_t rank();
-  extern uint64_t nprocs();
+  extern inline std::size_t rank();
+  extern inline std::size_t nprocs();
 };
 
 // TODO: use CRTP to ensure no vtable overhead?
@@ -24,29 +24,29 @@ struct Team {
   virtual Team* clone() const = 0;
 };
 
-struct WorldTeam final : virtual Team {
-  size_t resolve(size_t rank) const override {
+struct WorldTeam {
+  constexpr size_t resolve(size_t rank = BCL::backend::rank()) const noexcept {
     return rank;
   }
 
-  size_t nprocs() const noexcept override {
+  constexpr size_t rank(size_t rank = BCL::backend::rank()) const noexcept {
+    return rank;
+  }
+
+  size_t nprocs() const noexcept {
     return BCL::backend::nprocs();
   }
 
-  bool in_team(size_t rank = BCL::backend::rank()) const noexcept override {
+  constexpr bool in_team(size_t rank = BCL::backend::rank()) const noexcept {
     return true;
   }
 
-  size_t to_world(size_t rank) const override {
+  constexpr size_t to_world(size_t rank) const noexcept {
     return rank;
   }
 
-  Team* clone() const override {
-    return new WorldTeam();
-  }
-
-  WorldTeam() = default;
-  WorldTeam(const WorldTeam&) = default;
+  constexpr WorldTeam() {}
+  constexpr WorldTeam(const WorldTeam&) = default;
 };
 
 struct UserTeam final : virtual Team {
@@ -93,42 +93,50 @@ struct UserTeam final : virtual Team {
   }
 };
 
-struct RangeTeam final : virtual Team {
-  size_t bottom_, top_;
+struct RangeTeam {
+  std::size_t bottom_, top_;
 
-  RangeTeam(size_t bottom, size_t top) : bottom_(bottom), top_(top) {}
+  constexpr RangeTeam(size_t bottom, size_t top) : bottom_(bottom), top_(top) {}
 
-  size_t resolve(size_t rank) const override {
-    if (rank < bottom_ || rank >= top_) {
-      throw std::runtime_error("SQUAWK!! Error resolving team member (RangeTeam)");
-    }
+  constexpr size_t resolve(size_t rank = BCL::backend::rank()) const {
+    /*
+    BCL_DEBUG(
+      if (rank < bottom_ || rank >= top_) {
+        throw std::runtime_error("SQUAWK!! Error resolving team member (RangeTeam)");
+      }
+    )
+    */
     return rank - bottom_;
   }
 
-  size_t nprocs() const noexcept override {
+  size_t rank(size_t rank = BCL::backend::rank()) const {
+    return resolve(rank);
+  }
+
+  constexpr size_t nprocs() const noexcept {
     return top_ - bottom_;
   }
 
-  size_t to_world(size_t rank) const override {
-    if (rank >= BCL::backend::nprocs()) {
-      throw std::runtime_error("SQUAWK!! Ruh roh");
-    }
+  constexpr size_t to_world(size_t rank) const {
+    /*
+    BCL_DEBUG(
+      if (rank >= BCL::backend::nprocs()) {
+        throw std::runtime_error("SQUAWK!! Ruh roh");
+      }
+    )
+    */
     return bottom_ + rank;
   }
 
-  bool in_team(size_t rank = BCL::backend::rank()) const noexcept override {
+  constexpr bool in_team(size_t rank = BCL::backend::rank()) const noexcept {
     if (rank < bottom_ || rank >= top_) {
       return false;
     }
     return true;
   }
-
-  Team* clone() const override {
-    return new RangeTeam(*this);
-  }
 };
 
-inline std::vector<BCL::RangeTeam> split_world(size_t c) {
+inline std::vector<BCL::RangeTeam> split_world(size_t c = 2) {
   size_t team_size = (BCL::backend::nprocs() + c - 1) / c;
   std::vector<BCL::RangeTeam> teams;
   for (size_t i = 0; i < BCL::backend::nprocs(); i += team_size) {
