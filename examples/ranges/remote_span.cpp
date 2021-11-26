@@ -21,6 +21,8 @@ int main(int argc, char** argv) {
 
   remote_span<int> span(data, size_per_proc*BCL::nprocs());
 
+  foo(span);
+
   printf("Span is size %lu\n", span.size());
 
   auto my_span = span.subspan(size_per_proc*BCL::rank(), size_per_proc);

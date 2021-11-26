@@ -23,7 +23,8 @@ template <typename T,
           std::size_t Extent = std::dynamic_extent>
 struct remote_span_storage_impl_ {
   BCL::GlobalPtr<T> ptr_;
-  remote_span_storage_impl_(BCL::GlobalPtr<T> ptr, std::size_t size) : ptr_(ptr) {}
+  constexpr remote_span_storage_impl_() noexcept = default;
+  constexpr remote_span_storage_impl_(BCL::GlobalPtr<T> ptr, std::size_t size) : ptr_(ptr) {}
   constexpr std::size_t size() const noexcept {
     return Extent;
   }
@@ -34,7 +35,9 @@ struct remote_span_storage_impl_<T, std::dynamic_extent> {
   BCL::GlobalPtr<T> ptr_;
   std::size_t size_;
 
-  remote_span_storage_impl_(BCL::GlobalPtr<T> ptr, std::size_t size) : ptr_(ptr), size_(size) {}
+  constexpr remote_span_storage_impl_() noexcept = default;
+
+  constexpr remote_span_storage_impl_(BCL::GlobalPtr<T> ptr, std::size_t size) : ptr_(ptr), size_(size) {}
 
   constexpr std::size_t size() const noexcept {
     return size_;
@@ -62,6 +65,10 @@ public:
 
   constexpr remote_span(BCL::GlobalPtr<T> first, BCL::GlobalPtr<T> last)
     : storage_(first, last - first) {}
+
+  constexpr remote_span() noexcept = default;
+  constexpr remote_span(const remote_span&) noexcept = default;
+  constexpr remote_span& operator=(const remote_span&) noexcept = default;
 
   constexpr size_type size() const noexcept {
     return storage_.size();
@@ -158,3 +165,13 @@ private:
 
   remote_span_storage_impl_<T, Extent> storage_;
 };
+
+namespace std {
+
+template<class T, std::size_t Extent>
+inline constexpr bool ranges::enable_borrowed_range<remote_span<T, Extent>> = true;
+
+template<class T, std::size_t Extent>
+inline constexpr bool ranges::enable_view<remote_span<T, Extent>> = true;
+
+} // end std
