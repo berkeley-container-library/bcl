@@ -54,19 +54,27 @@ public:
     return !(*this == other);
   }
 
-  bool operator<(const_iterator other) const {
+  bool operator<(const_iterator other) const
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag>)
+  {
     return accessor_ < other.accessor_;
   }
 
-  bool operator<=(const_iterator other) const {
+  bool operator<=(const_iterator other) const
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag>)
+  {
     return *this < other || *this == other;
   }
 
-  bool operator>(const_iterator other) const {
+  bool operator>(const_iterator other) const
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag>)
+  {
     return !(*this <= other);
   }
 
-  bool operator>=(const_iterator other) const {
+  bool operator>=(const_iterator other) const
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag>)
+  {
     return !(*this < other);
   }
 
@@ -74,33 +82,44 @@ public:
     return *accessor_;
   }
 
-  reference operator[](difference_type offset) const {
+  reference operator[](difference_type offset) const
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag>)
+  {
     return *(*this + offset);
   }
 
-  iterator& operator+=(difference_type offset) noexcept {
+  iterator& operator+=(difference_type offset) noexcept
+  {
     accessor_ += offset;
     return *this;
   }
 
-  iterator& operator-=(difference_type offset) noexcept {
+  iterator& operator-=(difference_type offset) noexcept
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag>)
+  {
     accessor_ += -offset;
     return *this;
   }
 
-  iterator operator+(difference_type offset) const {
+  iterator operator+(difference_type offset) const
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag>)
+  {
     iterator other = *this;
     other += offset;
     return other;
   }
 
-  iterator operator-(difference_type offset) const {
+  iterator operator-(difference_type offset) const
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag>)
+  {
     iterator other = *this;
     other += -offset;
     return other;
   }
 
-  difference_type operator-(const_iterator other) const {
+  difference_type operator-(const_iterator other) const
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag>)
+  {
     return accessor_ - other.accessor_;
   }
 
@@ -115,18 +134,26 @@ public:
     return other;
   }
 
-  iterator& operator--() noexcept {
+  iterator& operator--() noexcept
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag> ||
+           std::is_same_v<iterator_category, std::bidirectional_iterator_tag>)
+  {
     *this += -1;
     return *this;
   }
 
-  iterator operator--(int) noexcept {
+  iterator operator--(int) noexcept
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag> ||
+           std::is_same_v<iterator_category, std::bidirectional_iterator_tag>)
+  {
     iterator other = *this;
     --(*this);
     return other;
   }
 
-  friend iterator operator+(difference_type n, iterator iter) {
+  friend iterator operator+(difference_type n, iterator iter)
+  requires(std::is_same_v<iterator_category, std::random_access_iterator_tag>)
+  {
     return iter + n;
   }
 
@@ -283,13 +310,8 @@ public:
   using reference = typename iterator::reference;
   using pointer = iterator;
 
-  zip_view(Rs&&... ranges)
-  : begin_(make_zip_iterator(0, std::ranges::begin(ranges)...)) { size_ = smallest_range(ranges...); }
-
-  zip_view(Rs&... ranges)
-  : begin_(make_zip_iterator(0, std::ranges::begin(ranges)...)) { size_ = smallest_range(ranges...); }
-
-  zip_view(const Rs&... ranges)
+  template <typename... Rs_>
+  zip_view(Rs_&&... ranges)
   : begin_(make_zip_iterator(0, std::ranges::begin(ranges)...)) { size_ = smallest_range(ranges...); }
 
   iterator begin() const noexcept {
@@ -321,6 +343,9 @@ private:
   std::size_t size_;
 };
 
+template <typename... Rs>
+zip_view(Rs&&...) -> zip_view<std::remove_reference_t<Rs>...>;
+
 class transform_no_inverse {};
 
 template <typename Reference, typename Fn, typename FnInverse>
@@ -336,6 +361,10 @@ public:
       fn_inverse_(fn_inverse) {}
 
   operator value_type() const {
+    return fn_(reference_);
+  }
+
+  value_type value() const {
     return fn_(reference_);
   }
 
@@ -418,15 +447,8 @@ public:
   using reference = typename iterator::reference;
   using pointer = iterator;
 
-  transform_view(R&& range, Fn fn, FnInverse fn_inverse = FnInverse())
-    : begin_(make_transform_iterator(std::ranges::begin(range), fn, fn_inverse)),
-      end_(make_transform_iterator(std::ranges::end(range), fn, fn_inverse)) {}
-
-  transform_view(R& range, Fn fn, FnInverse fn_inverse = FnInverse())
-    : begin_(make_transform_iterator(std::ranges::begin(range), fn, fn_inverse)),
-      end_(make_transform_iterator(std::ranges::end(range), fn, fn_inverse)) {}
-
-  transform_view(const R& range, Fn fn, FnInverse fn_inverse = FnInverse())
+  template <typename R_>
+  transform_view(R_&& range, Fn fn, FnInverse fn_inverse = FnInverse{})
     : begin_(make_transform_iterator(std::ranges::begin(range), fn, fn_inverse)),
       end_(make_transform_iterator(std::ranges::end(range), fn, fn_inverse)) {}
 
@@ -447,6 +469,12 @@ private:
   iterator end_;
 };
 
+template <typename R, typename Fn, typename FnInverse>
+transform_view(R&&, Fn, FnInverse) -> transform_view<std::remove_reference_t<R>, Fn, FnInverse>;
+
+template <typename R, typename Fn>
+transform_view(R&&, Fn) -> transform_view<std::remove_reference_t<R>, Fn, transform_no_inverse>;
+
 template <std::random_access_iterator Iter, typename Fn>
 class filter_accessor {
 public:
@@ -455,7 +483,7 @@ public:
   using iterator_accessor = filter_accessor;
   using const_iterator_accessor = filter_accessor;
   using nonconst_iterator_accessor = filter_accessor;
-  using iterator_category = std::forward_iterator_tag;
+  using iterator_category = std::bidirectional_iterator_tag;
 
   using reference = std::iter_reference_t<Iter>;
 
@@ -553,15 +581,8 @@ public:
   using reference = typename iterator::reference;
   using pointer = iterator;
 
-  filter_view(R&& range, Fn fn)
-    : begin_(make_filter_iterator(std::ranges::begin(range), std::ranges::end(range), fn)),
-      end_(make_filter_iterator(std::ranges::end(range), std::ranges::end(range), fn)) {}
-
-  filter_view(R& range, Fn fn)
-    : begin_(make_filter_iterator(std::ranges::begin(range), std::ranges::end(range), fn)),
-      end_(make_filter_iterator(std::ranges::end(range), std::ranges::end(range), fn)) {}
-
-  filter_view(const R& range, Fn fn)
+  template <typename R_>
+  filter_view(R_&& range, Fn fn)
     : begin_(make_filter_iterator(std::ranges::begin(range), std::ranges::end(range), fn)),
       end_(make_filter_iterator(std::ranges::end(range), std::ranges::end(range), fn)) {}
 
@@ -581,3 +602,6 @@ private:
   iterator begin_;
   iterator end_;
 };
+
+template <typename R, typename Fn>
+filter_view(R&&, Fn) -> filter_view<std::remove_reference_t<R>, Fn>;
