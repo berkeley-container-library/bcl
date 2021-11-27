@@ -26,7 +26,7 @@ public:
   constexpr distributed_span_accessor(const distributed_span_accessor&) noexcept = default;
   constexpr distributed_span_accessor& operator=(const distributed_span_accessor&) noexcept = default;
 
-  constexpr distributed_span_accessor(std::span<local_span_type> spans, std::size_t index = 0) noexcept : spans_(spans), index_(index) {}
+  constexpr distributed_span_accessor(std::span<const local_span_type> spans, std::size_t index = 0) noexcept : spans_(spans), index_(index) {}
 
   constexpr operator const_iterator_accessor() const noexcept
   requires(!std::is_same_v<iterator_accessor, const_iterator_accessor>)
@@ -65,7 +65,7 @@ private:
   friend distributed_span_accessor<std::remove_const_t<T>>;
 
   std::size_t index_;
-  std::span<local_span_type> spans_;
+  std::span<const local_span_type> spans_;
 };
 
 template <typename T>
@@ -91,6 +91,7 @@ public:
 
   // using iterator = std::ranges::iterator_t<joined_view_type>;
   using iterator = distributed_span_iterator<T>;
+  using const_iterator = typename iterator::const_iterator;
 
   constexpr distributed_span() noexcept = default;
   constexpr distributed_span(const distributed_span&) noexcept = default;
@@ -158,15 +159,11 @@ public:
     return subspan(size() - Count, Count);
   }
 
-  iterator begin() {
-    // using accessor_type = typename iterator::accessor_type;
-    // return iterator(accessor_type(spans_, 0));
+  iterator begin() const {
     return iterator(spans_, 0);
   }
 
-  iterator end() {
-    // using accessor_type = typename iterator::accessor_type;
-    // return iterator(accessor_type(spans_, 0));
+  iterator end() const {
     return iterator(spans_, size());
   }
 
