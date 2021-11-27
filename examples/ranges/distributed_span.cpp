@@ -35,23 +35,37 @@ int main(int argc, char** argv) {
   distributed_span<int> dspan(spans);
 
   if (BCL::rank() == 0) {
-    std::vector<int> v{10, 12, 13};
+    std::vector<int> v{1, 5, 65, 23, 14, 2, 12, 3, 5, 10, 12, 13};
 
-    auto f = [](int f) -> float { return f*2; };
-    auto f_inverse = [](float f) -> int { return f / 2; };
+    auto f = [](auto v) { return v*2; };
+    auto f_inverse = [](auto v) { return v / 2; };
 
     // transform_iterator<std::vector<int>::iterator, decltype(f)> iter(v.begin(), f);
     // auto iter = make_transform_iterator(v.begin(), f, f_inverse);
     transform_view t_v(v, f, f_inverse);
 
     for (auto&& [idx, v] : zip_view(iota_view(), t_v)) {
-      fmt::print("{}: {}\n", idx, (float) v);
-      v = 12.0f;
+      fmt::print("{} ", (float) v);
+      // v = 12.0f;
     }
+    fmt::print("\n");
 
-    for (auto&& [idx, v] : zip_view(iota_view(), t_v)) {
-      fmt::print("{}: {}\n", idx, (float) v);
+/*
+    auto z_v = zip_view(iota_view(), t_v);
+
+    auto begin = make_filter_iterator(z_v.begin(), z_v.end(), filter_fn);
+    auto end = make_filter_iterator(z_v.end(), z_v.end(), filter_fn);
+    */
+
+    auto filter_fn = [](auto tup) { auto&& [idx, v] = tup; return idx < 5; };
+    auto z_v = zip_view(iota_view(), t_v);
+
+    filter_view f_v(z_v, filter_fn);
+
+    for (auto&& [idx, v] : f_v) {
+      fmt::print("{} ", v);
     }
+    fmt::print("\n");
   }
 
   BCL::finalize();
