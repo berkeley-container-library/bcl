@@ -25,11 +25,13 @@ public:
   random_access_iterator_adaptor& operator=(const random_access_iterator_adaptor&) = default;
 
   template <typename... Args>
-  requires(sizeof...(Args) >= 1                                        &&
-           !(std::is_same_v<nonconst_iterator, std::decay_t<Args>> ||...)       &&
-           !(std::is_same_v<const_iterator, std::decay_t<Args>> ||...) &&
-           !(std::is_same_v<nonconst_accessor_type, std::decay_t<Args>> ||...)  &&
-           !(std::is_same_v<const_accessor_type, std::decay_t<Args>> ||...))
+  requires(  sizeof...(Args) >= 1 &&
+           !(sizeof...(Args) == 1 &&
+            (std::is_same_v<nonconst_iterator, std::decay_t<Args>> ||...)      ||
+            (std::is_same_v<const_iterator, std::decay_t<Args>> ||...)         ||
+            (std::is_same_v<nonconst_accessor_type, std::decay_t<Args>> ||...) ||
+            (std::is_same_v<const_accessor_type, std::decay_t<Args>> ||...)     ) &&
+            std::is_constructible_v<accessor_type, Args...>)
   random_access_iterator_adaptor(Args&&... args)
     : accessor_(std::forward<Args>(args)...) {}
 
@@ -427,6 +429,141 @@ public:
   transform_view(const R& range, Fn fn, FnInverse fn_inverse = FnInverse())
     : begin_(make_transform_iterator(std::ranges::begin(range), fn, fn_inverse)),
       end_(make_transform_iterator(std::ranges::end(range), fn, fn_inverse)) {}
+
+  iterator begin() const noexcept {
+    return begin_;
+  }
+
+  iterator end() const noexcept {
+    return end_;
+  }
+
+  size_type size() const noexcept {
+    return end_ - begin_;
+  }
+
+private:
+  iterator begin_;
+  iterator end_;
+};
+
+template <std::random_access_iterator Iter, typename Fn>
+class filter_accessor {
+public:
+  using value_type = std::iter_value_t<Iter>;
+  using difference_type = std::ptrdiff_t;
+  using iterator_accessor = filter_accessor;
+  using const_iterator_accessor = filter_accessor;
+  using nonconst_iterator_accessor = filter_accessor;
+  using iterator_category = std::forward_iterator_tag;
+
+  using reference = std::iter_reference_t<Iter>;
+
+  constexpr filter_accessor() noexcept = default;
+  constexpr ~filter_accessor() noexcept = default;
+  constexpr filter_accessor(const filter_accessor&) noexcept = default;
+  constexpr filter_accessor& operator=(const filter_accessor&) noexcept = default;
+
+  constexpr filter_accessor(Iter iterator, Iter end, Fn fn) noexcept
+    : iterator_(iterator), end_(end), fn_(fn) { fast_forward(); }
+
+  constexpr filter_accessor& operator+=(difference_type offset) noexcept {
+    if (offset > 0) {
+      for (std::ptrdiff_t i = 0; i < offset; i++) {
+        ++(*this);
+      }
+    } else {
+      for (std::ptrdiff_t i = 0; i < -offset; i++) {
+        --(*this);
+      }
+    }
+    return *this;
+  }
+
+  constexpr filter_accessor& operator++() noexcept {
+    ++iterator_;
+    fast_forward();
+    return *this;
+  }
+
+  constexpr filter_accessor& operator--() noexcept {
+    --iterator_;
+    fast_backward();
+    return *this;
+  }
+
+  constexpr difference_type operator-(const const_iterator_accessor& other) const noexcept {
+    if (*this < other) {
+      iterator_accessor finder = *this;
+      std::ptrdiff_t count = 0;
+      while (finder != other) { ++finder; --count; }
+      return count;
+    } else if (other < *this) {
+      iterator_accessor finder = other;
+      std::ptrdiff_t count = 0;
+      while (finder != *this) { ++finder; ++count; }
+      return count;
+    } else {
+      return 0;
+    }
+  }
+
+  constexpr bool operator==(const const_iterator_accessor& other) const noexcept {
+    return iterator_ == other.iterator_;
+  }
+
+  constexpr bool operator<(const const_iterator_accessor& other) const noexcept {
+    return iterator_ < other.iterator_;
+  }
+
+  constexpr reference operator*() const noexcept {
+    return *iterator_;
+  }
+
+private:
+  constexpr void fast_forward() noexcept {
+    while (!fn_(this->operator*()) && iterator_ != end_) { ++iterator_; }
+  }
+
+  constexpr void fast_backward() noexcept {
+    while (!fn_(this->operator*())) { --iterator_; }
+  }
+
+  Iter iterator_;
+  Iter end_;
+  Fn fn_;
+};
+
+template <std::random_access_iterator Iter, typename Fn>
+using filter_iterator = random_access_iterator_adaptor<filter_accessor<Iter, Fn>>;
+
+
+template <std::random_access_iterator Iter, typename Fn>
+filter_iterator<Iter, Fn> make_filter_iterator(Iter iterator, Iter end, Fn filter) {
+  return filter_iterator<Iter, Fn>(iterator, end, filter);
+}
+
+template <std::ranges::random_access_range R, typename Fn>
+class filter_view {
+public:
+  using iterator = filter_iterator<std::ranges::iterator_t<R>, Fn>;
+  using value_type = typename iterator::value_type;
+  using difference_type = typename iterator::difference_type;
+  using size_type = std::size_t;
+  using reference = typename iterator::reference;
+  using pointer = iterator;
+
+  filter_view(R&& range, Fn fn)
+    : begin_(make_filter_iterator(std::ranges::begin(range), std::ranges::end(range), fn)),
+      end_(make_filter_iterator(std::ranges::end(range), std::ranges::end(range), fn)) {}
+
+  filter_view(R& range, Fn fn)
+    : begin_(make_filter_iterator(std::ranges::begin(range), std::ranges::end(range), fn)),
+      end_(make_filter_iterator(std::ranges::end(range), std::ranges::end(range), fn)) {}
+
+  filter_view(const R& range, Fn fn)
+    : begin_(make_filter_iterator(std::ranges::begin(range), std::ranges::end(range), fn)),
+      end_(make_filter_iterator(std::ranges::end(range), std::ranges::end(range), fn)) {}
 
   iterator begin() const noexcept {
     return begin_;
