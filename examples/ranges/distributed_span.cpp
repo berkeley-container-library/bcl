@@ -5,6 +5,7 @@
 #include "distributed_span.hpp"
 #include "iterator_adaptor.hpp"
 #include <iostream>
+#include <fmt/core.h>
 
 template <typename T, std::size_t Extent = std::dynamic_extent>
 remote_span<T, Extent> create_span_coll(std::size_t size, std::size_t rank) {
@@ -33,14 +34,24 @@ int main(int argc, char** argv) {
 
   distributed_span<int> dspan(spans);
 
-  for_each(bcl::execution::parallel_policy(1),
-           dspan, [](auto f) { printf("(%lu) Hello, fam! got %d\n", BCL::rank(), (int) f); });
-
   if (BCL::rank() == 0) {
-    auto begin = dspan.begin();
-    auto end = dspan.end();
+    std::vector<int> v{10, 12, 13};
 
-    bool nequal = begin != end;
+    auto f = [](int f) -> float { return f*2; };
+    auto f_inverse = [](float f) -> int { return f / 2; };
+
+    // transform_iterator<std::vector<int>::iterator, decltype(f)> iter(v.begin(), f);
+    // auto iter = make_transform_iterator(v.begin(), f, f_inverse);
+    transform_view t_v(v, f, f_inverse);
+
+    for (auto&& [idx, v] : zip_view(iota_view(), t_v)) {
+      fmt::print("{}: {}\n", idx, (float) v);
+      v = 12.0f;
+    }
+
+    for (auto&& [idx, v] : zip_view(iota_view(), t_v)) {
+      fmt::print("{}: {}\n", idx, (float) v);
+    }
   }
 
   BCL::finalize();
