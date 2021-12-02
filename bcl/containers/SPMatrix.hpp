@@ -568,6 +568,53 @@ public:
     return num_nonzeros;
   }
 
+  template <typename V, typename Fn>
+  SPMatrix& binary_op_inplace(const DMatrix<V>& other, Fn&& fn) {
+    if (same_grid_layout(*this, other)) {
+      for (size_t i = 0; i < grid_shape()[i]; i++) {
+        for (size_t j = 0; j < grid_shape()[j]; j++) {
+          if (tile_rank({i, j}) == BCL::rank()) {
+            auto* a_rowptr = row_ptr_[i*grid_shape()[1] + j].local();
+            auto* a_colind = col_ind_[i*grid_shape()[1] + j].local();
+            auto* a_values = vals_[i*grid_shape()[1] + j].local();
+            auto* b_values = other.tile_ptr({i, j}).local();
+            for (index_type i_ = 0; i_ < tile_shape({i, j})[0]; i_++) {
+              for (size_t j_ptr = a_rowptr[i_]; j_ptr < a_rowptr[i_+1]; j_ptr++) {
+                auto& value = a_values[j_ptr];
+                index_type j_ = a_colind[j_ptr];
+
+                value = fn(value, b_values[i_*other.tile_shape()[1] + j_]);
+              }
+            }
+          }
+        }
+      }
+    } else {
+      for (size_t i = 0; i < grid_shape()[i]; i++) {
+        for (size_t j = 0; j < grid_shape()[j]; j++) {
+          if (tile_rank({i, j}) == BCL::rank()) {
+            auto* a_rowptr = row_ptr_[i*grid_shape()[1] + j].local();
+            auto* a_colind = col_ind_[i*grid_shape()[1] + j].local();
+            auto* a_values = vals_[i*grid_shape()[1] + j].local();
+
+            auto bmat = other.arslice({i*tile_shape()[0], (i+1)*tile_shape()[0]},
+                                      {j*tile_shape()[1], (j+1)*tile_shape()[1]}).get();
+
+            for (index_type i_ = 0; i_ < tile_shape({i, j})[0]; i_++) {
+              for (size_t j_ptr = a_rowptr[i_]; j_ptr < a_rowptr[i_+1]; j_ptr++) {
+                auto& value = a_values[j_ptr];
+                index_type j_ = a_colind[j_ptr];
+
+                value = fn(value, bmat[i_*tile_shape({i, j})[1] + j_]);
+              }
+            }
+          }
+        }
+      }
+    }
+    return *this;
+  }
+
   void print_details() const {
     BCL::barrier();
     if (BCL::rank() == 0) {

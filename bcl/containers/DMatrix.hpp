@@ -577,7 +577,7 @@ public:
         // printf("  Need to copy this starting at (%lu, %lu)\n", ri, rj);
 
         T* rloc = &result[ri*(nmax - nmin) + rj];
-        auto request = arget(&(*this)(i, j), rloc, size);
+        auto request = arget(&(*this)[{i, j}], rloc, size);
         requests.emplace_back(request);
       }
     }

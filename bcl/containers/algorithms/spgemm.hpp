@@ -13,6 +13,21 @@
 
 namespace BCL {
 
+template <typename AMatrixType, typename BMatrixType>
+bool same_grid_layout(AMatrixType&& a, BMatrixType&& b) {
+  if (a.grid_shape()[0] != b.grid_shape()[0]) { return false; }
+  if (a.grid_shape()[1] != b.grid_shape()[1]) { return false; }
+
+  for (size_t i = 0; i < a.grid_shape()[0]; i++) {
+    for (size_t j = 0; j < a.grid_shape()[1]; j++) {
+      if (a.tile_rank({i, j}) != b.tile_rank({i, j})) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 template <typename T>
 class DMatrix;
 
