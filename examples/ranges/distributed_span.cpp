@@ -34,6 +34,20 @@ int main(int argc, char** argv) {
 
   distributed_span<int> dspan(spans);
 
+  auto teams = BCL::split_world(2);
+
+  for_each(bcl::execution::parallel_local_policy(), dspan, [](auto value) {
+    printf("Rank %lu accessing element %d\n", BCL::rank(), (int) value);
+  });
+
+
+  /*
+    (1) bcl::execution::sequential_policy();
+    (2) bcl::execution::parallel_policy();
+    (3) bcl::execution::parallel_local_policy();
+  */
+
+/*
   if (BCL::rank() == 0) {
     std::vector<int> v{1, 5, 65, 23, 14, 2, 12, 3, 5, 10, 12, 13};
     const std::vector<int>& cv = v;
@@ -49,6 +63,7 @@ int main(int argc, char** argv) {
       fmt::print("{}, {}\n", idx, v);
     }
   }
+  */
 
   BCL::finalize();
   return 0;
