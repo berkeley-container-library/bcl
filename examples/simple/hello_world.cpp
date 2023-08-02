@@ -7,7 +7,7 @@
 int main(int argc, char** argv) {
   BCL::init();
   for (std::size_t i = 0; i < BCL::nprocs(); i++) {
-    if (BCL::rank() == 0) {
+    if (BCL::rank() == i) {
       printf("Hello, BCL! I am rank %lu/%lu on host %s.\n",
              BCL::rank(), BCL::nprocs(), BCL::hostname().c_str());
     }
